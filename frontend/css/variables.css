@@ -1,0 +1,121 @@
+/* ==========================================================================
+   J-ONE HOTEL & LODGE — Design Tokens
+   Source of truth: the official J-ONE brand mark (charcoal / grey / yellow).
+   ========================================================================== */
+
+:root {
+  /* --- Brand (authentic, from mark) --- */
+  --brand-charcoal: #373435;
+  --brand-grey: #727376;
+  --brand-yellow: #FFF212;
+  --brand-paper: #FAF9F6;
+
+  /* --- Core palette --- */
+  --color-primary: var(--brand-charcoal);
+  --color-primary-hover: #2a2829;
+  --color-primary-ink: #FAF9F6;
+
+  --color-accent: var(--brand-yellow);
+  --color-accent-ink: #2a2829;
+
+  --color-background: var(--brand-paper);
+  --color-surface: #FFFFFF;
+  --color-surface-alt: #F2F1EC;
+  --color-surface-deep: #EDEBE5;
+
+  --color-text: #232122;
+  --color-text-muted: #6B6C6F;
+  --color-text-faint: #9A9B9E;
+  --color-heading: #232122;
+
+  --color-border: #E3E1DB;
+  --color-border-strong: #CFCDC6;
+
+  --color-success: #157a4c;
+  --color-success-bg: #E7F3EC;
+  --color-warning: #9a6b00;
+  --color-warning-bg: #FAF0DC;
+  --color-danger: #b3261e;
+  --color-danger-bg: #FBEAE8;
+  --color-info: #1B4E7E;
+  --color-info-bg: #E7F0F8;
+
+  /* --- Typography --- */
+  --font-display: Georgia, "Iowan Old Style", "Times New Roman", "Songti SC", serif;
+  --font-body: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial,
+    "Apple Color Emoji", sans-serif;
+
+  --fs-xs: 0.75rem;
+  --fs-sm: 0.875rem;
+  --fs-base: 1rem;
+  --fs-md: 1.125rem;
+  --fs-lg: 1.375rem;
+  --fs-xl: 1.75rem;
+  --fs-2xl: 2.25rem;
+  --fs-3xl: 3rem;
+  --fs-display: clamp(2.5rem, 6vw, 4.5rem);
+
+  --leading-tight: 1.12;
+  --leading-snug: 1.3;
+  --leading-normal: 1.6;
+  --leading-relaxed: 1.78;
+
+  --tracking-tight: -0.01em;
+  --tracking-wide: 0.04em;
+  --tracking-wider: 0.12em;
+  --tracking-widest: 0.22em;
+
+  /* --- Spacing scale --- */
+  --sp-1: 0.25rem;
+  --sp-2: 0.5rem;
+  --sp-3: 0.75rem;
+  --sp-4: 1rem;
+  --sp-5: 1.5rem;
+  --sp-6: 2rem;
+  --sp-7: 3rem;
+  --sp-8: 4rem;
+  --sp-9: 6rem;
+  --sp-10: 8rem;
+
+  --section-gap: clamp(4rem, 8vw, 7.5rem);
+
+  /* --- Radius --- */
+  --radius-sm: 4px;
+  --radius: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 20px;
+  --radius-pill: 999px;
+
+  /* --- Shadows (restrained) --- */
+  --shadow-xs: 0 1px 2px rgba(20, 18, 19, 0.06);
+  --shadow-sm: 0 1px 3px rgba(20, 18, 19, 0.08), 0 1px 2px rgba(20, 18, 19, 0.04);
+  --shadow-md: 0 6px 20px rgba(20, 18, 19, 0.08);
+  --shadow-lg: 0 18px 48px rgba(20, 18, 19, 0.14);
+  --shadow-focus: 0 0 0 3px rgba(114, 115, 118, 0.35);
+
+  /* --- Layout --- */
+  --container-max: 1200px;
+  --container-narrow: 820px;
+  --header-h: 76px;
+  --header-h-scrolled: 62px;
+  --radius-full: 999px;
+
+  /* --- Motion --- */
+  --ease: cubic-bezier(0.33, 1, 0.68, 1);
+  --speed-1: 120ms;
+  --speed-2: 220ms;
+  --speed-3: 360ms;
+
+  /* --- Misc --- */
+  --icon-size: 20px;
+  --focus-ring: 2px solid #2a2829;
+}
+
+/* Legibility-safe high-contrast text pairing */
+@media (prefers-contrast: more) {
+  :root {
+    --color-text: #060505;
+    --color-text-muted: #3a393b;
+    --color-border: #b7b4ad;
+  }
+}

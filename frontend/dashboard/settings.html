@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<title>Settings | J-ONE Staff</title>
+<link rel="icon" href="../favicon/favicon-32.png" sizes="32x32">
+<link rel="apple-touch-icon" href="../favicon/apple-touch-icon.png">
+<link rel="stylesheet" href="../css/main.css">
+<script>(function(){var t;try{t=JSON.parse(localStorage.getItem("jone.theme"))}catch(e){}if(t!=="dark"&&t!=="light"){t=(window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches)?"dark":"light"}document.documentElement.setAttribute("data-theme",t);})();</script>
+</head>
+<body>
+<div class="dash">
+  <aside class="dash-sidebar" aria-label="Staff navigation">
+    <div class="dash-sidebar-brand">
+      <img src="../assets/icons/logo-mark.svg" alt="" width="30" height="42">
+      <span>
+        <span class="brand-word">J&middot;ONE</span><br>
+        <span class="brand-sub">Staff Console</span>
+      </span>
+    </div>
+    <nav class="dash-sidebar-nav" data-dash-nav aria-label="Staff"></nav>
+    <div class="dash-sidebar-footer">
+      <div data-dash-user></div>
+      <button class="btn btn-sm btn-outline" data-logout style="width:100%;justify-content:center;color:#D6D5D3;border-color:rgba(255,255,255,0.2);">
+        <span data-icon="logOut" data-size="16"></span> Sign out
+      </button>
+    </div>
+  </aside>
+  <div class="dash-main">
+    <div class="dash-topbar">
+      <div class="dash-topbar-left">
+        <button class="btn-icon btn-outline dash-menu-toggle" aria-label="Open menu" data-icon="menu" data-size="22"></button>
+        <div class="dash-title" data-dash-title>
+          <h1>Settings</h1>
+        </div>
+      </div>
+      <div class="dash-topbar-right">
+        <div class="dash-topbar-actions" data-topbar-actions></div>
+        <button class="theme-toggle" type="button" aria-label="Toggle theme" aria-pressed="false">
+          <span class="icon-moon" data-icon="moon" data-size="18"></span>
+          <span class="icon-sun" data-icon="sun" data-size="18"></span>
+        </button>
+      </div>
+    </div>
+    <div class="dash-content">
+
+<section class="panel">
+  <div class="panel-head"><h2>Hotel information</h2><button class="btn btn-sm" data-settings-save>Save</button></div>
+  <div class="panel-body">
+    <div class="field"><label class="field-label" for="s-name">Hotel name</label><input class="input" id="s-name"></div>
+    <div class="field"><label class="field-label" for="s-addr">Address</label><input class="input" id="s-addr"></div>
+    <div class="form-grid fg-2" style="margin-bottom:1rem;">
+      <div class="field"><label class="field-label" for="s-phone">Phone</label><input class="input" id="s-phone"></div>
+      <div class="field"><label class="field-label" for="s-email">Email</label><input class="input" id="s-email"></div>
+    </div>
+    <div class="field"><label class="field-label" for="s-maps">Google Maps URL</label><input class="input" id="s-maps"></div>
+  </div>
+</section>
+<section class="panel">
+  <div class="panel-head"><h2>Stay &amp; policies</h2><button class="btn btn-sm" data-settings-save>Save</button></div>
+  <div class="panel-body">
+    <div class="form-grid fg-3">
+      <div class="field"><label class="field-label" for="s-ci">Check-in time</label><input class="input" id="s-ci" type="time" value="14:00"></div>
+      <div class="field"><label class="field-label" for="s-co">Check-out time</label><input class="input" id="s-co" type="time" value="12:00"></div>
+      <div class="field"><label class="field-label" for="s-min">Minimum stay (nights)</label><input class="input" id="s-min" type="number" value="1"></div>
+    </div>
+    <div class="field"><label class="field-label" for="s-pol">Cancellation policy</label><textarea class="textarea" id="s-pol"></textarea></div>
+    <div class="field"><label class="field-label" for="s-ref">Refund policy</label><textarea class="textarea" id="s-ref"></textarea></div>
+  </div>
+</section>
+    </div>
+  </div>
+</div>
+<script src="../js/config.js"></script>
+<script src="../js/utils.js"></script>
+<script src="../js/icons.js"></script>
+<script src="../js/api.js"></script>
+<script src="../js/theme.js"></script>
+<script src="../js/ui.js"></script>
+<script src="../js/auth.js"></script>
+<script src="../js/navigation.js"></script>
+<script src="../js/dashboard.js"></script>
+<script>
+  JONE.ui.initChrome();
+  JONE.nav.initDashboardNav();
+  JONE.dashboard.boot("receptionist");
+  document.querySelector("[data-logout]") && document.querySelector("[data-logout]").addEventListener("click", function(){ window.Auth.logout(); });
+
+(function(){
+  var FIELD_MAP={
+    "s-name":["name","hotel_name","display_name"],
+    "s-addr":["address","street_address","address_line"],
+    "s-phone":["phone","phone_number"],
+    "s-email":["email","contact_email"],
+    "s-maps":["google_maps_url","maps_url","map_url"],
+    "s-ci":["checkin_time","check_in_time"],
+    "s-co":["checkout_time","check_out_time"],
+    "s-min":["min_stay","minimum_stay","min_nights"],
+    "s-pol":["cancellation_policy","cancel_policy"],
+    "s-ref":["refund_policy","refund"]
+  };
+
+  function val(obj, keys){
+    for(var i=0;i<keys.length;i++){ if(obj && obj[keys[i]]!=null) return obj[keys[i]]; }
+    return "";
+  }
+
+  function populate(s){
+    if(!s) return;
+    Object.keys(FIELD_MAP).forEach(function(id){
+      var el=document.getElementById(id);
+      if(!el) return;
+      var v=val(s, FIELD_MAP[id]);
+      el.value = (v==null?"":v);
+    });
+  }
+
+  // Load the current (real) settings from the backend and fill the form.
+  (async function(){
+    try{
+      var res=await window.API.getSettings();
+      var s=(res.data&&(res.data.settings||res.data))||(window.HOTEL&&window.HOTEL.raw);
+      populate(s);
+    }catch(_){ try{ populate(window.HOTEL&&window.HOTEL.raw); }catch(e){} }
+  })();
+
+  function payload(){
+    var p={};
+    Object.keys(FIELD_MAP).forEach(function(id){
+      var el=document.getElementById(id);
+      if(el) p[FIELD_MAP[id][0]] = el.value;
+    });
+    return p;
+  }
+
+  // Save is a real backend action: success only when the server confirms.
+  document.querySelectorAll("[data-settings-save]").forEach(function(b){
+    b.addEventListener("click", async function(){
+      if(!JONE.guardSubmit(b)) return;
+      try{
+        b.disabled=true;
+        await window.API.update("settings", "", payload());
+        JONE.ui.toast("Settings saved successfully.","success");
+        if(window.JONE.hotel){ window.JONE.hotel.fetchHotel(false); }
+      }catch(err){
+        b.disabled=false; JONE.releaseGuard(b);
+        JONE.ui.toast(err&&err.status===0?err.message:"Couldn't save settings. Please try again.","error");
+      }
+    });
+  });
+})();
+
+</script>
+</body>
+</html>

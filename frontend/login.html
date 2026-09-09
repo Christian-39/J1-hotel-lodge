@@ -1,0 +1,91 @@
+
+
+
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Staff Sign In | J-ONE Hotel &amp; Lodge</title>
+<meta name="robots" content="noindex, nofollow">
+<meta name="theme-color" content="#373435">
+<link rel="icon" href="favicon/favicon-32.png" sizes="32x32">
+<link rel="apple-touch-icon" href="favicon/apple-touch-icon.png">
+<link rel="stylesheet" href="css/main.css">
+<script>(function(){var t;try{t=JSON.parse(localStorage.getItem("jone.theme"))}catch(e){}if(t!=="dark"&&t!=="light"){t=(window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches)?"dark":"light"}document.documentElement.setAttribute("data-theme",t);})();</script>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<main id="main" style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:2rem 1rem;background:var(--color-background);">
+  <div style="width:100%;max-width:420px;">
+    <div class="center" style="margin-bottom:2rem;">
+      <a href="index.html" class="brand" style="display:inline-flex;justify-content:center;">
+        <img src="assets/icons/logo-mark.svg" alt="J-ONE Hotel &amp; Lodge" height="64" style="margin:0 auto;">
+      </a>
+      <h1 style="font-size:var(--fs-xl);margin-top:1rem;">Staff sign in</h1>
+      <p class="muted">Access the J-ONE operations console.</p>
+    </div>
+
+    <div class="card card-pad">
+      <form id="login-form" novalidate>
+        <div class="field">
+          <label class="field-label" for="username">Username</label>
+          <input class="input" id="username" name="username" required autocomplete="username">
+          <div class="field-error">Please enter your username.</div>
+        </div>
+        <div class="field">
+          <label class="field-label" for="password">Password</label>
+          <input class="input" id="password" name="password" type="password" required autocomplete="current-password">
+          <div class="field-error">Please enter your password.</div>
+        </div>
+        <div class="field-error" data-form-error style="display:none;color:var(--color-danger);margin-bottom:1rem;"></div>
+        <button class="btn btn-block btn-lg" type="submit">Sign in</button>
+      </form>
+      <p class="caption center" style="margin-top:1.5rem;">
+        <a href="index.html">&larr; Back to website</a>
+      </p>
+    </div>
+  </div>
+</main>
+
+<script src="js/config.js"></script>
+<script src="js/utils.js"></script>
+<script src="js/icons.js"></script>
+<script src="js/api.js"></script>
+<script src="js/theme.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/auth.js"></script>
+<script>JONE.ui.initChrome();</script>
+<script>
+  // Redirect logged-in users away from login page.
+  if (window.Auth.isAuthenticated()) {
+    location.replace("/dashboard/");
+  } else {
+    window.Auth.bindLoginForm("#login-form");
+  }
+</script>
+</body>
+</html>

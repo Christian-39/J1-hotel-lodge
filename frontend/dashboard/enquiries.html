@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<title>Enquiries | J-ONE Staff</title>
+<link rel="icon" href="../favicon/favicon-32.png" sizes="32x32">
+<link rel="apple-touch-icon" href="../favicon/apple-touch-icon.png">
+<link rel="stylesheet" href="../css/main.css">
+<script>(function(){var t;try{t=JSON.parse(localStorage.getItem("jone.theme"))}catch(e){}if(t!=="dark"&&t!=="light"){t=(window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches)?"dark":"light"}document.documentElement.setAttribute("data-theme",t);})();</script>
+</head>
+<body>
+<div class="dash">
+  <aside class="dash-sidebar" aria-label="Staff navigation">
+    <div class="dash-sidebar-brand">
+      <img src="../assets/icons/logo-mark.svg" alt="" width="30" height="42">
+      <span>
+        <span class="brand-word">J&middot;ONE</span><br>
+        <span class="brand-sub">Staff Console</span>
+      </span>
+    </div>
+    <nav class="dash-sidebar-nav" data-dash-nav aria-label="Staff"></nav>
+    <div class="dash-sidebar-footer">
+      <div data-dash-user></div>
+      <button class="btn btn-sm btn-outline" data-logout style="width:100%;justify-content:center;color:#D6D5D3;border-color:rgba(255,255,255,0.2);">
+        <span data-icon="logOut" data-size="16"></span> Sign out
+      </button>
+    </div>
+  </aside>
+  <div class="dash-main">
+    <div class="dash-topbar">
+      <div class="dash-topbar-left">
+        <button class="btn-icon btn-outline dash-menu-toggle" aria-label="Open menu" data-icon="menu" data-size="22"></button>
+        <div class="dash-title" data-dash-title>
+          <h1>Enquiries</h1>
+        </div>
+      </div>
+      <div class="dash-topbar-right">
+        <div class="dash-topbar-actions" data-topbar-actions></div>
+        <button class="theme-toggle" type="button" aria-label="Toggle theme" aria-pressed="false">
+          <span class="icon-moon" data-icon="moon" data-size="18"></span>
+          <span class="icon-sun" data-icon="sun" data-size="18"></span>
+        </button>
+      </div>
+    </div>
+    <div class="dash-content">
+
+<section class="panel">
+  <div class="panel-head"><h2>Enquiries</h2><div class="panel-actions"><select class="select" id="en-status" style="min-width:160px;font-size:var(--fs-sm);padding:0.5em 0.8em;"><option value="">All</option><option>new</option><option>replied</option><option>archived</option></select></div></div>
+  <div class="panel-body no-pad">
+    <div class="table-wrap"><table class="table">
+      <thead><tr><th>Name</th><th class="hide-sm">Contact</th><th>Subject</th><th class="hide-sm">Received</th><th>Status</th><th></th></tr></thead>
+      <tbody data-tbody="enquiries"></tbody>
+    </table></div>
+  </div>
+</section>
+    </div>
+  </div>
+</div>
+<script src="../js/config.js"></script>
+<script src="../js/utils.js"></script>
+<script src="../js/icons.js"></script>
+<script src="../js/api.js"></script>
+<script src="../js/theme.js"></script>
+<script src="../js/ui.js"></script>
+<script src="../js/auth.js"></script>
+<script src="../js/navigation.js"></script>
+<script src="../js/dashboard.js"></script>
+<script>
+  JONE.ui.initChrome();
+  JONE.nav.initDashboardNav();
+  JONE.dashboard.boot("receptionist");
+  document.querySelector("[data-logout]") && document.querySelector("[data-logout]").addEventListener("click", function(){ window.Auth.logout(); });
+
+(function(){
+  var DATA=JONE.dashboard.DATA;
+  var tbody=document.querySelector("[data-tbody=enquiries]");
+  var enquiries=[];
+
+  function name(e){ return e.name || e.full_name || (e.contact&&e.contact.full_name) || "—"; }
+  function contact(e){ return e.phone || e.email || e.contact_info || ""; }
+  function subject(e){ return e.subject || e.topic || e.title || "—"; }
+  function date(e){ return e.created_at || e.date || e.submitted_at || null; }
+  function status(e){ return e.status || "new"; }
+
+  function render(list){
+    tbody.innerHTML=list.map(function(e){
+      return '<tr><td><strong>'+JONE.esc(name(e))+'</strong></td><td class="hide-sm">'+JONE.esc(contact(e))+'</td><td>'+JONE.esc(subject(e))+'</td><td class="hide-sm">'+JONE.formatDateTime(date(e))+'</td><td>'+JONE.dashboard.statusPill(status(e))+'</td><td><div style="display:flex;gap:0.4rem;"><button class="btn btn-sm btn-outline" data-en-id="'+encodeURIComponent(e.id||name(e))+'">View</button></div></td></tr>';
+    }).join("") || '<tr><td colspan="6"><div class="empty-state"><span data-icon="inbox"></span><h3>No enquiries</h3><p>You are all caught up.</p></div></td></tr>';
+    JONE.icons.inject(tbody);
+  }
+
+  async function load(){
+    DATA.loading(tbody);
+    try{
+      var res=await window.API.list("enquiries");
+      var list=window.API.normalizeList?window.API.normalizeList(res.data).items:((res.data&&res.data.results)||res.data||[]);
+      enquiries=list||[];
+      if(!enquiries.length){ DATA.empty(tbody,"inbox","No enquiries","You are all caught up.",6); return; }
+      render(enquiries);
+    }catch(err){ DATA.error(tbody,"Enquiries couldn't be loaded","Please try again in a moment.",6); }
+  }
+  load();
+
+  document.addEventListener("click",function(e){
+    var v=e.target.closest("[data-en-id]");
+    if(v){ location.href="enquiries.html?open="+encodeURIComponent(v.getAttribute("data-en-id")); }
+  });
+})();
+
+</script>
+</body>
+</html>

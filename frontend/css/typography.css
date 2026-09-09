@@ -1,0 +1,135 @@
+/* ==========================================================================
+   Typography — editorial hospitality type scale.
+   Display serif (Georgia stack) for headings, clean sans for UI/body.
+   ========================================================================== */
+
+.display {
+  font-family: var(--font-display);
+  font-weight: 500;
+  line-height: var(--leading-tight);
+  letter-spacing: var(--tracking-tight);
+  color: var(--color-heading);
+  text-wrap: balance;
+}
+
+h1, .h1 {
+  font-family: var(--font-display);
+  font-weight: 500;
+  line-height: var(--leading-tight);
+  letter-spacing: var(--tracking-tight);
+  color: var(--color-heading);
+  font-size: var(--fs-display);
+  text-wrap: balance;
+}
+
+h2, .h2 {
+  font-family: var(--font-display);
+  font-weight: 500;
+  line-height: var(--leading-tight);
+  color: var(--color-heading);
+  font-size: var(--fs-3xl);
+  letter-spacing: var(--tracking-tight);
+  text-wrap: balance;
+  margin: 0;
+}
+
+h3, .h3 {
+  font-family: var(--font-display);
+  font-weight: 500;
+  line-height: var(--leading-snug);
+  color: var(--color-heading);
+  font-size: var(--fs-xl);
+  letter-spacing: -0.005em;
+  text-wrap: balance;
+}
+
+h4, .h4 {
+  font-family: var(--font-body);
+  font-weight: 600;
+  line-height: var(--leading-snug);
+  color: var(--color-heading);
+  font-size: var(--fs-md);
+  letter-spacing: var(--tracking-wide);
+}
+
+/* Section heading block */
+.section-head { margin-bottom: clamp(2rem, 4vw, 3.5rem); }
+.section-head .eyebrow { margin-bottom: var(--sp-3); }
+.section-head p.lede {
+  max-width: 640px;
+  margin-top: var(--sp-4);
+  font-size: var(--fs-md);
+  color: var(--color-text-muted);
+  line-height: var(--leading-relaxed);
+}
+.section-head.center { margin-inline: auto; text-align: center; }
+.section-head.center p.lede { margin-inline: auto; }
+
+/* Lead / intro paragraph */
+.lede {
+  font-size: var(--fs-md);
+  line-height: var(--leading-relaxed);
+  color: var(--color-text-muted);
+}
+
+/* Body copy blocks */
+.prose { line-height: var(--leading-relaxed); }
+.prose p { margin-bottom: 1.15rem; }
+.prose p:last-child { margin-bottom: 0; }
+
+/* Captions / metadata */
+.caption { font-size: var(--fs-sm); color: var(--color-text-muted); }
+.meta {
+  font-size: var(--fs-sm);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+/* Price */
+.price {
+  font-family: var(--font-body);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--color-text);
+}
+.price .currency { font-size: 0.7em; letter-spacing: 0; }
+.price small { font-weight: 500; color: var(--color-text-muted); font-size: 0.85em; }
+
+/* Nav & buttons letterforms */
+.nav-link {
+  font-family: var(--font-body);
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+}
+
+/* Dashboard KPI numerals */
+.kpi-value {
+  font-family: var(--font-display);
+  font-variant-numeric: tabular-nums;
+  font-size: clamp(1.9rem, 3vw, 2.5rem);
+  line-height: 1;
+  color: var(--color-heading);
+}
+
+/* Small caps label used in forms/results */
+.field-label {
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  letter-spacing: var(--tracking-wider);
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+  display: block;
+  margin-bottom: var(--sp-2);
+}
+
+/* Big serif pull-quote */
+.pull-quote {
+  font-family: var(--font-display);
+  font-size: var(--fs-2xl);
+  line-height: var(--leading-snug);
+  color: var(--color-heading);
+}

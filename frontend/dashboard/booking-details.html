@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<title>Booking | J-ONE Staff</title>
+<link rel="icon" href="../favicon/favicon-32.png" sizes="32x32">
+<link rel="apple-touch-icon" href="../favicon/apple-touch-icon.png">
+<link rel="stylesheet" href="../css/main.css">
+<script>(function(){var t;try{t=JSON.parse(localStorage.getItem("jone.theme"))}catch(e){}if(t!=="dark"&&t!=="light"){t=(window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches)?"dark":"light"}document.documentElement.setAttribute("data-theme",t);})();</script>
+</head>
+<body>
+<div class="dash">
+  <aside class="dash-sidebar" aria-label="Staff navigation">
+    <div class="dash-sidebar-brand">
+      <img src="../assets/icons/logo-mark.svg" alt="" width="30" height="42">
+      <span>
+        <span class="brand-word">J&middot;ONE</span><br>
+        <span class="brand-sub">Staff Console</span>
+      </span>
+    </div>
+    <nav class="dash-sidebar-nav" data-dash-nav aria-label="Staff"></nav>
+    <div class="dash-sidebar-footer">
+      <div data-dash-user></div>
+      <button class="btn btn-sm btn-outline" data-logout style="width:100%;justify-content:center;color:#D6D5D3;border-color:rgba(255,255,255,0.2);">
+        <span data-icon="logOut" data-size="16"></span> Sign out
+      </button>
+    </div>
+  </aside>
+  <div class="dash-main">
+    <div class="dash-topbar">
+      <div class="dash-topbar-left">
+        <button class="btn-icon btn-outline dash-menu-toggle" aria-label="Open menu" data-icon="menu" data-size="22"></button>
+        <div class="dash-title" data-dash-title>
+          <h1>Booking</h1>
+        </div>
+      </div>
+      <div class="dash-topbar-right">
+        <div class="dash-topbar-actions" data-topbar-actions></div>
+        <button class="theme-toggle" type="button" aria-label="Toggle theme" aria-pressed="false">
+          <span class="icon-moon" data-icon="moon" data-size="18"></span>
+          <span class="icon-sun" data-icon="sun" data-size="18"></span>
+        </button>
+      </div>
+    </div>
+    <div class="dash-content">
+
+<div class="panel-grid">
+    <section class="panel">
+      <div class="panel-head">
+        <h2 data-bd-ref>Booking</h2>
+        <div class="panel-actions">
+          <button class="btn btn-sm btn-outline" data-bd-checkin>Check-in</button>
+          <button class="btn btn-sm btn-outline" data-bd-record><span data-icon="wallet" data-size="16"></span> Record payment</button>
+          <button class="btn btn-sm btn-danger" data-bd-cancel>Cancel</button>
+        </div>
+      </div>
+      <div class="panel-body">
+        <div class="review-section"><h4>Guest</h4><p data-bd-guest>--</p><p class="caption" data-bd-contact>--</p></div>
+        <div class="review-section"><h4>Stay</h4>
+          <div class="flex-between"><span class="muted">Room</span><span data-bd-room>--</span></div>
+          <div class="flex-between"><span class="muted">Check-in</span><span data-bd-ci>--</span></div>
+          <div class="flex-between"><span class="muted">Check-out</span><span data-bd-co>--</span></div>
+          <div class="flex-between"><span class="muted">Nights</span><span data-bd-nights>--</span></div>
+        </div>
+        <div class="review-section"><h4>Payment</h4>
+          <div class="flex-between"><span class="muted">Total</span><span data-bd-total>--</span></div>
+          <div class="flex-between"><span class="muted">Paid</span><span data-bd-paid>--</span></div>
+          <div class="flex-between"><span class="muted">Balance</span><span data-bd-balance>--</span></div>
+          <div class="flex-between"><span class="muted">Status</span><span data-bd-status>--</span></div>
+        </div>
+        <div style="display:flex;gap:0.75rem;flex-wrap:wrap;margin-top:1rem;">
+          <a class="btn btn-sm btn-outline" href="receipts.html"><span data-icon="receipt" data-size="16"></span> Receipt</a>
+          <button class="btn btn-sm btn-outline" id="print-booking" type="button"><span data-icon="printer" data-size="16"></span> Print</button>
+        </div>
+      </div>
+    </section>
+
+    <div style="display:grid;gap:1.5rem;">
+      <section class="panel">
+        <div class="panel-head"><h2>Payment history</h2></div>
+        <div class="panel-body no-pad">
+          <div class="table-wrap"><table class="table">
+            <thead><tr><th>Reference</th><th>Method</th><th class="hide-sm">Date</th><th>Amount</th><th>Status</th></tr></thead>
+            <tbody data-tbody="bd-payments"></tbody>
+          </table></div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head"><h2>Booking history</h2></div>
+        <div class="panel-body"><div class="activity-list" data-bd-activity></div></div>
+      </section>
+    </div>
+  </div>
+    </div>
+  </div>
+</div>
+<script src="../js/config.js"></script>
+<script src="../js/utils.js"></script>
+<script src="../js/icons.js"></script>
+<script src="../js/api.js"></script>
+<script src="../js/theme.js"></script>
+<script src="../js/ui.js"></script>
+<script src="../js/auth.js"></script>
+<script src="../js/navigation.js"></script>
+<script src="../js/dashboard.js"></script>
+<script>
+  JONE.ui.initChrome();
+  JONE.nav.initDashboardNav();
+  JONE.dashboard.boot("receptionist");
+  document.querySelector("[data-logout]") && document.querySelector("[data-logout]").addEventListener("click", function(){ window.Auth.logout(); });
+
+(function(){
+  var params=new URLSearchParams(location.search);
+  var ref=params.get("ref");
+  var book=null;
+
+  function set(k,v){var n=document.querySelector("[data-bd-"+k+"]"); if(n&&v!=null) n.textContent=v;}
+  function guestName(){ return book.guest_name || (book.guest&&(book.guest.full_name||book.guest.name)) || "—"; }
+  function contact(){ return book.guest_contact || (book.guest&&(book.guest.phone||book.guest.email)) || (book.email||book.phone) || "—"; }
+  function roomLabel(){ return book.room_number || (book.room&&book.room.number) || book.room_type || "—"; }
+  function total(){ return book.total!=null?book.total:book.amount; }
+  function paid(){ return book.paid!=null?book.paid:(book.amount_paid||0); }
+
+  function renderBookings(){
+    var b=book.ref||book.reference||ref||"—";
+    set("ref",b); set("guest",guestName()); set("contact",contact()); set("room",roomLabel());
+    set("ci",JONE.formatDate(book.check_in)); set("co",JONE.formatDate(book.check_out));
+    set("nights", (book.nights||JONE.nightsBetween(book.check_in,book.check_out))+" nights");
+    set("total",JONE.formatNaira(total())); set("paid",JONE.formatNaira(paid()));
+    set("balance",JONE.formatNaira(total()-paid()));
+    set("status", (book.status||"").toUpperCase());
+    // Payment history — backend records only, never synthesized.
+    var tbody=document.querySelector("[data-tbody=bd-payments]");
+    if(tbody){
+      var pays=(book.payments||book.payment_history||[]);
+      tbody.innerHTML = pays.length ? pays.map(function(p){
+        var pr=p.reference||p.ref||"PAY-"+b;
+        return '<tr><td>'+JONE.esc(pr)+'</td><td>'+JONE.esc(p.method||p.payment_method||"Online")+'</td><td class="hide-sm">'+JONE.formatDate(p.paid_at||p.date,"mid")+'</td><td class="num">'+JONE.formatNaira(p.amount)+'</td><td>'+JONE.dashboard.statusPill(p.status||"paid")+'</td></tr>';
+      }).join("") : '<tr><td colspan="5"><div class="empty-state"><span data-icon="wallet"></span><h3>No payments recorded</h3></div></td></tr>';
+      JONE.icons.inject(tbody);
+    }
+    // Activity — backend history only.
+    var act=document.querySelector("[data-bd-activity]");
+    if(act){
+      var hist=(book.history||book.activity||[]);
+      act.innerHTML = hist.length ? hist.map(function(h){
+        return '<div class="activity-item"><span class="activity-icon"><span data-icon="checkCircle" data-size="18"></span></span><div><p>'+JONE.esc(h.action||h.message||"Updated")+'</p><div class="activity-time">'+JONE.formatDate(h.at||h.created_at||h.time,"mid")+'</div></div></div>';
+      }).join("") : '<div class="empty-state" style="margin:1rem;"><span data-icon="fileText"></span><h3>No history yet</h3></div>';
+      JONE.icons.inject(act);
+    }
+  }
+
+  function showError(msg){
+    var hold=document.querySelector("[data-bd-ref]");
+    if(hold) hold.textContent="Booking unavailable";
+    JONE.ui.toast(msg||"We couldn't load this booking. Please try again.","error");
+  }
+
+  async function load(){
+    if(!ref){ showError("No booking reference was provided."); return; }
+    try{
+      var res=await window.API.getOne("booking", ref);
+      var data=res.data||{};
+      book=(data.booking||data);
+      renderBookings();
+    }catch(err){ showError(err&&err.status===0?err.message:""); }
+  }
+  load();
+
+  var printBtn=document.getElementById("print-booking");
+  if(printBtn) printBtn.addEventListener("click",function(){ window.print(); });
+
+  var cancel=document.querySelector("[data-bd-cancel]");
+  if(cancel) cancel.addEventListener("click", async function(){
+    var ok=await JONE.ui.confirm({title:"Cancel this booking?",message:"The guest will be notified. This cannot be undone.",confirmText:"Cancel booking",danger:true});
+    if(!ok) return;
+    try{
+      await window.API.update("booking", ref, { status:"cancelled" });
+      JONE.ui.toast("Booking cancelled.","success"); load();
+    }catch(err){ JONE.ui.toast("Couldn't cancel this booking. Please try again.","error"); }
+  });
+
+  var record=document.querySelector("[data-bd-record]");
+  if(record) record.addEventListener("click", function(){
+    // Record payment is an integration point; route to backend and only
+    // succeed when the server confirms. Redirect to the payment flow.
+    location.href="payments.html?booking="+encodeURIComponent(ref||"");
+  });
+
+  var checkin=document.querySelector("[data-bd-checkin]");
+  if(checkin) checkin.addEventListener("click", async function(){
+    if(!JONE.guardSubmit(checkin)) return;
+    try{
+      checkin.disabled=true;
+      await window.API.create("checkIns", { booking: ref, checked_in_at: new Date().toISOString() });
+      JONE.ui.toast("Guest checked in.","success"); load();
+    }catch(err){ checkin.disabled=false; JONE.releaseGuard(checkin); JONE.ui.toast(err&&err.status===0?err.message:"Couldn't check in this guest. Please try again.","error"); }
+  });
+})();
+
+</script>
+</body>
+</html>

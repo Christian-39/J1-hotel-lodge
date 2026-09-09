@@ -1,0 +1,406 @@
+
+
+
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Booking Confirmation | J-ONE Hotel &amp; Lodge</title>
+<meta name="description" content="Your booking confirmation and receipt for J-ONE Hotel &amp; Lodge.">
+<meta name="robots" content="noindex, follow">
+<meta name="theme-color" content="#373435">
+<link rel="icon" href="favicon/favicon-32.png" sizes="32x32">
+<link rel="apple-touch-icon" href="favicon/apple-touch-icon.png">
+<link rel="stylesheet" href="css/main.css">
+<script>(function(){var t;try{t=JSON.parse(localStorage.getItem("jone.theme"))}catch(e){}if(t!=="dark"&&t!=="light"){t=(window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches)?"dark":"light"}document.documentElement.setAttribute("data-theme",t);})();</script>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+</head>
+<body class="has-mobile-cta">
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="site-header">
+  <div class="container header-inner">
+    <a href="index.html" class="brand" aria-label="J-ONE Hotel &amp; Lodge — home">
+      <img src="assets/icons/logo-mark.svg" alt="" class="brand-mark" width="44" height="62">
+      <span>
+        <span class="brand-word">J&middot;ONE</span><br>
+        <span class="brand-sub">Hotel &amp; Lodge</span>
+      </span>
+    </a>
+
+    <nav class="header-nav" aria-label="Primary">
+      <a class="nav-link" data-nav="index.html" href="index.html">Rooms</a>
+      <a class="nav-link" data-nav="facilities.html" href="facilities.html">Facilities</a>
+      <a class="nav-link" data-nav="gallery.html" href="gallery.html">Gallery</a>
+      <a class="nav-link" data-nav="offers.html" href="offers.html">Offers</a>
+      <a class="nav-link" data-nav="about.html" href="about.html">About</a>
+      <a class="nav-link" data-nav="contact.html" href="contact.html">Contact</a>
+    </nav>
+
+    <div class="header-actions">
+      <button class="theme-toggle" type="button" aria-label="Toggle theme" aria-pressed="false">
+        <span class="icon-moon" data-icon="moon" data-size="20"></span>
+        <span class="icon-sun" data-icon="sun" data-size="20"></span>
+      </button>
+      <a class="btn btn-accent btn-book" href="booking.html">Book Your Stay</a>
+      <button class="btn-icon btn-outline menu-toggle" type="button" aria-label="Open menu" aria-expanded="false" data-icon="menu" data-size="22"></button>
+    </div>
+  </div>
+</header>
+
+
+<main id="main">
+  <div class="container booking-shell">
+    <!-- PAYMENT STEP -->
+    <section id="payment-screen" class="card card-pad" style="max-width:560px;margin:0 auto;display:none;">
+      <h2 style="font-size:var(--fs-xl);margin-bottom:1.25rem;">Secure payment</h2>
+      <div class="review-card" style="background:var(--color-surface-alt);padding:1.25rem;margin-bottom:1.5rem;">
+        <div class="summary-row"><span class="label">Room</span><span class="value" data-p-room>--</span></div>
+        <div class="summary-row"><span class="label">Check-in</span><span class="value" data-p-ci>--</span></div>
+        <div class="summary-row"><span class="label">Check-out</span><span class="value" data-p-co>--</span></div>
+        <div class="summary-row total"><span class="label">Total</span><span class="value" data-p-total>--</span></div>
+      </div>
+      <div class="notice info" style="margin-bottom:1.5rem;">
+        <span data-icon="lock" data-size="18"></span>
+        <span>You'll be redirected to Paystack to complete payment securely. Your card details are never stored by us.</span>
+      </div>
+      <button class="btn btn-accent btn-lg btn-block" id="pay-btn" type="button">Pay Now</button>
+      <p class="step-mobile" style="display:block;margin-top:1rem;">Step 5 of 6 — Payment</p>
+    </section>
+
+    <!-- LOADING -->
+    <section id="payment-loading" class="loading-block" style="display:none;">
+      <div class="spinner" role="status" aria-label="Loading"></div>
+      <p class="muted">Connecting to secure payment&hellip;</p>
+    </section>
+
+    <!-- SUCCESS -->
+    <section id="success-screen" style="display:none;">
+      <div class="confirm-hero">
+        <div class="confirm-icon-circle"><span data-icon="check" data-size="42"></span></div>
+        <h1>Booking confirmed</h1>
+        <p>Your reservation has been successfully confirmed. A confirmation has been sent to your email.</p>
+        <div class="confirm-reference" data-ref>J1-XXXXXX</div>
+      </div>
+
+      <!-- Receipt/folio sheet -->
+      <div class="receipt-sheet" id="receipt-sheet" style="margin-top:2rem;">
+        <div class="receipt-brand">
+          <img src="assets/icons/logo-mark.svg" alt="J-ONE Hotel &amp; Lodge" height="44">
+          <div style="font-family:var(--font-display);font-size:1.3rem;letter-spacing:0.12em;">J&middot;ONE HOTEL &amp; LODGE</div>
+          <div class="caption">Booking confirmation &amp; receipt</div>
+        </div>
+        <table class="receipt-table">
+          <tbody id="receipt-body"></tbody>
+        </table>
+        <div class="receipt-foot">Thank you for staying with us. For assistance, contact <span data-contact-phone>+234 803 211 2874</span>.</div>
+      </div>
+
+      <div class="confirm-actions">
+        <a class="btn" id="receipt-download" href="#">Print / Save receipt</a>
+        <a class="btn btn-outline" href="index.html">Return home</a>
+        <a class="btn btn-outline" href="contact.html">Contact hotel</a>
+      </div>
+    </section>
+
+    <!-- FAILURE -->
+    <section id="failure-screen" style="display:none;">
+      <div class="confirm-hero">
+        <div class="confirm-icon-circle" style="background:var(--color-danger);"><span data-icon="x" data-size="42"></span></div>
+        <h1>Payment not completed</h1>
+        <p>Your booking is saved but we couldn't confirm your payment. Please try again, or contact the hotel for help.</p>
+        <div class="confirm-reference" data-fail-ref>Booking ref: —</div>
+      </div>
+      <div class="confirm-actions">
+        <button class="btn btn-accent" id="retry-pay">Retry payment</button>
+        <a class="btn btn-outline" href="contact.html">Contact hotel</a>
+        <a class="btn btn-outline" href="index.html">Return home</a>
+      </div>
+    </section>
+  </div>
+</main>
+<footer class="site-footer">
+  <div class="container">
+    <div class="footer-top">
+      <div class="footer-brand">
+        <a href="index.html" class="brand" style="margin-bottom:1rem;">
+          <img src="assets/icons/logo-mark.svg" alt="" class="brand-mark" width="44" height="62">
+          <span>
+            <span class="brand-word">J&middot;ONE</span><br>
+            <span class="brand-sub">Hotel &amp; Lodge</span>
+          </span>
+        </a>
+        <p data-hotel-name="J-ONE HOTEL &amp; LODGE">A quiet, contemporary address for rest and gathering &mdash; private, comfortable and close to everything you need.</p>
+      </div>
+
+      <div class="footer-col">
+        <h5>Explore</h5>
+        <a href="index.html#rooms">Rooms &amp; Suites</a>
+        <a href="facilities.html">Facilities</a>
+        <a href="gallery.html">Gallery</a>
+        <a href="offers.html">Offers</a>
+        <a href="about.html">About</a>
+        <a href="contact.html">Contact</a>
+      </div>
+
+      <div class="footer-col">
+        <h5>Booking</h5>
+        <a href="booking.html">Book Your Stay</a>
+        <a href="booking.html">Check Availability</a>
+        <a href="policies.html">Hotel Policies</a>
+        <a href="privacy.html">Privacy</a>
+        <a href="terms.html">Terms</a>
+      </div>
+
+      <div class="footer-col">
+        <h5>Contact</h5>
+        <span class="footer-line"><span data-icon="mapPin" data-size="16"></span><span data-contact-address>Plot 566 Mgbowo Street, off Ezike Street</span></span>
+        <a class="footer-line" data-contact-whatsapp href="#"><span data-icon="phone" data-size="16"></span><span data-contact-phone>+234 803 211 2874</span></a>
+        <a class="footer-line" href="mailto:jonathanonu76@gmail.com"><span data-icon="mail" data-size="16"></span><span data-contact-email>jonathanonu76@gmail.com</span></a>
+        <a class="footer-line" data-google-maps href="https://www.google.com/maps" target="_blank" rel="noopener"><span data-icon="mapPin" data-size="16"></span>View on Google Maps</a>
+      </div>
+    </div>
+
+    <div class="footer-bottom">
+      <span>&copy; <span data-year="2026"></span> J-ONE HOTEL &amp; LODGE. All rights reserved.</span>
+      <span>
+        <a href="privacy.html">Privacy</a> &middot;
+        <a href="terms.html">Terms</a> &middot;
+        <a href="login.html">Staff</a>
+      </span>
+    </div>
+  </div>
+</footer>
+<div class="mobile-cta-bar no-print">
+  <a class="btn btn-accent" href="booking.html">Book Your Stay</a>
+</div>
+
+<div class="mobile-drawer-backdrop" aria-hidden="true"></div>
+<div class="mobile-drawer" role="dialog" aria-modal="true" aria-label="Menu" aria-hidden="true">
+  <div class="mobile-drawer-head">
+    <span class="brand-word">J&middot;ONE</span>
+    <button class="btn-icon btn-ghost" type="button" aria-label="Close menu" data-icon="x" data-size="22"></button>
+  </div>
+  <div class="mobile-drawer-body">
+    <nav class="mobile-nav" aria-label="Mobile">
+      <a data-nav="index.html" href="index.html">Home <span data-icon="chevronRight" data-size="18"></span></a>
+      <a data-nav="rooms.html" href="rooms.html">Rooms <span data-icon="chevronRight" data-size="18"></span></a>
+      <a data-nav="facilities.html" href="facilities.html">Facilities <span data-icon="chevronRight" data-size="18"></span></a>
+      <a data-nav="gallery.html" href="gallery.html">Gallery <span data-icon="chevronRight" data-size="18"></span></a>
+      <a data-nav="offers.html" href="offers.html">Offers <span data-icon="chevronRight" data-size="18"></span></a>
+      <a data-nav="about.html" href="about.html">About <span data-icon="chevronRight" data-size="18"></span></a>
+      <a data-nav="contact.html" href="contact.html">Contact <span data-icon="chevronRight" data-size="18"></span></a>
+      <a data-nav="policies.html" href="policies.html">Policies <span data-icon="chevronRight" data-size="18"></span></a>
+    </nav>
+    <div class="mobile-footer-row">
+      <a class="btn btn-accent" href="booking.html">Book Your Stay</a>
+      <a class="btn btn-outline" href="tel:+2348032112874"><span data-icon="phone" data-size="18"></span> Call the hotel</a>
+    </div>
+  </div>
+</div>
+
+<script src="js/config.js"></script>
+<script src="js/utils.js"></script>
+<script src="js/icons.js"></script>
+<script src="js/api.js"></script>
+<script src="js/theme.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/hotel-data.js"></script>
+<script src="js/contact.js"></script>
+<script src="js/navigation.js"></script>
+<script>JONE.ui.initChrome(); JONE.nav.init();</script>
+<script src="js/site.js"></script>
+<script>
+(function () {
+  "use strict";
+  var p = new URLSearchParams(location.search);
+  // NOTE (audit §6/§7): the backend is the only source of truth for price,
+  // nights, total, discount and payment status. Values taken from the URL
+  // below are ONLY candidates to pre-fill the payment screen before we have a
+  // booking object; the authoritative booking comes back from initBooking and
+  // drives the receipt. We never invent a booking reference.
+  var data = {
+    check_in: p.get("check_in"), check_out: p.get("check_out"),
+    adults: p.get("adults"), children: p.get("children"),
+    room: p.get("room"), room_name: p.get("room_name")
+  };
+  var step = p.get("step");
+  var bookingRef = p.get("ref");
+  // The authoritative booking (returned by the backend) — held in memory only.
+  var booking = null;
+  // Optional URL-provided display figures, shown only until a booking exists.
+  var estRate = Number(p.get("room_price") || 0);
+  var estNights = Math.max(1, Number(p.get("nights") || 1));
+
+  function show(id) {
+    ["payment-screen","payment-loading","success-screen","failure-screen"].forEach(function(s){ document.getElementById(s).style.display = (s===id ? "block":"none"); });
+  }
+  function setColl(sel, val){ var n=document.querySelector(sel); if(n) n.textContent=val; }
+
+  /* Display total on the payment summary: an estimate when a rate is known,
+     otherwise honest "confirmed at payment" — never a fake authoritative value. */
+  function totalLabel() {
+    if (estRate && estNights > 1) return JONE.formatNaira(estRate * estNights) + " (est.)";
+    if (estRate) return JONE.formatNaira(estRate) + " (est.)";
+    return "Confirmed at payment";
+  }
+
+  /* Build the receipt strictly from backend-provided booking/payment data. */
+  function fillReceipt() {
+    var guest = (JONE.storage.get(JONE.APP_CONFIG.STORAGE.BOOKING, {})||{}).guest || {};
+    // Fall back to backend booking values; never invent a reference.
+    var ref = (booking && (booking.reference || booking.ref)) || bookingRef;
+    var rate = (booking && (booking.room_price != null ? booking.room_price : booking.price_per_night)) || estRate;
+    var nights = (booking && (booking.nights != null ? booking.nights : booking.nights_count)) || estNights;
+    var total = (booking && booking.total != null) ? booking.total : (rate * nights);
+    var statusRaw = ((booking && booking.payment_status) || "paid").toLowerCase();
+    var statusLabel = (statusRaw === "paid" || statusRaw === "success" || statusRaw === "successful") ? "Paid" : "Pending";
+    var rows = [
+      ["Booking reference", ref || "—"],
+      ["Guest", guest.full_name || "Guest"],
+      ["Room", (booking && (booking.room_name || booking.room_type)) || data.room_name || data.room || "—"],
+      ["Check-in", JONE.formatDate((booking && booking.check_in) || data.check_in)],
+      ["Check-out", JONE.formatDate((booking && booking.check_out) || data.check_out)],
+      ["Nights", nights + (nights===1?" night":" nights")],
+      ["Room rate", JONE.formatNaira(rate) + " / night"]
+    ];
+    var html = rows.map(function(r){ return '<tr><td>'+JONE.esc(r[0])+'</td><td>'+JONE.esc(r[1])+'</td></tr>'; }).join("");
+    html += '<tr class="total"><td>Total</td><td>'+JONE.formatNaira(total)+'</td></tr>';
+    if (booking && booking.discount) html += '<tr><td>Discount</td><td>−'+JONE.formatNaira(booking.discount)+'</td></tr>';
+    html += '<tr><td>Payment status</td><td>'+statusLabel+'</td></tr>';
+    document.getElementById("receipt-body").innerHTML = html;
+    document.getElementById("receipt-download").addEventListener("click", function(e){ e.preventDefault(); window.print(); });
+  }
+
+  // VIRTUALCARD/Step states
+  if (step === "payment") {
+    setColl("[data-p-room]", data.room_name || data.room || "--");
+    setColl("[data-p-ci]", JONE.formatDate(data.check_in, "mid"));
+    setColl("[data-p-co]", JONE.formatDate(data.check_out, "mid"));
+    setColl("[data-p-total]", totalLabel());
+    show("payment-screen");
+    document.getElementById("pay-btn").addEventListener("click", pay);
+  } else if (step === "success" || bookingRef) {
+    // came back from a payment flow. The reference only comes from the backend
+    // (redirect query) — never invented. Confirm real status below.
+    show("success-screen");
+    // Restore the authoritative booking saved before redirect (if any).
+    if (!booking) {
+      try { booking = JONE.storage.get(JONE.APP_CONFIG.STORAGE.BOOKING + ".confirmed", null); } catch (_) { booking = null; }
+    }
+    var refEl = document.querySelector("[data-ref]");
+    if (refEl) refEl.textContent = bookingRef || (booking && (booking.reference || booking.ref)) || "Confirmed";
+    if (bookingRef) confirmFromBackend(bookingRef);
+    return;
+  } else if (step === "fail") {
+    show("failure-screen");
+    document.querySelector("[data-fail-ref]").textContent = "Booking ref: " + (p.get("ref")||"—");
+    document.getElementById("retry-pay").addEventListener("click", pay);
+  } else {
+    // default: let the user pay
+    setColl("[data-p-room]", data.room_name || data.room || "--");
+    setColl("[data-p-ci]", JONE.formatDate(data.check_in, "mid"));
+    setColl("[data-p-co]", JONE.formatDate(data.check_out, "mid"));
+    setColl("[data-p-total]", totalLabel());
+    show("payment-screen");
+    document.getElementById("pay-btn").addEventListener("click", pay);
+  }
+
+  /* The real Paystack flow:
+     1. POST to backend initPayment(bookingRef, payload).
+     2. Backend returns { authorization_url, reference }.
+     3. Redirect to authorization_url.
+     4. On return, POLL checkPaymentStatus(bookingRef) — NEVER assume success. */
+  async function pay() {
+    var btn = document.getElementById("pay-btn");
+    if (!JONE.guardSubmit(btn)) return;
+    show("payment-loading");
+    try {
+      // Step 1: init booking then payment via backend. The booking returned is
+      // authoritative — the backend validates availability and computes price,
+      // nights, discount and total. We never send or trust a client amount.
+      var bookingRes = await window.API.initBooking({
+        check_in: data.check_in, check_out: data.check_out,
+        guests: { adults: data.adults, children: data.children },
+        room_type: data.room, guest: (JONE.storage.get(JONE.APP_CONFIG.STORAGE.BOOKING,{})||{}).guest
+      });
+      booking = bookingRes.data || {};
+      var ref = booking.reference || booking.ref || bookingRef;
+      bookingRef = ref;
+      // The backend computes the amount it expects to be paid.
+      var amount = (booking.amount != null ? booking.amount : (booking.total != null ? booking.total : 0));
+      var payRes = await window.API.initPayment(ref, { amount: amount });
+      var pay = payRes.data || {};
+      var authUrl = pay.authorization_url || pay.payment_url;
+      if (authUrl) {
+        // Step 2: an amount is provided before redirect. Persist the booking
+        // so the confirmation page can display it even across the redirect.
+        try { JONE.storage.set(JONE.APP_CONFIG.STORAGE.BOOKING + ".confirmed", booking); } catch (_) {}
+        location.href = authUrl;
+        return;
+      }
+      // Backend may confirm instantly — ask for status authoritatively.
+      await confirmFromBackend(ref);
+    } catch (err) {
+      show("failure-screen");
+      document.querySelector("[data-fail-ref]").textContent = "Booking ref: " + (bookingRef || "—");
+      if (err.status === 409) {
+        document.querySelector("#failure-screen p").textContent = "The room or availability has changed. Please choose another room and try again.";
+      } else if (err.status === 0) {
+        // API unreachable — honest state, not a fake success.
+        document.querySelector("#failure-screen p").textContent = "We can't reach the payment service right now. Please try again in a moment, or contact the hotel.";
+      }
+    }
+  }
+
+  async function confirmFromBackend(ref) {
+    if (!ref) { show("failure-screen"); return; }
+    try {
+      var st = await window.API.checkPaymentStatus(ref);
+      var d = st.data || {};
+      var status = (d.status || d.payment_status || "").toLowerCase();
+      if (status === "paid" || status === "success" || status === "successful") {
+        // Only now — backend confirms paid — do we show Confirmed + its view.
+        show("success-screen");
+        var refEl = document.querySelector("[data-ref]");
+        if (refEl) refEl.textContent = ref;
+        if (d.booking) booking = d.booking;
+        fillReceipt();
+      } else {
+        show("failure-screen");
+        document.querySelector("[data-fail-ref]").textContent = "Booking ref: " + ref;
+      }
+    } catch (err) {
+      show("failure-screen");
+      var msg = (err && err.status === 0)
+        ? "We can't confirm your payment right now. It may still be processing — please try again or contact the hotel."
+        : "We couldn't confirm your payment yet.";
+      document.querySelector("#failure-screen p").textContent = msg;
+    }
+  }
+})();
+</script>
+</body>
+</html>

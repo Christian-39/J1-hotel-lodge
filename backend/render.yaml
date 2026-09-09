@@ -1,0 +1,84 @@
+# Render blueprint for the J-ONE HOTEL & LODGE backend.
+# Create a managed MySQL 8 instance separately (or point DATABASE_URL at an
+# external one) and a Render Redis instance, then fill env vars in the
+# dashboard (see .env.example).
+
+services:
+  - type: web
+    name: jone-hotel-api
+    runtime: python
+    plan: starter
+    buildCommand: "./build.sh"
+    startCommand: "gunicorn config.wsgi:application --bind 0.0.0.0:$PORT --workers 3 --timeout 60"
+    healthCheckPath: /api/health/
+    envVars:
+      - key: DJANGO_SETTINGS_MODULE
+        value: config.settings.production
+      - key: DATABASE_URL
+        sync: false          # set in the dashboard (mysql://...)
+      - key: DJANGO_SECRET_KEY
+        generateValue: true
+      - key: DJANGO_DEBUG
+        value: "False"
+      - key: DJANGO_ALLOWED_HOSTS
+        sync: false          # e.g. jone-hotel-api.onrender.com
+      - key: FRONTEND_URL
+        sync: false          # e.g. https://www.jonehotel.com
+      - key: CORS_ALLOWED_ORIGINS
+        sync: false          # e.g. https://www.jonehotel.com
+      - key: CSRF_TRUSTED_ORIGINS
+        sync: false
+      - key: REDIS_URL
+        sync: false          # from Render Redis
+      - key: PAYSTACK_SECRET_KEY
+        sync: false
+      - key: PAYSTACK_PUBLIC_KEY
+        sync: false
+      - key: BACKBLAZE_KEY_ID
+        sync: false
+      - key: BACKBLAZE_APPLICATION_KEY
+        sync: false
+      - key: BACKBLAZE_BUCKET_NAME
+        sync: false
+      - key: BACKBLAZE_ENDPOINT
+        sync: false
+      - key: EMAIL_HOST
+        sync: false
+      - key: EMAIL_HOST_USER
+        sync: false
+      - key: EMAIL_HOST_PASSWORD
+        sync: false
+      - key: DEFAULT_FROM_EMAIL
+        sync: false
+
+  - type: worker
+    name: jone-hotel-worker
+    runtime: python
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "celery -A config worker -l info"
+    envVars:
+      - key: DJANGO_SETTINGS_MODULE
+        value: config.settings.production
+      - key: DATABASE_URL
+        sync: false
+      - key: DJANGO_SECRET_KEY
+        generateValue: true
+      - key: REDIS_URL
+        sync: false
+      - key: PAYSTACK_SECRET_KEY
+        sync: false
+
+  - type: worker
+    name: jone-hotel-beat
+    runtime: python
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "celery -A config beat -l info"
+    envVars:
+      - key: DJANGO_SETTINGS_MODULE
+        value: config.settings.production
+      - key: DATABASE_URL
+        sync: false
+      - key: DJANGO_SECRET_KEY
+        generateValue: true
+      - key: REDIS_URL
+        sync: false

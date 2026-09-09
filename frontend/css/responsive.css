@@ -1,0 +1,49 @@
+/* ==========================================================================
+   Responsive / breakpoint refinements.
+   Breakpoints: 560 (phone), 720, 860, 960, 1200.
+   ========================================================================== */
+
+/* Narrow phones */
+@media (max-width: 560px) {
+  :root { --fs-display: clamp(2rem, 11vw, 2.9rem); }
+  .hero { min-height: 78vh; }
+  .hero-actions { flex-direction: column; }
+  .hero-actions .btn { width: 100%; }
+  .confirm-actions { flex-direction: column; }
+  .confirm-actions .btn { width: 100%; }
+}
+
+/* Tablets */
+@media (max-width: 960px) {
+  .header-nav { display: none; }
+  .menu-toggle { display: inline-flex; }
+  .header-actions .btn-book { display: none; }
+}
+
+/* The brand wordmark hides its subtitle at very small sizes */
+@media (max-width: 420px) {
+  .brand-sub { display: none; }
+}
+
+/* Large desktop */
+@media (min-width: 1440px) {
+  :root { --container-max: 1320px; }
+}
+
+/* Print — receipts / confirmations */
+@media print {
+  .site-header, .site-footer, .mobile-cta-bar, .no-print, .toast-region { display: none !important; }
+  body { background: #fff; color: #000; }
+  .receipt-sheet, .confirm-hero { box-shadow: none; border: 0; margin: 0; max-width: 100%; }
+  .booking-summary { position: static; }
+}
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}

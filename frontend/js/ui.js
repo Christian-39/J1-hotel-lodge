@@ -1,0 +1,247 @@
+/* ==========================================================================
+   UI layer — toast, modal, confirmation, lightbox, accordions, drop-in icons.
+   ========================================================================== */
+
+(function () {
+  "use strict";
+
+  /* -------------------------------- Toast --------------------------------- */
+  function ensureToastRegion() {
+    let region = document.querySelector(".toast-region");
+    if (!region) {
+      region = JONE.el("div", { class: "toast-region" });
+      region.setAttribute("role", "status");
+      region.setAttribute("aria-live", "polite");
+      document.body.appendChild(region);
+    }
+    return region;
+  }
+
+  const TOAST_ICONS = { success: "checkCircle", error: "alertCircle", warning: "alertTriangle", info: "info" };
+
+  function toast(message, type = "info", opts = {}) {
+    const region = ensureToastRegion();
+    const icon = JONE.icons.get(TOAST_ICONS[type] || "info");
+    const node = JONE.el("div", { class: `toast ${type}` },
+      JONE.el("span", { class: "toast-icon", innerHTML: icon }),
+      JONE.el("span", { class: "toast-message", textContent: message }),
+      JONE.el("button", {
+        class: "toast-close", "aria-label": "Dismiss",
+        innerHTML: JONE.icons.get("x")
+      })
+    );
+    node.querySelector(".toast-close").addEventListener("click", () => dismiss());
+    region.appendChild(node);
+
+    let timer;
+    function dismiss() {
+      node.classList.add("hide");
+      setTimeout(() => node.remove(), 220);
+      clearTimeout(timer);
+    }
+    const auto = opts.duration ?? (type === "success" ? 4200 : 6000);
+    if (auto > 0) timer = setTimeout(dismiss, auto);
+    return { node, dismiss };
+  }
+
+  /* ------------------------------- Modal ---------------------------------- */
+  const modal = {
+    focusSentinel: null,
+    overlay: null,
+    panel: null,
+    lastFocus: null,
+    open({ title, body, size = "", footer = "", onClose }) {
+      this.close(true);
+      this.lastFocus = document.activeElement;
+
+      const overlay = JONE.el("div", { class: "modal-backdrop", "data-close": "" });
+      const closeBtn = JONE.el("button", {
+        class: "modal-close", "aria-label": "Close dialog",
+        innerHTML: JONE.icons.get("x")
+      });
+      const panel = JONE.el("div", {
+        class: `modal-panel ${size}`,
+        role: "dialog", "aria-modal": "true", tabindex: "-1"
+      },
+        JONE.el("div", { class: "modal-head" },
+          JONE.el("h3", { class: "h4", textContent: title }),
+          closeBtn),
+        JONE.el("div", { class: "modal-body" }, body),
+        footer ? JONE.el("div", { class: "modal-foot no-print", style: "padding:1.25rem 1.5rem" }, footer) : null
+      );
+
+      const wrapper = JONE.el("div", { class: "modal" }, overlay, panel);
+      document.body.appendChild(wrapper);
+      requestAnimationFrame(() => wrapper.classList.add("open"));
+      document.body.classList.add("modal-open");
+
+      const close = () => this.close(false);
+      overlay.addEventListener("click", close);
+      closeBtn.addEventListener("click", close);
+
+      const keydown = (e) => {
+        if (e.key === "Escape") { e.stopPropagation(); close(); return; }
+        if (e.key === "Tab") {
+          const focusables = panel.querySelectorAll("button, [href], input, select, textarea, [tabindex]:not([tabindex='-1'])");
+          if (!focusables.length) return;
+          const first = focusables[0], last = focusables[focusables.length - 1];
+          if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+          else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+          else if (!panel.contains(document.activeElement)) { e.preventDefault(); first.focus(); }
+        }
+      };
+      document.addEventListener("keydown", keydown);
+
+      this.wrapper = wrapper;
+      this.onClose = onClose;
+      this.keydown = keydown;
+      (typeof window.joneModalCleanup === "function") && window.joneModalCleanup.focus();
+      closeBtn.focus();
+    },
+    close(silent = false) {
+      if (!this.wrapper) return;
+      this.wrapper.classList.remove("open");
+      document.body.classList.remove("modal-open");
+      document.removeEventListener("keydown", this.keydown);
+      setTimeout(() => this.wrapper.remove(), 200);
+      this.wrapper = null;
+      if (!silent && this.onClose) this.onClose();
+      if (this.lastFocus && this.lastFocus.focus) this.lastFocus.focus();
+    }
+  };
+
+  /* --------------------------- Confirmation ------------------------------- */
+  function confirm({ title = "Are you sure?", message = "", confirmText = "Confirm", cancelText = "Back", danger = false }) {
+    return new Promise((resolve) => {
+      const confirmBtn = JONE.el("button", {
+        class: `btn ${danger ? "btn-danger" : ""}`, textContent: confirmText
+      });
+      const cancelBtn = JONE.el("button", { class: "btn btn-outline", textContent: cancelText });
+      const body = JONE.el("div", { class: "confirm-content" },
+        JONE.el("div", { class: "confirm-icon", innerHTML: JONE.icons.get(danger ? "alertTriangle" : "checkCircle") }),
+        message ? JONE.el("p", { textContent: message }) : null,
+        JONE.el("div", { class: "confirm-actions" }, cancelBtn, confirmBtn)
+      );
+      modal.open({ title, body, onClose: () => resolve(false) });
+      cancelBtn.addEventListener("click", () => { modal.close(); resolve(false); });
+      confirmBtn.addEventListener("click", () => { modal.close(); resolve(true); });
+    });
+  }
+
+  /* ------------------------------ Lightbox -------------------------------- */
+  const lightbox = {
+    items: [],
+    index: 0,
+    wrap: null,
+    open(items, index = 0) {
+      this.items = items;
+      this.index = index;
+      this.render();
+    },
+    render() {
+      if (!this.wrap || !this.wrap.parentNode) {
+        if (this.wrap) this.wrap.remove();
+        this.wrap = this.build();
+      }
+      const item = this.items[this.index];
+      this.wrap.classList.add("open");
+      document.body.classList.add("modal-open");
+
+      let media;
+      if (item.type === "video") {
+        media = JONE.el("video", { src: item.src, controls: "", autoplay: "", playsinline: "" });
+      } else {
+        media = JONE.el("img", { src: item.src, alt: item.caption || "" });
+      }
+      const stage = this.wrap.querySelector(".lightbox-stage");
+      stage.innerHTML = "";
+      stage.appendChild(media);
+      this.wrap.querySelector(".lightbox-caption").textContent = item.caption || "";
+      this.wrap.querySelector(".lightbox-counter").textContent = this.items.length > 1
+        ? `${this.index + 1} / ${this.items.length}` : "";
+      this.wrap.querySelector(".lightbox-nav.prev").style.display = this.items.length > 1 ? "" : "none";
+      this.wrap.querySelector(".lightbox-nav.next").style.display = this.items.length > 1 ? "" : "none";
+      this.wrap.querySelector(".lightbox-close").focus();
+    },
+    build() {
+      const closeBtn = JONE.el("button", { class: "lightbox-btn", "aria-label": "Close", innerHTML: JONE.icons.get("x") });
+      const prevBtn = JONE.el("button", { class: "lightbox-btn lightbox-nav prev", "aria-label": "Previous", innerHTML: JONE.icons.get("chevronLeft") });
+      const nextBtn = JONE.el("button", { class: "lightbox-btn lightbox-nav next", "aria-label": "Next", innerHTML: JONE.icons.get("chevronRight") });
+      const wrap = JONE.el("div", { class: "lightbox" },
+        JONE.el("div", { class: "lightbox-top" },
+          JONE.el("span", { class: "lightbox-counter" }),
+          closeBtn),
+        JONE.el("div", { class: "lightbox-stage" }),
+        JONE.el("div", { class: "lightbox-caption" })
+      );
+      wrap.appendChild(prevBtn);
+      wrap.appendChild(nextBtn);
+
+      const self = this;
+      closeBtn.addEventListener("click", () => self.close());
+      prevBtn.addEventListener("click", () => self.nav(-1));
+      nextBtn.addEventListener("click", () => self.nav(1));
+      wrap.addEventListener("click", (e) => { if (e.target === wrap) self.close(); });
+      const keydown = (e) => {
+        if (e.key === "Escape") { self.close(); }
+        else if (e.key === "ArrowLeft") self.nav(-1);
+        else if (e.key === "ArrowRight") self.nav(1);
+      };
+      document.addEventListener("keydown", keydown);
+      wrap._keydown = keydown;
+      return wrap;
+    },
+    nav(dir) {
+      if (this.items.length < 2) return;
+      this.index = (this.index + dir + this.items.length) % this.items.length;
+      this.render();
+    },
+    close() {
+      if (this.wrap) {
+        this.wrap.classList.remove("open");
+        document.body.classList.remove("modal-open");
+        document.removeEventListener("keydown", this.wrap._keydown);
+        setTimeout(() => this.wrap.remove(), 200);
+        this.wrap = null;
+      }
+    }
+  };
+
+  /* ------------------------------ Accordions ------------------------------ */
+  function initAccordions(root = document) {
+    root.querySelectorAll(".accordion").forEach((acc) => {
+      acc.querySelectorAll(".accordion-item").forEach((item) => {
+        const btn = item.querySelector(".accordion-btn");
+        const panel = item.querySelector(".accordion-panel");
+        if (!btn || !panel) return;
+        btn.setAttribute("aria-expanded", item.classList.contains("open") ? "true" : "false");
+        if (item.classList.contains("open")) panel.style.maxHeight = panel.scrollHeight + "px";
+        btn.addEventListener("click", () => {
+          const isOpen = item.classList.contains("open");
+          acc.querySelectorAll(".accordion-item.open").forEach((o) => {
+            o.classList.remove("open");
+            const p = o.querySelector(".accordion-panel");
+            p.style.maxHeight = "";
+            o.querySelector(".accordion-btn").setAttribute("aria-expanded", "false");
+          });
+          if (!isOpen) {
+            item.classList.add("open");
+            panel.style.maxHeight = panel.scrollHeight + "px";
+            btn.setAttribute("aria-expanded", "true");
+          }
+        });
+      });
+    });
+  }
+
+  /* --------------------------- Shared data loader ------------------------- */
+  // Central component-injection used at the bottom of every page.
+  function initChrome() {
+    JONE.icons.inject(document);
+    JONE.theme.init();
+    initAccordions(document);
+    return { theme: JONE.theme, icons: JONE.icons, modal, toast };
+  }
+
+  window.JONE.ui = { toast, modal, confirm, lightbox, initAccordions, initChrome };
+})();
