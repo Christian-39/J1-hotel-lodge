@@ -87,12 +87,22 @@ WSGI_APPLICATION = "config.wsgi.application"
 # ---------------------------------------------------------------------------
 # Database (default SQLite; overridden per-environment)
 # ---------------------------------------------------------------------------
-DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.sqlite3",
-        "NAME": BASE_DIR / "db.sqlite3",
-    }
+_DEFAULT_DB = {
+    "ENGINE": config("DB_ENGINE", default="django.db.backends.sqlite3"),
+    "NAME": config("DB_NAME", default=BASE_DIR / "db.sqlite3"),
+    "USER": config("DB_USER", default=""),
+    "PASSWORD": config("DB_PASSWORD", default=""),
+    "HOST": config("DB_HOST", default=""),
+    "PORT": config("DB_PORT", default=""),
+    "CONN_MAX_AGE": 60,
+    "CONN_HEALTH_CHECKS": True,
 }
+
+# STRICT_TRANS_TABLES is MySQL-only; SQLite rejects the SET statement.
+if "mysql" in _DEFAULT_DB["ENGINE"]:
+    _DEFAULT_DB["OPTIONS"] = {"init_command": "SET sql_mode='STRICT_TRANS_TABLES'"}
+
+DATABASES = {"default": _DEFAULT_DB}
 
 # ---------------------------------------------------------------------------
 # Authentication
