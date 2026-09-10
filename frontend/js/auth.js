@@ -28,14 +28,20 @@
 
   function storeSession(data) {
     // Keep tokens in sessionStorage (cleared on tab close) and profile in localStorage.
-    const { access, refresh, token, ...rest } = data || {};
-    const cred = { access: access || token || null, refresh: refresh || null };
+    // Normalize both contract shapes: flat {access, refresh, user...} and the
+    // backend's nested {user, tokens: {access, refresh}}.
+    const d = data || {};
+    const tokens = d.tokens || d;
+    const access = tokens.access || tokens.token || null;
+    const refresh = tokens.refresh || null;
+    const user = d.user || d;
+    const cred = { access, refresh };
     try { sessionStorage.setItem(SESSION_KEY, JSON.stringify(cred)); } catch (_) {}
-    JONE.storage.set(KEY, rest.user || rest);
-    Object.assign(state, rest.user || rest);
-    state.user = rest.user || rest;
-    state.role = normalizeRole(rest.user, rest.role);
-    state.permissions = (rest.user && rest.user.permissions) || rest.permissions || [];
+    JONE.storage.set(KEY, user);
+    Object.assign(state, user);
+    state.user = user;
+    state.role = normalizeRole(user, d.role);
+    state.permissions = (user && user.permissions) || d.permissions || [];
   }
 
   function clearSession() {
@@ -91,12 +97,13 @@
       // API.setRefreshProvider(null) instead.
       const res = await window.API.post("/api/auth/refresh/", { refresh: refreshToken }, { auth: false });
       const data = res.data || {};
-      const access = data.access || data.token;
+      const tokens = data.tokens || data; // nested {tokens:{...}} or flat
+      const access = tokens.access || tokens.token;
       if (!access) return false;
       try {
         const cur = JSON.parse(sessionStorage.getItem(SESSION_KEY) || "{}");
         cur.access = access;
-        if (data.refresh) cur.refresh = data.refresh;
+        if (tokens.refresh) cur.refresh = tokens.refresh;
         sessionStorage.setItem(SESSION_KEY, JSON.stringify(cur));
       } catch (_) {}
       return true;
@@ -135,8 +142,8 @@
     }
   }
 
-  async function login(username, password) {
-    const res = await window.API.login({ username, password });
+  async function login(email, password) {
+    const res = await window.API.login({ email, password });
     storeSession(res.data);
     setAPITokenProvider();
     return res.data;
@@ -178,16 +185,18 @@
       const btn = form.querySelector("[type=submit]");
       if (!JONE.guardSubmit(btn)) return;
       const fd = new FormData(form);
-      const username = (fd.get("username") || "").trim();
+      // The backend authenticates by email (User.USERNAME_FIELD = "email"),
+      // so accept the identifier from either field name.
+      const email = (fd.get("email") || fd.get("username") || "").trim();
       const password = fd.get("password") || "";
       try {
-        await login(username, password);
+        await login(email, password);
         JONE.ui.toast("Welcome back.", "success");
         const next = new URLSearchParams(location.search).get("next") || "/dashboard/";
         location.href = next;
       } catch (err) {
         JONE.releaseGuard(btn);
-        const msg = err.status === 401 ? "Incorrect username or password." : err.message;
+        const msg = err.status === 401 ? "Incorrect email or password." : err.message;
         JONE.ui.toast(msg, "error");
         const errBox = form.querySelector("[data-form-error]");
         if (errBox) { errBox.textContent = msg; errBox.style.display = "block"; }

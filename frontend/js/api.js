@@ -49,6 +49,12 @@ const API = (() => {
 
   // Map HTTP status codes to human-friendly, non-technical messages.
   function friendlyMessage(status, data) {
+    // Field-level errors first: "Email: This field is required."
+    if (data && data.errors && typeof data.errors === "object") {
+      const parts = Object.entries(data.errors).map(([k, v]) =>
+        `${k.charAt(0).toUpperCase() + k.slice(1)}: ${Array.isArray(v) ? v[0] : v}`);
+      if (parts.length) return parts.join(" ");
+    }
     const dmsg = data && (data.detail || data.message || data.error);
     if (dmsg && typeof dmsg === "string" && !TOKEN_RE.test(dmsg)) return dmsg;
     switch (status) {
@@ -294,7 +300,11 @@ const API = (() => {
     submitEnquiry,
     // Auth endpoints (wired by auth.js)
     login: (payload, opts = {}) => post("/api/auth/login/", payload, { auth: false, ...opts }),
-    logout: (opts = {}) => post("/api/auth/logout/", {}, opts),
+    logout: (opts = {}) => {
+      let refresh = null;
+      try { refresh = JSON.parse(sessionStorage.getItem(SESSION_KEY) || "{}").refresh; } catch (_) {}
+      return post("/api/auth/logout/", refresh ? { refresh } : {}, opts);
+    },
     me: (opts = {}) => get("/api/auth/me/", opts),
     setTokenProvider, setRefreshProvider, APIError, BASE,
     normalizeList, safe,
