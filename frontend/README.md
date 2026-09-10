@@ -67,7 +67,7 @@ frontend/
 │   ├── site.js           # public page controllers (availability search, reveal)
 │   └── dashboard.js      # staff dashboard shared behaviours + nav + loading/empty/error states
 ├── assets/
-│   ├── icons/            # logo-mark.svg, logo-light/dark, watermark, spinner
+│   ├── icons/            # logo-dark.svg, logo-light/dark, watermark, spinner
 │   └── images/           # photography (placeholders until authentic shots are supplied)
 ├── favicon/              # official favicons (supplied)
 ├── robots.txt
@@ -218,7 +218,7 @@ choice is made. A `preload-theme` class on `<html>` avoids any flash of the wron
 
 ## Logo / branding
 
-The site uses the **official** `assets/icons/logo-mark.svg` (a pure-vector mark) in the header,
+The site uses the **official** `assets/icons/logo-dark.svg` (a pure-vector mark) in the header,
 footer and the staff console, rendered at its intrinsic aspect ratio (never stretched, cropped,
 recoloured or re-drawn) next to an HTML/CSS "J·ONE" wordmark that adapts to the active theme via
 CSS variables.
