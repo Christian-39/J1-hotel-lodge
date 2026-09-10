@@ -17,6 +17,15 @@
 
   const ROLES = { ADMIN: "admin", MANAGER: "manager", RECEPTIONIST: "receptionist", STAFF: "staff" };
 
+  /* Normalize whatever role shape the backend sends into our lowercase set.
+     Django superusers may carry is_superuser without an explicit role. */
+  function normalizeRole(user, role) {
+    const u = user || {};
+    if (u.is_superuser) return "admin";
+    const raw = u.role || role || null;
+    return raw ? String(raw).toLowerCase() : null;
+  }
+
   function storeSession(data) {
     // Keep tokens in sessionStorage (cleared on tab close) and profile in localStorage.
     const { access, refresh, token, ...rest } = data || {};
@@ -25,7 +34,7 @@
     JONE.storage.set(KEY, rest.user || rest);
     Object.assign(state, rest.user || rest);
     state.user = rest.user || rest;
-    state.role = (rest.user && rest.user.role) || rest.role || null;
+    state.role = normalizeRole(rest.user, rest.role);
     state.permissions = (rest.user && rest.user.permissions) || rest.permissions || [];
   }
 
@@ -43,7 +52,9 @@
     // Receptionist < Manager < Admin
     if (!state.role) return false;
     const order = { receptionist: 1, staff: 1, manager: 2, admin: 3 };
-    return (order[state.role] || 0) >= (order[minRole] || 99);
+    const role = String(state.role).toLowerCase();
+    const needed = String(minRole || "").toLowerCase();
+    return (order[role] || 0) >= (order[needed] || 99);
   }
 
   function can(perm) {
@@ -118,15 +129,14 @@
       const profile = JONE.storage.get(KEY, null);
       if (profile) {
         state.user = profile.user || profile;
-        state.role = state.user.role || profile.role || null;
+        state.role = normalizeRole(state.user, profile.role);
         state.permissions = state.user.permissions || profile.permissions || [];
       }
     }
   }
 
-  async function login(email, password) {
-    // The backend authenticates by email (custom User model), not username.
-    const res = await window.API.login({ email, password });
+  async function login(username, password) {
+    const res = await window.API.login({ username, password });
     storeSession(res.data);
     setAPITokenProvider();
     return res.data;
