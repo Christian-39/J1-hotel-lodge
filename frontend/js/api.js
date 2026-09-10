@@ -125,6 +125,13 @@ const API = (() => {
         data = await res.text().catch(() => null);
       }
 
+      // Unwrap the backend's { success, code, message, data } envelope so the
+      // rest of the frontend works with the payload directly. Error bodies
+      // are passed through untouched (they carry `message`/`errors`).
+      if (res.ok && data && typeof data === "object" && data.success === true && "data" in data) {
+        data = data.data;
+      }
+
       if (!res.ok) {
         throw new APIError(res.status, friendlyMessage(res.status, data), data);
       }

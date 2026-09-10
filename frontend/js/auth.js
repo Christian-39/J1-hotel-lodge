@@ -124,8 +124,9 @@
     }
   }
 
-  async function login(username, password) {
-    const res = await window.API.login({ username, password });
+  async function login(email, password) {
+    // The backend authenticates by email (custom User model), not username.
+    const res = await window.API.login({ email, password });
     storeSession(res.data);
     setAPITokenProvider();
     return res.data;
