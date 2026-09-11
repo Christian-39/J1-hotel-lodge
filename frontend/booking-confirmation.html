@@ -1,6 +1,3 @@
-
-
-
 <!DOCTYPE html>
 <html lang="en" data-theme="light">
 <head>
@@ -14,63 +11,7 @@
 <link rel="apple-touch-icon" href="favicon/apple-touch-icon.png">
 <link rel="stylesheet" href="css/main.css">
 <script>(function(){var t;try{t=JSON.parse(localStorage.getItem("jone.theme"))}catch(e){}if(t!=="dark"&&t!=="light"){t=(window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches)?"dark":"light"}document.documentElement.setAttribute("data-theme",t);})();</script>
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+<base target="_blank">
 </head>
 <body>
 <a class="skip-link" href="#main">Skip to content</a>
@@ -267,10 +208,9 @@
 <script>
 (function () {
   "use strict";
-  /* Verified contract flow:
-     1. step=payment  -> requires sign-in (booking creation is authenticated);
-         create booking (backend prices it) -> initialize payment -> redirect
-         to the provider's authorization_url.
+  /* Guest checkout flow (no login required to book or pay):
+     1. step=payment  -> create booking (backend prices it) -> initialize
+         payment -> redirect to the provider's authorization_url.
      2. ?ref=J1-...   -> view an existing booking; the backend alone decides
          status/payment; "Pay" only when can_pay && amount_due > 0.
      Success is only ever shown from backend-confirmed data. */
@@ -292,12 +232,6 @@
     ["payment-screen","payment-loading","success-screen","failure-screen"].forEach(function(s){ document.getElementById(s).style.display = (s===id ? "block":"none"); });
   }
   function setColl(sel, val){ var n=document.querySelector(sel); if(n) n.textContent=val; }
-
-  function requireAuth() {
-    if (window.Auth.isAuthenticated()) return true;
-    location.replace("/login.html?next=" + encodeURIComponent(location.pathname + location.search));
-    return false;
-  }
 
   /* ------------------------- receipt / folio ------------------------- */
   function fillReceipt(source) {
@@ -434,9 +368,6 @@
       var p2 = document.querySelector("#failure-screen .confirm-hero p");
       if (err && err.status === 409) {
         if (p2) p2.textContent = "The room you selected is no longer available for those dates. Please choose another room.";
-      } else if (err && err.status === 401) {
-        if (p2) p2.textContent = "Please sign in to complete your booking.";
-        location.replace("/login.html?next=" + encodeURIComponent(location.pathname + location.search));
       } else if (err && err.status === 0) {
         if (p2) p2.textContent = "We can't reach the booking service right now. Please try again in a moment, or contact the hotel.";
       } else {
@@ -451,10 +382,11 @@
 
   /* ------------------------- entry points ------------------------- */
   (async function init() {
+    show("payment-loading");
     if (bookingRef) {
       // Viewing an existing booking — entirely backend-authoritative.
-      if (!requireAuth()) return;
-      show("payment-loading");
+      // Guest checkout: no login wall here; guests returning from the
+      // payment provider must land straight on their booking.
       try {
         var res = await window.API.getBooking(bookingRef);
         booking = res.data || {};
@@ -482,7 +414,6 @@
 
     if (step === "payment") {
       if (!criteria.check_in || !criteria.room) { location.replace("booking.html"); return; }
-      if (!requireAuth()) return;
       // Public quote for the pay-screen estimate; the total is fixed by the
       // backend when the booking is actually created.
       try {
