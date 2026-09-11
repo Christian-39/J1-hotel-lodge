@@ -14,7 +14,7 @@
 <div class="dash">
   <aside class="dash-sidebar" aria-label="Staff navigation">
     <div class="dash-sidebar-brand">
-      <img src="../assets/icons/logo-dark.svg" alt="" width="30" height="42">
+      <img src="../assets/icons/logo-official.svg" alt="" width="30" height="42">
       <span>
         <span class="brand-word">J-ONE</span><br>
         <span class="brand-sub">Staff Console</span>
@@ -49,36 +49,38 @@
 <section class="panel">
   <div class="filter-bar">
     <label class="field-label" style="align-self:center;">Period:</label>
-    <div class="field"><select class="select" id="rp-range"><option>Today</option><option>Yesterday</option><option>This week</option><option selected>This month</option><option>Custom</option></select></div>
+    <div class="field"><select class="select" id="rp-range"><option value="7">Last 7 days</option><option value="30" selected>Last 30 days</option><option value="90">Last 90 days</option><option value="365">Last 12 months</option><option value="custom">Custom</option></select></div>
     <div class="field"><label class="field-label" for="rp-from">From</label><input class="input" type="date" id="rp-from"></div>
     <div class="field"><label class="field-label" for="rp-to">To</label><input class="input" type="date" id="rp-to"></div>
+    <div class="field"><button class="btn btn-sm" id="rp-apply" type="button">Apply</button></div>
   </div>
   <div class="panel-body">
     <div class="kpi-grid">
-      <div class="kpi"><div class="kpi-label">Revenue</div><div class="kpi-value">₦1.28m</div><div class="kpi-sub"><span class="up">▲ 12%</span> vs last month</div></div>
-      <div class="kpi"><div class="kpi-label">Bookings</div><div class="kpi-value">46</div><div class="kpi-sub">38 online · 8 manual</div></div>
-      <div class="kpi"><div class="kpi-label">Occupancy</div><div class="kpi-value">78%</div><div class="kpi-sub">available 4 · occupied 12</div></div>
-      <div class="kpi"><div class="kpi-label">Outstanding</div><div class="kpi-value">₦96,500</div><div class="kpi-sub">3 partial payments</div></div>
+      <div class="kpi"><div class="kpi-label">Revenue</div><div class="kpi-value" data-rp="revenue">--</div><div class="kpi-sub" data-rp="revenue-sub">&nbsp;</div></div>
+      <div class="kpi"><div class="kpi-label">Bookings</div><div class="kpi-value" data-rp="bookings">--</div><div class="kpi-sub" data-rp="bookings-sub">&nbsp;</div></div>
+      <div class="kpi"><div class="kpi-label">Avg occupancy</div><div class="kpi-value" data-rp="occupancy">--</div><div class="kpi-sub" data-rp="occupancy-sub">&nbsp;</div></div>
+      <div class="kpi"><div class="kpi-label">Refunds</div><div class="kpi-value" data-rp="refunds">--</div><div class="kpi-sub" data-rp="refunds-sub">&nbsp;</div></div>
     </div>
 
     <div class="panel-grid" style="margin-top:1.5rem;">
       <section class="panel" style="border:1px solid var(--color-border);">
-        <div class="panel-head"><h3>Revenue by method</h3></div>
+        <div class="panel-head"><h3>Revenue by payment method</h3></div>
         <div class="panel-body no-pad"><div class="table-wrap"><table class="table">
-          <thead><tr><th>Method</th><th>Amount</th><th class="hide-sm">Share</th></tr></thead>
+          <thead><tr><th>Method</th><th>Amount</th><th class="hide-sm">Transactions</th></tr></thead>
           <tbody data-tbody="report-methods"></tbody>
         </table></div></div>
       </section>
       <section class="panel" style="border:1px solid var(--color-border);">
-        <div class="panel-head"><h3>Bookings summary</h3></div>
+        <div class="panel-head"><h3>Bookings by status</h3></div>
         <div class="panel-body no-pad"><div class="table-wrap"><table class="table">
-          <thead><tr><th>Metric</th><th>Count</th></tr></thead>
+          <thead><tr><th>Status</th><th>Count</th></tr></thead>
           <tbody data-tbody="report-bookings"></tbody>
         </table></div></div>
       </section>
     </div>
     <div style="margin-top:1.5rem;display:flex;gap:0.75rem;">
       <button class="btn btn-sm btn-outline" id="export-csv" type="button"><span data-icon="download" data-size="16"></span> Export CSV</button>
+      <span class="caption" style="align-self:center;">Exports the report data currently shown above.</span>
     </div>
   </div>
 </section>
@@ -92,60 +94,115 @@
 <script src="../js/theme.js"></script>
 <script src="../js/ui.js"></script>
 <script src="../js/auth.js"></script>
+<script src="../js/hotel-data.js"></script>
 <script src="../js/navigation.js"></script>
 <script src="../js/dashboard.js"></script>
 <script>
   JONE.ui.initChrome();
   JONE.nav.initDashboardNav();
-  JONE.dashboard.boot("receptionist");
+  JONE.dashboard.boot("manager");
   document.querySelector("[data-logout]") && document.querySelector("[data-logout]").addEventListener("click", function(){ window.Auth.logout(); });
 
 (function(){
   var DATA=JONE.dashboard.DATA;
   var mt=document.querySelector("[data-tbody=report-methods]");
   var bt=document.querySelector("[data-tbody=report-bookings]");
+  var range=document.getElementById("rp-range");
+  var fromEl=document.getElementById("rp-from");
+  var toEl=document.getElementById("rp-to");
+  var latest={ revenue:null, bookings:null, occupancy:null };
 
-  function renderReport(r){
-    if(!r) return;
-    // Payment methods breakdown — backend values only.
-    if(mt){
-      var methods=(r.payment_methods||r.payments_by_method||r.methods||[]);
-      mt.innerHTML = methods.length ? methods.map(function(x){
-        return '<tr><td>'+JONE.esc(x.method||x.m||x.name)+'</td><td class="num">'+JONE.formatNaira(x.amount||x.total||x.a||0)+'</td><td class="hide-sm">'+(x.share||x.percentage||x.s||"")+'</td></tr>';
-      }).join("") : '<tr><td colspan="3"><div class="empty-state"><h3>No payment data</h3></div></td></tr>';
-    }
-    // Booking summary metrics — backend values only.
-    if(bt){
-      var bookings=(r.booking_metrics||r.bookings||[]);
-      bt.innerHTML = bookings.length ? bookings.map(function(x){
-        return '<tr><td>'+JONE.esc(x.label||x.metric||x[0])+'</td><td class="num">'+JONE.esc(x.count!=null?x.count:x.value)+'</td></tr>';
-      }).join("") : '<tr><td colspan="2"><div class="empty-state"><h3>No report data</h3></div></td></tr>';
-    }
+  function setKpi(name,val){ document.querySelectorAll("[data-rp="+name+"]").forEach(function(el){ el.textContent=(val==null||val==="")?"--":val; }); }
+
+  function defaultDates(){
+    var days=Number((range&&range.value)||30);
+    var to=new Date(), from=new Date();
+    if(range && range.value==="custom"){ /* keep user dates */ }
+    else { from.setDate(to.getDate()-(days-1)); }
+    return { from: from.toISOString().slice(0,10), to: to.toISOString().slice(0,10) };
   }
 
+  function activeDates(){
+    if(range && range.value==="custom" && fromEl.value && toEl.value) return { from:fromEl.value, to:toEl.value };
+    return defaultDates();
+  }
+
+  /* Verified endpoints (MANAGER+):
+     /api/admin/reports/revenue/    {grand_total, transactions, refunds{total,count}, by_provider[], by_day[]}
+     /api/admin/reports/occupancy/  {active_rooms, occupied_room_nights, average_occupancy_percent, by_day[]}
+     /api/admin/reports/bookings/   {total_bookings, cancelled, no_shows, cancellation_rate_percent, by_status[], by_payment_status[], by_room_type[]} */
   async function load(){
-    if(mt){ DATA.loading(mt); }
+    var d=activeDates();
+    var params={ start_date:d.from, end_date:d.to };
+    if(mt) DATA.loading(mt,3);
+    if(bt) DATA.loading(bt,2);
+    // Revenue
     try{
-      var res=await window.API.list("reports");
-      renderReport(res.data);
-    }catch(err){ if(mt){ DATA.error(mt,"Report couldn't be loaded","Please try again in a moment.",3,true);} }
+      var rev=await window.API.get(window.JONE && window.APP_CONFIG.API_ENDPOINTS.reportsRevenue, { params:params });
+      latest.revenue=rev.data||{};
+      setKpi("revenue", JONE.formatNaira(latest.revenue.grand_total));
+      setKpi("revenue-sub", (latest.revenue.transactions||0)+" transactions");
+      setKpi("refunds", JONE.formatNaira(latest.revenue.refunds && latest.revenue.refunds.total));
+      setKpi("refunds-sub", ((latest.revenue.refunds && latest.revenue.refunds.count)||0)+" refund"+(((latest.revenue.refunds && latest.revenue.refunds.count)||0)===1?"":"s"));
+      var providers=(latest.revenue.by_provider)||[];
+      mt.innerHTML = providers.length ? providers.map(function(x){
+        return '<tr><td>'+JONE.esc(String(x.provider||"—").replace(/_/g," ").toLowerCase())+'</td><td class="num">'+JONE.esc(JONE.formatNaira(x.total))+'</td><td class="hide-sm num">'+JONE.esc(x.transactions!=null?x.transactions:"—")+'</td></tr>';
+      }).join("") : '<tr><td colspan="3"><div class="empty-state"><h3>No payments in this period</h3></div></td></tr>';
+    }catch(err){
+      if(mt) DATA.error(mt,"Revenue report couldn't be loaded",(err&&err.status===403?"Reports require a manager or admin account.":"Please try again in a moment."),3);
+    }
+    // Bookings
+    try{
+      var bk=await window.API.get(window.APP_CONFIG.API_ENDPOINTS.reportsBookings, { params:params });
+      latest.bookings=bk.data||{};
+      setKpi("bookings", latest.bookings.total_bookings!=null?latest.bookings.total_bookings:"--");
+      setKpi("bookings-sub", (latest.bookings.cancelled||0)+" cancelled · "+(latest.bookings.no_shows||0)+" no-shows");
+      var byStatus=(latest.bookings.by_status)||[];
+      bt.innerHTML = byStatus.length ? byStatus.map(function(x){
+        return '<tr><td>'+JONE.esc(String(x.status||"—").toLowerCase().replace(/_/g," "))+'</td><td class="num">'+JONE.esc(x.count!=null?x.count:"—")+'</td></tr>';
+      }).join("") : '<tr><td colspan="2"><div class="empty-state"><h3>No bookings in this period</h3></div></td></tr>';
+    }catch(err){
+      if(bt) DATA.error(bt,"Bookings report couldn't be loaded",(err&&err.status===403?"Reports require a manager or admin account.":"Please try again in a moment."),2);
+    }
+    // Occupancy
+    try{
+      var occ=await window.API.get(window.APP_CONFIG.API_ENDPOINTS.reportsOccupancy, { params:params });
+      latest.occupancy=occ.data||{};
+      setKpi("occupancy", (latest.occupancy.average_occupancy_percent!=null?latest.occupancy.average_occupancy_percent+"%":"--"));
+      setKpi("occupancy-sub", (latest.occupancy.active_rooms||0)+" active rooms · "+(latest.occupancy.occupied_room_nights||0)+" occupied room-nights");
+    }catch(err){ setKpi("occupancy","--"); setKpi("occupancy-sub",""); }
   }
   load();
 
-  // Export is a backend action; success only on server confirmation.
+  var applyBtn=document.getElementById("rp-apply");
+  if(applyBtn) applyBtn.addEventListener("click", function(){ if(range.value==="custom" && (!fromEl.value||!toEl.value)){ JONE.ui.toast("Choose both dates for a custom range.","warning"); return; } load(); });
+  if(range) range.addEventListener("change", function(){
+    var custom=range.value==="custom";
+    if(fromEl) fromEl.disabled=!custom;
+    if(toEl) toEl.disabled=!custom;
+    if(!custom){ if(fromEl) fromEl.value=""; if(toEl) toEl.value=""; load(); }
+  });
+  if(fromEl) fromEl.disabled=true;
+  if(toEl) toEl.disabled=true;
+
+  // CSV export formats the REAL data already loaded on this page (no backend
+  // export endpoint exists in the contract — this is local formatting only).
   var exportBtn=document.getElementById("export-csv");
-  if(exportBtn) exportBtn.addEventListener("click", async function(){
-    if(!JONE.guardSubmit(exportBtn)) return;
-    try{
-      exportBtn.disabled=true;
-      var res=await window.API.list("reports", { format:"csv", _export:true });
-      var url=(res.data&&(res.data.url||res.data.file_url||res.data.download_url));
-      if(url){ window.location.href=url; JONE.ui.toast("Export ready to download.","success"); }
-      else { JONE.ui.toast("Export generated.","success"); }
-    }catch(err){
-      exportBtn.disabled=false; JONE.releaseGuard(exportBtn);
-      JONE.ui.toast(err&&err.status===0?err.message:"Couldn't export the report. Please try again.","error");
-    }
+  if(exportBtn) exportBtn.addEventListener("click", function(){
+    function rowsToCsv(rows){ return rows.map(function(r){ return r.map(function(c){ c=String(c==null?"":c); return (/[",\n]/.test(c)) ? '"'+c.replace(/"/g,'""')+'"' : c; }).join(","); }).join("\n"); }
+    var lines=[["J-ONE HOTEL & LODGE — Report"],["Period", activeDates().from, activeDates().to],[]];
+    if(latest.revenue){ lines.push(["Revenue"]); lines.push(["Grand total",latest.revenue.grand_total||""]); lines.push(["Transactions",latest.revenue.transactions||""]); lines.push(["Refunds",latest.revenue.refunds&&latest.revenue.refunds.total||"",latest.revenue.refunds&&latest.revenue.refunds.count||0]); lines.push([]); }
+    if(latest.revenue&&latest.revenue.by_provider){ lines.push(["Revenue by method","Amount","Transactions"]); (latest.revenue.by_provider||[]).forEach(function(x){ lines.push([x.provider,x.total,x.transactions]); }); lines.push([]); }
+    if(latest.bookings){ lines.push(["Bookings"]); lines.push(["Total",latest.bookings.total_bookings||""]); lines.push(["Cancelled",latest.bookings.cancelled||""]); lines.push(["No-shows",latest.bookings.no_shows||""]); lines.push([]); }
+    if(latest.bookings&&latest.bookings.by_status){ lines.push(["Status","Count"]); (latest.bookings.by_status||[]).forEach(function(x){ lines.push([x.status,x.count]); }); lines.push([]); }
+    if(latest.occupancy){ lines.push(["Occupancy"]); lines.push(["Average %",latest.occupancy.average_occupancy_percent||""]); lines.push(["Active rooms",latest.occupancy.active_rooms||""]); }
+    var csv=rowsToCsv(lines);
+    var blob=new Blob([csv],{type:"text/csv"});
+    var a=document.createElement("a");
+    a.href=URL.createObjectURL(blob);
+    a.download="jone-report-"+activeDates().from+"_"+activeDates().to+".csv";
+    document.body.appendChild(a); a.click(); a.remove();
+    JONE.ui.toast("Report exported.","success");
   });
 })();
 

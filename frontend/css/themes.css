@@ -1,49 +1,77 @@
 /* ==========================================================================
    Themes — light / dark.
-   All colors flow from CSS custom properties, so theme = swapping tokens.
+   All colors flow from CSS custom properties, so a theme = swapping tokens.
    The [data-theme] attribute on <html> drives the override.
+
+   DARK SYSTEM (redesigned, GadgetHub-inspired):
+   - deep charcoal base, blue-leaning — never pure black
+   - slightly lighter charcoal surfaces; graphite elevated surfaces
+   - subtle cool slate borders (low contrast against surface, like GadgetHub)
+   - soft off-white text, muted grey secondary text
+   - restrained slate-blue accent; clear success/warning/danger
    ========================================================================== */
 
 html[data-theme="dark"] {
   color-scheme: dark;
 
-  --color-primary: #E9E7E4;
-  --color-primary-hover: #f5f4f2;
-  --color-primary-ink: #1c1b1c;
+  /* Primary control (light button on dark) */
+  --color-primary: #E7EAEE;
+  --color-primary-hover: #F4F6F8;
+  --color-primary-ink: #15181D;
 
-  --color-background: #1B1A1B;
-  --color-surface: #242326;
-  --color-surface-alt: #2B2A2D;
-  --color-surface-deep: #333235;
+  /* Restrained slate-blue accent */
+  --color-accent: #8FB0CB;
+  --color-accent-hover: #A9C6DE;
+  --color-accent-ink: #12161C;
+  --color-accent-soft: rgba(143, 176, 203, 0.13);
 
-  --color-text: #ECEBE9;
-  --color-text-muted: #A7A6A8;
-  --color-text-faint: #7C7B7E;
-  --color-heading: #F4F3F1;
+  /* Neutral ramp: deep charcoal -> graphite */
+  --color-background: #0D0F13;
+  --color-surface: #14171C;
+  --color-surface-alt: #1A1E24;
+  --color-surface-deep: #20252D;
 
-  --color-border: #3A393C;
-  --color-border-strong: #4A494C;
+  --color-text: #E6E9ED;
+  --color-text-muted: #9AA3AF;
+  --color-text-faint: #6C7580;
+  --color-heading: #F1F3F6;
 
-  --color-success: #4FBF8C;
-  --color-success-bg: #123726;
-  --color-warning: #E7B84B;
-  --color-warning-bg: #3A2E12;
-  --color-danger: #F18A82;
-  --color-danger-bg: #3A1C1A;
-  --color-info: #7FB6E4;
-  --color-info-bg: #16304A;
+  --color-border: #262B33;
+  --color-border-strong: #343B45;
+
+  --color-success: #55BE8A;
+  --color-success-bg: #16281F;
+  --color-warning: #D6B36A;
+  --color-warning-bg: #2E2614;
+  --color-danger: #F09187;
+  --color-danger-bg: #38201B;
+  --color-info: #85B4D6;
+  --color-info-bg: #1B2D3D;
 
   --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.4);
   --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.45);
   --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.5);
   --shadow-lg: 0 20px 50px rgba(0, 0, 0, 0.6);
+  --shadow-focus: 0 0 0 3px rgba(143, 176, 203, 0.32);
 }
 
-/* Dark surface retains the charcoal brand even in light mode for hero/footer */
-html[data-theme="dark"] .surface-charcoal {
-  --color-surface: #201F21;
+/* Dark-theme fixes for fixed dark surfaces (footer, page hero, drawer):
+   they must sit subtly against the dark page, separated by borders —
+   never disappear into it, never glow. */
+html[data-theme="dark"] .site-footer {
+  background: #101318;
+  border-top: 1px solid var(--color-border);
+}
+html[data-theme="dark"] .page-hero {
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+}
+html[data-theme="dark"] .mobile-drawer {
+  background: var(--color-surface);
+  border-left: 1px solid var(--color-border);
 }
 
-/* The theme is set early via an inline head snippet (see build.py / shell.py).
-   No body-hiding is used — that could leave the page blank if any script fails.
-   Instead data-theme is applied before first paint to avoid a wrong-theme flash. */
+/* The theme is set early via an inline head snippet (see build.py).
+   No body-hiding is used — that could leave the page blank if any script
+   fails. Instead data-theme is applied before first paint to avoid a
+   wrong-theme flash. */

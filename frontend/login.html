@@ -36,6 +36,40 @@
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 </head>
 <body>
 <a class="skip-link" href="#main">Skip to content</a>
@@ -43,28 +77,37 @@
   <div style="width:100%;max-width:420px;">
     <div class="center" style="margin-bottom:2rem;">
       <a href="index.html" class="brand" style="display:inline-flex;justify-content:center;">
-        <img src="assets/icons/logo-dark.svg" alt="J-ONE Hotel &amp; Lodge" height="64" style="margin:0 auto;">
+        <img src="assets/icons/logo-official.svg" alt="J-ONE Hotel &amp; Lodge" width="22" height="38" style="margin:0 auto;display:block;">
       </a>
-      <h1 style="font-size:var(--fs-xl);margin-top:1rem;">Staff sign in</h1>
-      <p class="muted">Access the J-ONE operations console.</p>
+      <h1 style="font-size:var(--fs-xl);margin-top:1rem;">Sign in</h1>
+      <p class="muted">Staff console &amp; guest bookings.</p>
     </div>
 
     <div class="card card-pad">
       <form id="login-form" novalidate>
         <div class="field">
-          <label class="field-label" for="username">Username</label>
-          <input class="input" id="username" name="username" required autocomplete="username">
-          <div class="field-error">Please enter your username.</div>
+          <label class="field-label" for="email">Email</label>
+          <input class="input" id="email" name="email" type="email" required autocomplete="email">
+          <div class="field-error">Please enter your email.</div>
         </div>
         <div class="field">
           <label class="field-label" for="password">Password</label>
-          <input class="input" id="password" name="password" type="password" required autocomplete="current-password">
+          <div style="position:relative;">
+            <input class="input" id="password" name="password" type="password" required autocomplete="current-password" style="padding-right:2.6rem;">
+            <button class="btn-icon btn-ghost" type="button" id="pw-toggle" aria-label="Show password" aria-pressed="false"
+              style="position:absolute;right:0.15rem;top:50%;transform:translateY(-50%);color:var(--color-text-muted);">
+              <span data-icon="eye" data-size="17"></span>
+            </button>
+          </div>
           <div class="field-error">Please enter your password.</div>
         </div>
         <div class="field-error" data-form-error style="display:none;color:var(--color-danger);margin-bottom:1rem;"></div>
-        <button class="btn btn-block btn-lg" type="submit">Sign in</button>
+        <button class="btn btn-block" type="submit">Sign in</button>
       </form>
       <p class="caption center" style="margin-top:1.5rem;">
+        New guest? <a href="register.html">Create an account</a> to book &amp; manage stays.
+      </p>
+      <p class="caption center" style="margin-top:0.75rem;">
         <a href="index.html">&larr; Back to website</a>
       </p>
     </div>
@@ -78,14 +121,27 @@
 <script src="js/theme.js"></script>
 <script src="js/ui.js"></script>
 <script src="js/auth.js"></script>
-<script>JONE.ui.initChrome();</script>
+<script src="js/hotel-data.js"></script>
+<script src="js/contact.js"></script>
+<script src="js/navigation.js"></script>
 <script>
-  // Redirect logged-in users away from login page.
+  JONE.ui.initChrome();
+  // Already signed in? Skip the form (staff → console, guests → home).
   if (window.Auth.isAuthenticated()) {
-    location.replace("/dashboard/");
+    window.Auth.restore();
+    location.replace(window.Auth.isStaffRole() ? "/dashboard/" : "index.html");
   } else {
     window.Auth.bindLoginForm("#login-form");
   }
+document.getElementById("pw-toggle").addEventListener("click", function () {
+  var inp = document.getElementById("password");
+  var show = inp.type === "password";
+  inp.type = show ? "text" : "password";
+  this.setAttribute("aria-label", show ? "Hide password" : "Show password");
+  this.setAttribute("aria-pressed", show ? "true" : "false");
+  this.innerHTML = '<span data-icon="' + (show ? "eyeOff" : "eye") + '" data-size="17"></span>';
+  JONE.icons.inject(this);
+});
 </script>
 </body>
 </html>

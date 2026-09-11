@@ -36,13 +36,47 @@
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 </head>
 <body>
 <a class="skip-link" href="#main">Skip to content</a>
 <header class="site-header">
   <div class="container header-inner">
     <a href="index.html" class="brand" aria-label="J-ONE Hotel &amp; Lodge — home">
-      <img src="assets/icons/logo-dark.svg" alt="" class="brand-mark" width="44" height="62">
+      <img src="assets/icons/logo-official.svg" alt="" class="brand-mark" width="24" height="34">
       <span>
         <span class="brand-word">J-ONE</span><br>
         <span class="brand-sub">Hotel &amp; Lodge</span>
@@ -64,7 +98,7 @@
         <span class="icon-moon" data-icon="moon" data-size="20"></span>
         <span class="icon-sun" data-icon="sun" data-size="20"></span>
       </button>
-      <a class="btn btn-accent btn-book" href="booking.html">Book Your Stay</a>
+      <a class="btn btn-sm btn-accent btn-book" href="booking.html">Book</a>
       <button class="btn-icon btn-outline menu-toggle" type="button" aria-label="Open menu" aria-expanded="false" data-icon="menu" data-size="22"></button>
     </div>
   </div>
@@ -81,27 +115,9 @@
 
   <section class="section">
     <div class="container container-narrow">
+      <!-- Policy content renders from the backend (GET /api/hotel/policies/) -->
       <div class="accordion" data-policies>
-        <div class="accordion-item open">
-          <button class="accordion-btn" aria-expanded="true">Check-in &amp; check-out <span data-icon="chevronDown" data-size="20"></span></button>
-          <div class="accordion-panel"><div class="accordion-panel-inner">Check-in is from <strong data-policy-checkin>2:00 PM</strong> and check-out is by <strong data-policy-checkout>12:00 PM</strong>. Early check-in and late check-out may be available on request and are subject to availability.</div></div>
-        </div>
-        <div class="accordion-item">
-          <button class="accordion-btn" aria-expanded="false">Cancellation <span data-icon="chevronDown" data-size="20"></span></button>
-          <div class="accordion-panel"><div class="accordion-panel-inner">Free cancellation up to <strong data-policy-cancel>24 hours</strong> before check-in. Cancellations inside this window may be charged. See our <a href="cancellation-policy.html">Cancellation Policy</a> for full details.</div></div>
-        </div>
-        <div class="accordion-item">
-          <button class="accordion-btn" aria-expanded="false">Children &amp; extra guests <span data-icon="chevronDown" data-size="20"></span></button>
-          <div class="accordion-panel"><div class="accordion-panel-inner">Children are welcome. Additional guests beyond each room's capacity may incur a charge and should be arranged at booking or with reception.</div></div>
-        </div>
-        <div class="accordion-item">
-          <button class="accordion-btn" aria-expanded="false">Identification &amp; deposit <span data-icon="chevronDown" data-size="20"></span></button>
-          <div class="accordion-panel"><div class="accordion-panel-inner">A valid government-issued ID is required at check-in. A deposit may be requested for incidentals and is refunded at check-out where applicable.</div></div>
-        </div>
-        <div class="accordion-item">
-          <button class="accordion-btn" aria-expanded="false">Payment <span data-icon="chevronDown" data-size="20"></span></button>
-          <div class="accordion-panel"><div class="accordion-panel-inner">Bookings can be paid online (Paystack), by card at the hotel, by bank transfer, POS or cash. See our <a href="refund-policy.html">Refund Policy</a>.</div></div>
-        </div>
+        <div data-policies-state class="loading-block"><div class="spinner" role="status"></div><p class="muted">Loading policies&hellip;</p></div>
       </div>
       <div style="margin-top:2.5rem;">
         <a class="btn btn-outline" href="terms.html">Terms &amp; conditions</a>
@@ -114,8 +130,8 @@
   <div class="container">
     <div class="footer-top">
       <div class="footer-brand">
-        <a href="index.html" class="brand" style="margin-bottom:1rem;">
-          <img src="assets/icons/logo-dark.svg" alt="" class="brand-mark" width="44" height="62">
+        <a href="index.html" class="brand">
+          <img src="assets/icons/logo-official.svg" alt="" class="brand-mark" width="21" height="30">
           <span>
             <span class="brand-word">J-ONE</span><br>
             <span class="brand-sub">Hotel &amp; Lodge</span>
@@ -137,10 +153,10 @@
       <div class="footer-col">
         <h5>Booking</h5>
         <a href="booking.html">Book Your Stay</a>
-        <a href="booking.html">Check Availability</a>
+        <a href="my-bookings.html">Your stays</a>
         <a href="policies.html">Hotel Policies</a>
-        <a href="privacy.html">Privacy</a>
-        <a href="terms.html">Terms</a>
+        <a href="cancellation-policy.html">Cancellation</a>
+        <a href="refund-policy.html">Refunds</a>
       </div>
 
       <div class="footer-col">
@@ -162,15 +178,12 @@
     </div>
   </div>
 </footer>
-<div class="mobile-cta-bar no-print">
-  <a class="btn btn-accent" href="booking.html">Book Your Stay</a>
-</div>
 
 <div class="mobile-drawer-backdrop" aria-hidden="true"></div>
 <div class="mobile-drawer" role="dialog" aria-modal="true" aria-label="Menu" aria-hidden="true">
   <div class="mobile-drawer-head">
     <span class="brand-word">J-ONE</span>
-    <button class="btn-icon btn-ghost" type="button" aria-label="Close menu" data-icon="x" data-size="22"></button>
+    <button class="btn-icon btn-ghost" type="button" aria-label="Close menu" data-drawer-close data-icon="x" data-size="20"></button>
   </div>
   <div class="mobile-drawer-body">
     <nav class="mobile-nav" aria-label="Mobile">
@@ -204,18 +217,69 @@
 <script>
 (function () {
   "use strict";
-  // Pull confirmable policy values from the API (settings) when available.
-  window.API.getSettings().then(function (res) {
-    var s = (res.data && res.data.settings) || res.data || {};
-    var map = { checkin: "checkin_time", checkout: "checkout_time", cancel: "cancellation_window" };
-    for (var key in map) {
-      var v = s[map[key]];
-      if (v) {
-        var n = document.querySelector("[data-policy-" + key + "]");
-        if (n) n.textContent = v;
-      }
+  /* Verified: GET /api/hotel/policies/ ->
+     [ { id, key, title, content, is_active, display_order, updated_at } ]
+     Content is plain text from the backend — rendered safely (textContent),
+     never innerHTML. */
+  var holder = document.querySelector("[data-policies]");
+  var state = document.querySelector("[data-policies-state]");
+
+  function showError(msg) {
+    holder.innerHTML = '<div class="empty-state"><span data-icon="alertTriangle" data-size="34"></span><h3>Policies couldn\'t be loaded</h3><p>' + JONE.esc(msg) + '</p><button class="btn btn-sm btn-outline" style="margin-top:0.75rem;" data-policy-retry type="button">Try again</button></div>';
+    JONE.icons.inject(holder);
+    var btn = holder.querySelector("[data-policy-retry]");
+    if (btn) btn.addEventListener("click", load);
+  }
+
+  function item(p, i) {
+    var wrap = document.createElement("div");
+    wrap.className = "accordion-item" + (i === 0 ? " open" : "");
+    var btn = document.createElement("button");
+    btn.className = "accordion-btn";
+    btn.type = "button";
+    btn.setAttribute("aria-expanded", i === 0 ? "true" : "false");
+    btn.textContent = p.title || p.key || "Policy";
+    var ic = document.createElement("span");
+    ic.setAttribute("data-icon", "chevronDown");
+    ic.setAttribute("data-size", "20");
+    btn.appendChild(ic);
+    var panel = document.createElement("div");
+    panel.className = "accordion-panel";
+    var inner = document.createElement("div");
+    inner.className = "accordion-panel-inner";
+    inner.style.whiteSpace = "pre-line";
+    inner.textContent = p.content || "";   // plain text — never innerHTML
+    panel.appendChild(inner);
+    wrap.appendChild(btn);
+    wrap.appendChild(panel);
+    return wrap;
+  }
+
+  function render(list) {
+    holder.innerHTML = "";
+    if (!list.length) {
+      holder.innerHTML = '<div class="empty-state"><span data-icon="fileText" data-size="34"></span><h3>No policies published yet</h3><p>Please check back soon or contact the hotel.</p></div>';
+      JONE.icons.inject(holder);
+      return;
     }
-  }).catch(function () {});
+    list.forEach(function (p, i) { holder.appendChild(item(p, i)); });
+    JONE.icons.inject(holder);
+    try { JONE.ui.initAccordions(holder); } catch (_) {}
+  }
+
+  async function load() {
+    if (state) state.className = "loading-block";
+    holder.innerHTML = '<div data-policies-state class="loading-block"><div class="spinner" role="status"></div><p class="muted">Loading policies&hellip;</p></div>';
+    try {
+      var res = await window.API.getPolicies();
+      render((res && res.data) || []);
+    } catch (err) {
+      showError((err && err.status === 0)
+        ? "We couldn't reach the hotel's service. Please check your connection and try again."
+        : ((err && err.message) || "Please try again in a moment."));
+    }
+  }
+  load();
 })();
 </script>
 </body>

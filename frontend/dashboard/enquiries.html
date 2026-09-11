@@ -14,7 +14,7 @@
 <div class="dash">
   <aside class="dash-sidebar" aria-label="Staff navigation">
     <div class="dash-sidebar-brand">
-      <img src="../assets/icons/logo-dark.svg" alt="" width="30" height="42">
+      <img src="../assets/icons/logo-official.svg" alt="" width="30" height="42">
       <span>
         <span class="brand-word">J-ONE</span><br>
         <span class="brand-sub">Staff Console</span>
@@ -47,7 +47,7 @@
     <div class="dash-content">
 
 <section class="panel">
-  <div class="panel-head"><h2>Enquiries</h2><div class="panel-actions"><select class="select" id="en-status" style="min-width:160px;font-size:var(--fs-sm);padding:0.5em 0.8em;"><option value="">All</option><option>new</option><option>replied</option><option>archived</option></select></div></div>
+  <div class="panel-head"><h2>Enquiries</h2><div class="panel-actions"><select class="select" id="en-status" style="min-width:160px;font-size:var(--fs-sm);padding:0.5em 0.8em;"><option value="">All</option><option value="NEW">New</option><option value="IN_PROGRESS">In progress</option><option value="RESOLVED">Resolved</option><option value="CLOSED">Closed</option></select></div></div>
   <div class="panel-body no-pad">
     <div class="table-wrap"><table class="table">
       <thead><tr><th>Name</th><th class="hide-sm">Contact</th><th>Subject</th><th class="hide-sm">Received</th><th>Status</th><th></th></tr></thead>
@@ -55,6 +55,33 @@
     </table></div>
   </div>
 </section>
+
+<div class="modal" data-enq-modal>
+  <div class="modal-backdrop" data-enq-close></div>
+  <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="enq-modal-title">
+    <div class="modal-head"><h3 id="enq-modal-title">Enquiry</h3><button class="btn-icon btn-ghost modal-close" type="button" data-enq-close aria-label="Close">&times;</button></div>
+    <div class="modal-body">
+      <div class="summary-row"><span class="label">From</span><span class="value" data-enq-name>—</span></div>
+      <div class="summary-row"><span class="label">Contact</span><span class="value" data-enq-contact>—</span></div>
+      <div class="summary-row"><span class="label">Received</span><span class="value" data-enq-date>—</span></div>
+      <div class="summary-row"><span class="label">Subject</span><span class="value" data-enq-subject>—</span></div>
+      <div style="margin:1rem 0;"><strong style="display:block;margin-bottom:0.35rem;">Message</strong><p data-enq-message style="white-space:pre-wrap;">—</p></div>
+      <div class="field">
+        <label class="field-label" for="enq-status-select">Status</label>
+        <select class="select" id="enq-status-select"><option value="NEW">New</option><option value="IN_PROGRESS">In progress</option><option value="RESOLVED">Resolved</option><option value="CLOSED">Closed</option></select>
+      </div>
+      <div class="field">
+        <label class="field-label" for="enq-notes">Internal notes</label>
+        <textarea class="textarea" id="enq-notes" rows="3" placeholder="Notes for staff (not visible to the guest)"></textarea>
+      </div>
+      <div class="field-error" data-enq-error style="display:none;"></div>
+      <div style="display:flex;gap:0.6rem;justify-content:flex-end;margin-top:1.25rem;">
+        <button class="btn btn-outline" type="button" data-enq-close>Close</button>
+        <button class="btn btn-accent" type="button" data-enq-save>Save changes</button>
+      </div>
+    </div>
+  </div>
+</div>
     </div>
   </div>
 </div>
@@ -65,6 +92,7 @@
 <script src="../js/theme.js"></script>
 <script src="../js/ui.js"></script>
 <script src="../js/auth.js"></script>
+<script src="../js/hotel-data.js"></script>
 <script src="../js/navigation.js"></script>
 <script src="../js/dashboard.js"></script>
 <script>
@@ -76,17 +104,15 @@
 (function(){
   var DATA=JONE.dashboard.DATA;
   var tbody=document.querySelector("[data-tbody=enquiries]");
-  var enquiries=[];
+  var current=null;   // enquiry object shown in the modal (backend row)
 
-  function name(e){ return e.name || e.full_name || (e.contact&&e.contact.full_name) || "—"; }
-  function contact(e){ return e.phone || e.email || e.contact_info || ""; }
-  function subject(e){ return e.subject || e.topic || e.title || "—"; }
-  function date(e){ return e.created_at || e.date || e.submitted_at || null; }
-  function status(e){ return e.status || "new"; }
-
+  /* Verified /api/admin/enquiries/ row:
+     { id, name, email, phone, subject, message, status: NEW|IN_PROGRESS|
+       RESOLVED|CLOSED, internal_notes, created_at, updated_at }
+     PATCH /{id}/ accepts { status, internal_notes } (audited). */
   function render(list){
     tbody.innerHTML=list.map(function(e){
-      return '<tr><td><strong>'+JONE.esc(name(e))+'</strong></td><td class="hide-sm">'+JONE.esc(contact(e))+'</td><td>'+JONE.esc(subject(e))+'</td><td class="hide-sm">'+JONE.formatDateTime(date(e))+'</td><td>'+JONE.dashboard.statusPill(status(e))+'</td><td><div style="display:flex;gap:0.4rem;"><button class="btn btn-sm btn-outline" data-en-id="'+encodeURIComponent(e.id||name(e))+'">View</button></div></td></tr>';
+      return '<tr><td><strong>'+JONE.esc(e.name||"—")+'</strong></td><td class="hide-sm">'+JONE.esc(e.email||e.phone||"—")+'</td><td>'+JONE.esc(e.subject||"—")+'</td><td class="hide-sm">'+JONE.esc(e.created_at?JONE.formatDateTime(e.created_at):"—")+'</td><td>'+JONE.dashboard.statusPill(e.status)+'</td><td><div style="display:flex;gap:0.4rem;"><button class="btn btn-sm btn-outline" data-en-id="'+encodeURIComponent(e.id)+'">View</button></div></td></tr>';
     }).join("") || '<tr><td colspan="6"><div class="empty-state"><span data-icon="inbox"></span><h3>No enquiries</h3><p>You are all caught up.</p></div></td></tr>';
     JONE.icons.inject(tbody);
   }
@@ -94,18 +120,76 @@
   async function load(){
     DATA.loading(tbody);
     try{
-      var res=await window.API.list("enquiries");
-      var list=window.API.normalizeList?window.API.normalizeList(res.data).items:((res.data&&res.data.results)||res.data||[]);
-      enquiries=list||[];
-      if(!enquiries.length){ DATA.empty(tbody,"inbox","No enquiries","You are all caught up.",6); return; }
-      render(enquiries);
-    }catch(err){ DATA.error(tbody,"Enquiries couldn't be loaded","Please try again in a moment.",6); }
+      var params={ page_size:50 };
+      var st=document.getElementById("en-status");
+      if(st&&st.value) params.status=st.value;
+      var res=await window.API.list("enquiries",params);
+      var list=window.API.normalizeList?window.API.normalizeList(res.data,res.pagination).items:((res.data&&res.data.results)||res.data||[]);
+      if(!(list||[]).length){ DATA.empty(tbody,"inbox","No enquiries","Enquiries from the website contact form appear here.",6); return; }
+      render(list);
+    }catch(err){ DATA.error(tbody,"Enquiries couldn't be loaded",(err&&err.message)||"Please try again in a moment.",6); }
   }
   load();
 
-  document.addEventListener("click",function(e){
+  var stEl=document.getElementById("en-status");
+  if(stEl) stEl.addEventListener("change",load);
+
+  var backdrop=document.querySelector("[data-enq-modal]");
+  function openModal(e){
+    current=e;
+    function set(k,v){ var n=document.querySelector("[data-enq-"+k+"]"); if(n) n.textContent=(v==null||v==="")?"—":String(v); }
+    set("name",e.name);
+    set("contact",(e.email||"")+(e.phone?" · "+e.phone:""));
+    set("date",e.created_at?JONE.formatDateTime(e.created_at):"—");
+    set("subject",e.subject);
+    var msg=document.querySelector("[data-enq-message]");
+    if(msg) msg.textContent=e.message||"—";
+    var sel=document.getElementById("enq-status-select");
+    if(sel) sel.value=e.status||"NEW";
+    var notes=document.getElementById("enq-notes");
+    if(notes) notes.value=e.internal_notes||"";
+    var err=document.querySelector("[data-enq-error]");
+    if(err){ err.style.display="none"; }
+    if(backdrop) backdrop.classList.add("open");
+  }
+  function closeModal(){ if(backdrop) backdrop.classList.remove("open"); current=null; }
+
+  tbody.addEventListener("click",function(e){
     var v=e.target.closest("[data-en-id]");
-    if(v){ location.href="enquiries.html?open="+encodeURIComponent(v.getAttribute("data-en-id")); }
+    if(!v) return;
+    var id=v.getAttribute("data-en-id");
+    // Fetch the authoritative row from the backend before showing it.
+    (async function(){
+      try{
+        var res=await window.API.getOne("enquiries", id);
+        openModal((res&&res.data)||{ id:id });
+      }catch(err){ JONE.ui.toast(err.message||"Couldn't open this enquiry.","error"); }
+    })();
+  });
+
+  document.querySelectorAll("[data-enq-close]").forEach(function(b){ b.addEventListener("click",closeModal); });
+  if(backdrop) backdrop.addEventListener("click",function(e){ if(e.target===backdrop) closeModal(); });
+
+  var save=document.querySelector("[data-enq-save]");
+  if(save) save.addEventListener("click", async function(){
+    if(!current||!current.id) return;
+    if(!JONE.guardSubmit(save)) return;
+    var err=document.querySelector("[data-enq-error]");
+    if(err) err.style.display="none";
+    try{
+      await window.API.update("enquiries", current.id, {
+        status: document.getElementById("enq-status-select").value,
+        internal_notes: document.getElementById("enq-notes").value
+      });
+      JONE.ui.toast("Enquiry updated.","success");
+      closeModal();
+      load();
+    }catch(er){
+      JONE.releaseGuard(save);
+      var msg=(er&&er.message)||"Couldn't save the enquiry.";
+      if(err){ err.textContent=msg; err.style.display="block"; }
+      JONE.ui.toast(msg,"error");
+    }
   });
 })();
 

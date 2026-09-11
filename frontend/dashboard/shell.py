@@ -31,7 +31,7 @@ def head(title, subtitle=""):
         '<div class="dash">\n'
         '  <aside class="dash-sidebar" aria-label="Staff navigation">\n'
         '    <div class="dash-sidebar-brand">\n'
-        '      <img src="../assets/icons/logo-dark.svg" alt="" width="30" height="42">\n'
+        '      <img src="../assets/icons/logo-official.svg" alt="" width="30" height="42">\n'
         '      <span>\n'
         '        <span class="brand-word">J-ONE</span><br>\n'
         '        <span class="brand-sub">Staff Console</span>\n'

@@ -14,7 +14,7 @@
 <div class="dash">
   <aside class="dash-sidebar" aria-label="Staff navigation">
     <div class="dash-sidebar-brand">
-      <img src="../assets/icons/logo-dark.svg" alt="" width="30" height="42">
+      <img src="../assets/icons/logo-official.svg" alt="" width="30" height="42">
       <span>
         <span class="brand-word">J-ONE</span><br>
         <span class="brand-sub">Staff Console</span>
@@ -47,7 +47,7 @@
     <div class="dash-content">
 
 <section class="panel">
-  <div class="panel-head"><h2>Room status</h2><div class="panel-actions"><select class="select" id="rm-filter" style="min-width:180px;padding:0.5em 0.8em;font-size:var(--fs-sm);"><option value="">All statuses</option><option>available</option><option>reserved</option><option>occupied</option><option>cleaning</option><option>maintenance</option></select></div></div>
+  <div class="panel-head"><h2>Rooms</h2><div class="panel-actions"><button class="btn btn-sm" data-room-add type="button"><span data-icon="plus" data-size="14"></span> Add room</button><select class="select" id="rm-filter" style="min-width:180px;padding:0.5em 0.8em;font-size:var(--fs-sm);"><option value="">All statuses</option><option value="AVAILABLE">Available</option><option value="RESERVED">Reserved</option><option value="OCCUPIED">Occupied</option><option value="MAINTENANCE">Maintenance</option><option value="OUT_OF_SERVICE">Out of service</option></select></div></div>
   <div class="panel-body">
     <div class="room-board" data-room-board></div>
   </div>
@@ -71,6 +71,7 @@
 <script src="../js/theme.js"></script>
 <script src="../js/ui.js"></script>
 <script src="../js/auth.js"></script>
+<script src="../js/hotel-data.js"></script>
 <script src="../js/navigation.js"></script>
 <script src="../js/dashboard.js"></script>
 <script>
@@ -82,17 +83,30 @@
 (function(){
   var rooms=[];
   var board=document.querySelector("[data-room-board]");
+  var roomTypes=[];   // real room types from the backend (for the select)
 
-  function no(r){ return r.number || r.room_number || r.name || r.id || "Room"; }
-  function type(r){ return r.type || r.room_type || r.category || ""; }
-  function status(r){ return r.status || ""; }
+  /* Verified /api/admin/rooms/ row:
+     { id, room_number, room_type (id), room_type_name, floor, status,
+       housekeeping_status: CLEAN|DIRTY|CLEANING, notes, is_active }.
+     CRUD: POST /api/admin/rooms/ · PATCH/DELETE /{id}/ (DELETE = deactivate).
+     Writes need MANAGER/ADMIN — the backend enforces; errors surface honestly. */
+  var STATUS = ["AVAILABLE","RESERVED","OCCUPIED","MAINTENANCE","OUT_OF_SERVICE"];
+  var HK = ["CLEAN","DIRTY","CLEANING"];
+
+  function no(r){ return r.room_number || r.id || "Room"; }
+  function type(r){ return r.room_type_name || ""; }
 
   function render(){
     var pel=document.getElementById("rm-filter");
     var f=pel?pel.value:"";
-    var list=rooms.filter(function(r){return !f||status(r)===f;});
+    var list=rooms.filter(function(r){return !f||String(r.status||"").toUpperCase()===f;});
     board.innerHTML=list.map(function(r){
-      return '<div class="room-tile"><div class="room-no">'+JONE.esc(no(r))+'</div><div class="room-type">'+JONE.esc(type(r))+'</div><div style="margin-top:0.5rem;">'+JONE.dashboard.statusPill(status(r)||"available")+'</div></div>';
+      var hk=r.housekeeping_status?" <span class=\"caption\">("+String(r.housekeeping_status).toLowerCase()+")</span>":"";
+      var acts='<div style="display:flex;gap:0.35rem;margin-top:0.6rem;">'+
+        '<button class="btn btn-sm btn-outline" data-room-edit="'+r.id+'" type="button"><span data-icon="edit" data-size="13"></span> Edit</button>'+
+        '<button class="btn btn-sm btn-outline" data-room-del="'+r.id+'" type="button"><span data-icon="trash" data-size="13"></span></button></div>';
+      var inactive = r.is_active===false ? ' <span class="badge" style="margin-left:0.4rem;">Inactive</span>' : '';
+      return '<div class="room-tile"'+(r.is_active===false?' style="opacity:0.6;"':'')+'><div class="room-no">'+JONE.esc(no(r))+inactive+'</div><div class="room-type">'+JONE.esc(type(r))+'</div><div style="margin-top:0.5rem;">'+JONE.dashboard.statusPill(r.status||"available")+hk+'</div>'+acts+'</div>';
     }).join("") || '<div class="empty-state" style="grid-column:1/-1;border:0;"><h3>No rooms match</h3></div>';
     JONE.icons.inject(board);
   }
@@ -100,15 +114,15 @@
   function renderTypes(){
     var tb=document.querySelector("[data-tbody=roomtypes]");
     if(!tb) return;
-    // Room-type summary derived from real room records (never synthesized).
+    // Room-type summary derived from the real room records (never synthesized).
     var byType={};
     rooms.forEach(function(r){
       var t=type(r)||"Unclassified";
       byType[t]=byType[t]||{name:t, count:0, available:0, occupied:0};
       byType[t].count++;
-      var s=status(r);
-      if(s==="occupied"||s==="checked_in") byType[t].occupied++;
-      else if(s==="available"||s==="free") byType[t].available++;
+      var s=String(r.status||"").toUpperCase();
+      if(s==="OCCUPIED") byType[t].occupied++;
+      else if(s==="AVAILABLE") byType[t].available++;
     });
     var rows=Object.keys(byType).map(function(t){
       return '<tr><td>'+JONE.esc(t)+'</td><td class="num">'+byType[t].count+'</td><td class="hide-sm num">'+byType[t].available+' available</td><td class="hide-sm num">'+byType[t].occupied+' occupied</td></tr>';
@@ -116,22 +130,84 @@
     tb.innerHTML=rows || '<tr><td colspan="4"><div class="empty-state"><h3>No room data</h3></div></td></tr>';
   }
 
-  var pel=document.getElementById("rm-filter");
-  if(pel) pel.addEventListener("change",render);
+  async function loadRoomTypes(){
+    try{
+      var res=await window.API.list("roomTypes",{ page_size:100 });
+      var list=window.API.normalizeList(res.data, res.pagination).items;
+      roomTypes=(list||[]).filter(function(t){ return t.is_active!==false; }).map(function(t){
+        return { value:String(t.id), label:t.name };
+      });
+    }catch(_){ roomTypes=[]; }
+  }
 
   async function load(){
     board.innerHTML='<div class="loading-block" style="grid-column:1/-1;"><div class="spinner" role="status"></div><p class="muted">Loading rooms&hellip;</p></div>';
     try{
-      var res=await window.API.list("rooms");
-      var list=window.API.normalizeList?window.API.normalizeList(res.data).items:((res.data&&res.data.results)||res.data||[]);
+      var res=await window.API.list("rooms",{ page_size:100 });
+      var list=window.API.normalizeList(res.data, res.pagination).items;
       rooms=list||[];
-      if(!rooms.length){ board.innerHTML='<div class="empty-state" style="grid-column:1/-1;border:0;"><h3>No rooms configured</h3></div>'; return; }
+      if(!rooms.length){ board.innerHTML='<div class="empty-state" style="grid-column:1/-1;border:0;"><h3>No rooms configured</h3><p>Add your first room to begin.</p></div>'; return; }
       render(); renderTypes();
     }catch(err){
-      board.innerHTML='<div class="empty-state" style="grid-column:1/-1;border:0;"><span data-icon="alertTriangle" data-size="34"></span><h3>Rooms couldn\'t be loaded</h3><p>'+((err&&err.status===0&&err.message)||"Please try again in a moment.")+'</p></div>';
+      board.innerHTML='<div class="empty-state" style="grid-column:1/-1;border:0;"><span data-icon="alertTriangle" data-size="34"></span><h3>Rooms couldn\'t be loaded</h3><p>'+((err&&err.message)||"Please try again in a moment.")+'</p></div>';
       JONE.icons.inject(board);
     }
   }
+
+  function roomFields(room){
+    var typeOpts=roomTypes.length?roomTypes:[{value:room&&room.room_type?String(room.room_type):"",label:room?(room.room_type_name||"Current type"):""}];
+    return [
+      { name:"room_number", label:"Room number", required:true, value:room?room.room_number:"" },
+      { name:"room_type", label:"Room type", type:"select", options:typeOpts, required:true, value:room?String(room.room_type||""):"" },
+      { name:"floor", label:"Floor", type:"number", value:room?room.floor:"" },
+      { name:"status", label:"Status", type:"select", options:STATUS.map(function(s){return {value:s,label:s.replace(/_/g," ").toLowerCase()};}), value:room?String(room.status||"AVAILABLE"):"AVAILABLE" },
+      { name:"housekeeping_status", label:"Housekeeping", type:"select", options:[{value:"",label:"—"}].concat(HK.map(function(s){return {value:s,label:s.toLowerCase()};})), value:room?String(room.housekeeping_status||""):"" },
+      { name:"notes", label:"Notes", type:"textarea", rows:2, value:room?(room.notes||""):"" },
+      { name:"is_active", label:"Active", type:"checkbox", value:room?room.is_active:true }
+    ];
+  }
+
+  async function openRoomModal(room){
+    await loadRoomTypes();
+    var out = await JONE.dashboard.formModal({
+      title: room ? "Edit room " + room.room_number : "Add room",
+      submitText: room ? "Save room" : "Create room",
+      fields: roomFields(room),
+      onSubmit: function(values){
+        if (room) return window.API.update("rooms", room.id, values).then(function(){ JONE.ui.toast("Room updated.","success"); });
+        return window.API.create("rooms", values).then(function(){ JONE.ui.toast("Room created.","success"); });
+      }
+    });
+    if (out) load();
+  }
+
+  document.addEventListener("click", function(e){
+    var add=e.target.closest("[data-room-add]");
+    if(add){ openRoomModal(null); return; }
+    var edit=e.target.closest("[data-room-edit]");
+    if(edit){
+      var r=rooms.filter(function(x){ return String(x.id)===edit.getAttribute("data-room-edit"); })[0];
+      if(r) openRoomModal(r);
+      return;
+    }
+    var del=e.target.closest("[data-room-del]");
+    if(del){
+      var r2=rooms.filter(function(x){ return String(x.id)===del.getAttribute("data-room-del"); })[0];
+      if(!r2) return;
+      JONE.ui.confirm({title:"Deactivate room "+r2.room_number+"?",message:"The room is deactivated (soft delete) and can be re-enabled later.",confirmText:"Deactivate",danger:true}).then(async function(ok){
+        if(!ok) return;
+        try{
+          await window.API.remove("rooms", r2.id);
+          JONE.ui.toast("Room deactivated.","success");
+          load();
+        }catch(err){ JONE.ui.toast(err.message||"Couldn't deactivate the room.","error"); }
+      });
+    }
+  });
+
+  var pel=document.getElementById("rm-filter");
+  if(pel) pel.addEventListener("change",render);
+
   load();
 })();
 

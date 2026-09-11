@@ -54,6 +54,25 @@ const JONE = (() => {
     return `${y}-${m}-${day}`;
   }
 
+  // "Today" in the HOTEL's timezone (exposed by /api/hotel/ as settings.timezone).
+  // The booking API judges dates by the hotel's business day; a browser in a
+  // different timezone would otherwise offer check-in dates the API rejects.
+  function hotelTodayISO(offsetDays = 0) {
+    const tz = (window.JONE && JONE.hotelTimezone) || null;
+    let iso;
+    if (tz) {
+      try {
+        iso = new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+      } catch (_) { iso = null; }
+    }
+    if (!iso) return todayISO(offsetDays);
+    if (!offsetDays) return iso;
+    const [y, m, d] = iso.split("-").map(Number);
+    const dt = new Date(Date.UTC(y, m - 1, d));
+    dt.setUTCDate(dt.getUTCDate() + offsetDays);
+    return dt.toISOString().slice(0, 10);
+  }
+
   function nightsBetween(checkIn, checkOut) {
     const a = parseISO(checkIn), b = parseISO(checkOut);
     if (!a || !b || b <= a) return 0;
@@ -69,6 +88,7 @@ const JONE = (() => {
     for (const [k, v] of Object.entries(attrs)) {
       if (k === "class") node.className = v;
       else if (k === "dataset") Object.assign(node.dataset, v);
+      else if (k === "innerHTML" || k === "textContent") node[k] = v;   // content properties, not attributes
       else if (k.startsWith("on") && typeof v === "function") node.addEventListener(k.slice(2), v);
       else if (v === true) node.setAttribute(k, "");
       else if (v != null && v !== false) node.setAttribute(k, v);
@@ -166,7 +186,7 @@ const JONE = (() => {
   }
 
   return {
-    formatNaira, formatDate, formatDateTime, parseISO, todayISO, nightsBetween,
+    formatNaira, formatDate, formatDateTime, parseISO, todayISO, hotelTodayISO, nightsBetween,
     $, $$, el, esc, debounce, throttle, storage, bindData, paginate, initials,
     scrollTop, guardSubmit, releaseGuard
   };

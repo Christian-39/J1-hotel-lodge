@@ -36,13 +36,47 @@
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 </head>
-<body class="has-mobile-cta">
+<body>
 <a class="skip-link" href="#main">Skip to content</a>
 <header class="site-header">
   <div class="container header-inner">
     <a href="index.html" class="brand" aria-label="J-ONE Hotel &amp; Lodge — home">
-      <img src="assets/icons/logo-dark.svg" alt="" class="brand-mark" width="44" height="62">
+      <img src="assets/icons/logo-official.svg" alt="" class="brand-mark" width="24" height="34">
       <span>
         <span class="brand-word">J-ONE</span><br>
         <span class="brand-sub">Hotel &amp; Lodge</span>
@@ -50,7 +84,8 @@
     </a>
 
     <nav class="header-nav" aria-label="Primary">
-      <a class="nav-link" data-nav="index.html" href="index.html">Rooms</a>
+      <a class="nav-link" data-nav="index.html" href="index.html">Home</a>
+      <a class="nav-link" data-nav="rooms.html" href="rooms.html">Rooms</a>
       <a class="nav-link" data-nav="facilities.html" href="facilities.html">Facilities</a>
       <a class="nav-link" data-nav="gallery.html" href="gallery.html">Gallery</a>
       <a class="nav-link" data-nav="offers.html" href="offers.html">Offers</a>
@@ -63,12 +98,11 @@
         <span class="icon-moon" data-icon="moon" data-size="20"></span>
         <span class="icon-sun" data-icon="sun" data-size="20"></span>
       </button>
-      <a class="btn btn-accent btn-book" href="booking.html">Book Your Stay</a>
+      <a class="btn btn-sm btn-accent btn-book" href="booking.html">Book</a>
       <button class="btn-icon btn-outline menu-toggle" type="button" aria-label="Open menu" aria-expanded="false" data-icon="menu" data-size="22"></button>
     </div>
   </div>
 </header>
-
 
 <main id="main">
   <section class="section">
@@ -126,8 +160,8 @@
   <div class="container">
     <div class="footer-top">
       <div class="footer-brand">
-        <a href="index.html" class="brand" style="margin-bottom:1rem;">
-          <img src="assets/icons/logo-dark.svg" alt="" class="brand-mark" width="44" height="62">
+        <a href="index.html" class="brand">
+          <img src="assets/icons/logo-official.svg" alt="" class="brand-mark" width="21" height="30">
           <span>
             <span class="brand-word">J-ONE</span><br>
             <span class="brand-sub">Hotel &amp; Lodge</span>
@@ -149,10 +183,10 @@
       <div class="footer-col">
         <h5>Booking</h5>
         <a href="booking.html">Book Your Stay</a>
-        <a href="booking.html">Check Availability</a>
+        <a href="my-bookings.html">Your stays</a>
         <a href="policies.html">Hotel Policies</a>
-        <a href="privacy.html">Privacy</a>
-        <a href="terms.html">Terms</a>
+        <a href="cancellation-policy.html">Cancellation</a>
+        <a href="refund-policy.html">Refunds</a>
       </div>
 
       <div class="footer-col">
@@ -174,15 +208,12 @@
     </div>
   </div>
 </footer>
-<div class="mobile-cta-bar no-print">
-  <a class="btn btn-accent" href="booking.html">Book Your Stay</a>
-</div>
 
 <div class="mobile-drawer-backdrop" aria-hidden="true"></div>
 <div class="mobile-drawer" role="dialog" aria-modal="true" aria-label="Menu" aria-hidden="true">
   <div class="mobile-drawer-head">
     <span class="brand-word">J-ONE</span>
-    <button class="btn-icon btn-ghost" type="button" aria-label="Close menu" data-icon="x" data-size="22"></button>
+    <button class="btn-icon btn-ghost" type="button" aria-label="Close menu" data-drawer-close data-icon="x" data-size="20"></button>
   </div>
   <div class="mobile-drawer-body">
     <nav class="mobile-nav" aria-label="Mobile">
@@ -261,22 +292,28 @@
     }
   }
 
+  /* Verified /api/rooms/{slug}/ detail: all catalog fields plus description,
+     smoking_policy, children_allowed, extra_guest_allowed, extra_guest_fee,
+     images: [{ image_url, alt_text, caption, is_primary }],
+     offers: [{ title, short_description, discount_type, discount_value, end_date }],
+     amenities: [{ name, icon }]. base_price is a STRING — display only. */
   function render(r) {
     setState("ready", "");
-    var price = r.price || r.rate || r.rate_per_night || 0;
-    set("#room-name", r.name || r.title || "Room");
-    set("#room-type", ((r.type || r.category || "") + (r.size || r.area ? " · " + (r.size || r.area) : "")));
-    set("#room-desc", r.description || r.desc || "Information coming soon.");
-    set("#room-sum-name", r.name || r.title || "Room");
-    set("#room-sum-price", "₦" + Number(price).toLocaleString("en-NG") + " / night");
-    set("#room-sum-cap", (r.capacity || r.max_guests || 2) + " guests");
-    set("#room-sum-bed", r.bed || r.bed_type || "");
+    set("#room-name", r.name || "Room");
+    set("#room-type", (r.room_size || "") + (r.view ? (r.room_size ? " · " : "") + r.view : ""));
+    set("#room-desc", r.description || r.short_description || "Information coming soon.");
+    set("#room-sum-name", r.name || "Room");
+    set("#room-sum-price", JONE.formatNaira(r.base_price) + " / night");
+    set("#room-sum-cap", (r.max_guests || "—") + " guests");
+    set("#room-sum-bed", r.bed_type ? (r.bed_count ? r.bed_count + " × " : "") + r.bed_type : "");
     setHTML("#room-facts",
-      '<span><span data-icon="users" data-size="16"></span>' + (r.capacity || r.max_guests || 2) + ' guests</span>' +
-      '<span><span data-icon="maximize" data-size="16"></span>' + JONE.esc(r.size || r.area || "") + '</span>' +
-      '<span><span data-icon="bed" data-size="16"></span>' + JONE.esc(r.bed || r.bed_type || "") + '</span>');
-    setHTML("#room-amenities", (r.amenities || r.features || []).map(function (a) {
-      return '<span style="display:inline-flex;align-items:center;gap:0.5rem;color:var(--color-text-muted);"><span data-icon="check" data-size="16" class="text-success"></span>' + JONE.esc(a) + '</span>';
+      '<span><span data-icon="users" data-size="16"></span>' + (r.max_guests || "—") + ' guests</span>' +
+      (r.room_size ? '<span><span data-icon="maximize" data-size="16"></span>' + JONE.esc(r.room_size) + '</span>' : '') +
+      (r.bed_type ? '<span><span data-icon="bed" data-size="16"></span>' + JONE.esc(r.bed_type) + '</span>' : ''));
+    setHTML("#room-amenities", (r.amenities || []).map(function (a) {
+      var nm = a && (a.name || a);
+      if (!nm) return "";
+      return '<span style="display:inline-flex;align-items:center;gap:0.5rem;color:var(--color-text-muted);"><span data-icon="check" data-size="16" class="text-success"></span>' + JONE.esc(nm) + '</span>';
     }).join(""));
     var book = document.querySelector("#room-book");
     if (book) book.href = "booking.html?room=" + encodeURIComponent(r.slug || r.id || slug || "");

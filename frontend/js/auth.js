@@ -1,6 +1,14 @@
 /* ==========================================================================
-   Auth — staff login, session persistence, role-aware UI, guards.
+   Auth — login, registration, session persistence, role-aware UI, guards.
    Frontend role checks are UX-only; the backend is authoritative.
+
+   VERIFIED contract (live backend):
+   - POST /api/auth/login/    {email, password}            → {user, tokens}
+   - POST /api/auth/register/ {email, names, phone, pwd…}  → {user, tokens}
+   - POST /api/auth/token/refresh/ {refresh}               → {tokens}
+   - POST /api/auth/logout/   {refresh}                    → blacklists token
+   - GET  /api/auth/profile/                              → user
+   - user.role ∈ GUEST | RECEPTIONIST | MANAGER | ADMIN (uppercase on the wire)
    ========================================================================== */
 
 (function () {
@@ -15,33 +23,35 @@
     permissions: []
   };
 
-  const ROLES = { ADMIN: "admin", MANAGER: "manager", RECEPTIONIST: "receptionist", STAFF: "staff" };
+  const ROLES = { ADMIN: "admin", MANAGER: "manager", RECEPTIONIST: "receptionist", GUEST: "guest", STAFF: "staff" };
 
-  /* Normalize whatever role shape the backend sends into our lowercase set.
-     Django superusers may carry is_superuser without an explicit role. */
-  function normalizeRole(user, role) {
-    const u = user || {};
-    if (u.is_superuser) return "admin";
-    const raw = u.role || role || null;
-    return raw ? String(raw).toLowerCase() : null;
+  /* Backend sends UPPERCASE roles; normalize once at the boundary. */
+  function normRole(role) {
+    return role ? String(role).toLowerCase() : null;
   }
 
+  function isStaffRole(role) {
+    const r = normRole(role || state.role);
+    return r === "admin" || r === "manager" || r === "receptionist";
+  }
+
+  /* Store a session from either the login/register shape
+     {user, tokens:{access,refresh}} or a bare user. */
   function storeSession(data) {
-    // Keep tokens in sessionStorage (cleared on tab close) and profile in localStorage.
-    // Normalize both contract shapes: flat {access, refresh, user...} and the
-    // backend's nested {user, tokens: {access, refresh}}.
-    const d = data || {};
-    const tokens = d.tokens || d;
-    const access = tokens.access || tokens.token || null;
-    const refresh = tokens.refresh || null;
-    const user = d.user || d;
-    const cred = { access, refresh };
+    const payload = data || {};
+    const tokens = payload.tokens || {};
+    const user = payload.user || (payload.access || payload.token ? payload : null);
+    const cred = {
+      access: tokens.access || payload.access || payload.token || null,
+      refresh: tokens.refresh || payload.refresh || null
+    };
     try { sessionStorage.setItem(SESSION_KEY, JSON.stringify(cred)); } catch (_) {}
-    JONE.storage.set(KEY, user);
-    Object.assign(state, user);
-    state.user = user;
-    state.role = normalizeRole(user, d.role);
-    state.permissions = (user && user.permissions) || d.permissions || [];
+    const profile = user && (user.email !== undefined) ? user : payload;
+    JONE.storage.set(KEY, profile);
+    state.user = profile;
+    state.role = normRole(profile.role);
+    state.permissions = profile.permissions || [];
+    return state.user;
   }
 
   function clearSession() {
@@ -50,17 +60,20 @@
     state.user = null; state.role = null; state.permissions = [];
   }
 
+  function getSessionCred() {
+    try { return JSON.parse(sessionStorage.getItem(SESSION_KEY) || "null"); } catch (_) { return null; }
+  }
+
   function isAuthenticated() {
-    try { return !!sessionStorage.getItem(SESSION_KEY); } catch (_) { return !!JONE.storage.get(KEY, null); }
+    try { return !!(sessionStorage.getItem(SESSION_KEY) && getSessionCred() && getSessionCred().access); }
+    catch (_) { return !!JONE.storage.get(KEY, null); }
   }
 
   function hasRole(minRole) {
-    // Receptionist < Manager < Admin
+    // guest < receptionist < manager < admin
     if (!state.role) return false;
-    const order = { receptionist: 1, staff: 1, manager: 2, admin: 3 };
-    const role = String(state.role).toLowerCase();
-    const needed = String(minRole || "").toLowerCase();
-    return (order[role] || 0) >= (order[needed] || 99);
+    const order = { guest: 0, receptionist: 1, staff: 1, manager: 2, admin: 3 };
+    return (order[state.role] != null ? order[state.role] : -1) >= (order[minRole] != null ? order[minRole] : 99);
   }
 
   function can(perm) {
@@ -72,10 +85,8 @@
   /* Wire API token provider + one-time refresh provider. */
   function setAPITokenProvider() {
     window.API.setTokenProvider(() => {
-      try {
-        const raw = sessionStorage.getItem(SESSION_KEY);
-        return raw ? (JSON.parse(raw).access || JSON.parse(raw).token) : null;
-      } catch (_) { return null; }
+      const cred = getSessionCred();
+      return cred ? (cred.access || null) : null;
     });
     if (window.API.setRefreshProvider) window.API.setRefreshProvider(refreshAccess);
   }
@@ -89,21 +100,16 @@
     if (refreshing) return false;      // guard against concurrent refresh storms
     refreshing = true;
     try {
-      let refreshToken = null;
-      try { refreshToken = JSON.parse(sessionStorage.getItem(SESSION_KEY) || "{}").refresh; } catch (_) {}
-      if (!refreshToken) return false;
-      // Contract-presumed refresh endpoint; the backend must expose it for
-      // JWT-based auth. If the backend uses HttpOnly cookies, set
-      // API.setRefreshProvider(null) instead.
-      const res = await window.API.post("/api/auth/refresh/", { refresh: refreshToken }, { auth: false });
-      const data = res.data || {};
-      const tokens = data.tokens || data; // nested {tokens:{...}} or flat
-      const access = tokens.access || tokens.token;
+      const cred = getSessionCred();
+      if (!cred || !cred.refresh) return false;
+      const res = await window.API.refreshTokenCall(cred.refresh);
+      const tokens = (res.data && (res.data.tokens || res.data)) || {};
+      const access = tokens.access || null;
       if (!access) return false;
       try {
-        const cur = JSON.parse(sessionStorage.getItem(SESSION_KEY) || "{}");
+        const cur = getSessionCred() || {};
         cur.access = access;
-        if (tokens.refresh) cur.refresh = tokens.refresh;
+        if (tokens.refresh) cur.refresh = tokens.refresh;   // rotation
         sessionStorage.setItem(SESSION_KEY, JSON.stringify(cur));
       } catch (_) {}
       return true;
@@ -119,45 +125,60 @@
     // refresh provider is configured). Clear session and redirect to login,
     // preserving the original destination for post-login return.
     clearSession();
-    const here = location.pathname;
-    const inDashboard = here.includes("/dashboard/");
-    if (inDashboard) {
-      const next = encodeURIComponent(here + location.search);
-      try { JONE.ui.toast("Your session has expired. Please sign in again.", "warning"); } catch (_) {}
+    const here = location.pathname + location.search;
+    // Already on the login page (e.g. a failed sign-in must never count as
+    // "session expired"): just show the message, never redirect in a loop.
+    if (location.pathname.indexOf("/login") === 0) return;
+    const next = encodeURIComponent(here);
+    try { JONE.ui.toast("Your session has expired. Please sign in again.", "warning"); } catch (_) {}
+    if (location.pathname.indexOf("/dashboard/") === 0) {
+      location.replace("/login.html?next=" + next);
+    } else if (location.pathname.indexOf("booking") === 0 || location.pathname.indexOf("/booking") !== -1) {
+      // Guest mid-booking: return them to the same step after signing back in.
       location.replace("/login.html?next=" + next);
     }
+    // Other public pages: stay put (the page shows its own error state).
   }
 
   /* Restore profile on load so header can render user state without a round-trip. */
   function restore() {
-    if (window.API && !window.API.APIError) setAPITokenProvider();
     setAPITokenProvider();
     if (isAuthenticated()) {
       const profile = JONE.storage.get(KEY, null);
       if (profile) {
         state.user = profile.user || profile;
-        state.role = normalizeRole(state.user, profile.role);
+        state.role = normRole(state.user.role || profile.role);
         state.permissions = state.user.permissions || profile.permissions || [];
       }
     }
   }
 
   async function login(email, password) {
-    const res = await window.API.login({ email, password });
+    const res = await window.API.login({ email: email, password: password });
+    storeSession(res.data);
+    setAPITokenProvider();
+    return res.data;
+  }
+
+  async function register(payload) {
+    const res = await window.API.register(payload);
     storeSession(res.data);
     setAPITokenProvider();
     return res.data;
   }
 
   async function logout() {
-    try { await window.API.logout(); } catch (_) {}
+    const cred = getSessionCred();
+    try { await window.API.logout(cred ? cred.refresh : null); } catch (_) {}
     clearSession();
-    location.href = "/login.html";
+    const here = location.pathname + location.search;
+    const staffArea = here.indexOf("/dashboard/") !== -1 || here.indexOf("/login") === 0;
+    location.href = staffArea ? "/login.html" : "index.html";
   }
 
   async function refreshProfile() {
     const res = await window.API.me();
-    storeSession(res.data);
+    storeSession({ user: res.data, tokens: getSessionCred() || {} });
     return state.user;
   }
 
@@ -185,18 +206,56 @@
       const btn = form.querySelector("[type=submit]");
       if (!JONE.guardSubmit(btn)) return;
       const fd = new FormData(form);
-      // The backend authenticates by email (User.USERNAME_FIELD = "email"),
-      // so accept the identifier from either field name.
-      const email = (fd.get("email") || fd.get("username") || "").trim();
+      const email = String(fd.get("email") != null ? fd.get("email") : (fd.get("username") || "")).trim();
       const password = fd.get("password") || "";
       try {
-        await login(email, password);
-        JONE.ui.toast("Welcome back.", "success");
-        const next = new URLSearchParams(location.search).get("next") || "/dashboard/";
+        const session = await login(email, password);
+        JONE.ui.toast("Welcome back" + (session && session.user && session.user.first_name ? ", " + session.user.first_name : "") + ".", "success");
+        // Staff land in the dashboard; guests return whence they came (or home).
+        const params = new URLSearchParams(location.search);
+        let next = params.get("next");
+        if (!next || /login/i.test(next)) next = null;   // never bounce back to the login page
+        if (!next) next = isStaffRole(session && session.user && session.user.role) ? "/dashboard/" : "index.html";
         location.href = next;
       } catch (err) {
         JONE.releaseGuard(btn);
-        const msg = err.status === 401 ? "Incorrect email or password." : err.message;
+        const msg = err.status === 401 ? "Incorrect email or password." : (err.message || "Sign-in failed. Please try again.");
+        JONE.ui.toast(msg, "error");
+        const errBox = form.querySelector("[data-form-error]");
+        if (errBox) { errBox.textContent = msg; errBox.style.display = "block"; }
+      }
+    });
+  }
+
+  function bindRegisterForm(formSel, opts = {}) {
+    const form = document.querySelector(formSel);
+    if (!form) return;
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const btn = form.querySelector("[type=submit]");
+      if (!JONE.guardSubmit(btn)) return;
+      const fd = new FormData(form);
+      const payload = {
+        email: String(fd.get("email") || "").trim(),
+        first_name: String(fd.get("first_name") || "").trim(),
+        last_name: String(fd.get("last_name") || "").trim(),
+        phone: String(fd.get("phone") || "").trim(),
+        password: fd.get("password") || "",
+        password_confirm: fd.get("password_confirm") || ""
+      };
+      try {
+        await register(payload);
+        JONE.ui.toast("Account created. Welcome to J-ONE HOTEL & LODGE.", "success");
+        const params = new URLSearchParams(location.search);
+        const next = params.get("next");
+        location.href = next || "index.html";
+      } catch (err) {
+        JONE.releaseGuard(btn);
+        let msg = err.message || "Registration failed. Please try again.";
+        if (err.data && err.data.errors) {
+          const first = Object.values(err.data.errors).flat()[0];
+          if (first) msg = String(first);
+        }
         JONE.ui.toast(msg, "error");
         const errBox = form.querySelector("[data-form-error]");
         if (errBox) { errBox.textContent = msg; errBox.style.display = "block"; }
@@ -205,9 +264,10 @@
   }
 
   window.Auth = {
-    ROLES, state, login, logout, guard, hasRole, can,
+    ROLES, state, login, register, logout, guard, hasRole, can,
     isAuthenticated, restore, refreshProfile, onUnauthorized,
-    bindLoginForm, clearSession, refreshAccess
+    bindLoginForm, bindRegisterForm, clearSession, refreshAccess,
+    isStaffRole
   };
   window.JONE = window.JONE || {};
 })();

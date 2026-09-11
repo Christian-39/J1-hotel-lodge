@@ -14,7 +14,7 @@
 <div class="dash">
   <aside class="dash-sidebar" aria-label="Staff navigation">
     <div class="dash-sidebar-brand">
-      <img src="../assets/icons/logo-dark.svg" alt="" width="30" height="42">
+      <img src="../assets/icons/logo-official.svg" alt="" width="30" height="42">
       <span>
         <span class="brand-word">J-ONE</span><br>
         <span class="brand-sub">Staff Console</span>
@@ -74,6 +74,7 @@
 <script src="../js/theme.js"></script>
 <script src="../js/ui.js"></script>
 <script src="../js/auth.js"></script>
+<script src="../js/hotel-data.js"></script>
 <script src="../js/navigation.js"></script>
 <script src="../js/dashboard.js"></script>
 <script>
@@ -87,35 +88,34 @@
   var tbody=document.querySelector("[data-tbody=checkin]");
   var arrivals=[];
 
-  function guestName(b){ return b.guest_name || (b.guest&&(b.guest.full_name||b.guest.name)) || "—"; }
-  function roomLabel(b){ return b.room_number || (b.room&&(b.room.number)) || b.room_type || "—"; }
-  function balance(b){ return b.balance != null ? b.balance : b.outstanding; }
-
-  function refOf(b){ return b.reference || b.ref || b.id; }
+  /* Verified /api/admin/bookings/ row shape. Today's expected arrivals:
+     status=CONFIRMED & check_in=<today> (exact-date filter). */
+  function refOf(b){ return b.booking_reference || b.id; }
+  function roomLabel(b){ return (b.room_numbers && b.room_numbers.length) ? b.room_numbers.join(", ") : (b.room_type_name || "—"); }
 
   function render(list){
     tbody.innerHTML=list.map(function(b){
       var ref=refOf(b);
-      var bal=balance(b);
-      return '<tr><td>'+JONE.esc(ref)+'</td><td>'+JONE.esc(guestName(b))+'</td><td class="hide-sm">'+JONE.esc(roomLabel(b))+'</td><td>'+JONE.esc(b.arrival_label || b.status || "Today")+'</td><td class="hide-sm num">'+(bal?JONE.formatNaira(bal):"<span class='text-success'>Settled</span>")+'</td><td><button class="btn btn-sm btn-accent" data-checkin-btn="'+encodeURIComponent(ref)+'">Check in</button></td></tr>';
+      var due=b.amount_due!=null?Number(b.amount_due):null;
+      return '<tr><td>'+JONE.esc(ref)+'</td><td>'+JONE.esc(b.guest_name||"—")+'</td><td class="hide-sm">'+JONE.esc(roomLabel(b))+'</td><td>'+JONE.esc(b.check_in?JONE.formatDate(b.check_in,"mid"):b.status||"—")+'</td><td class="hide-sm num">'+(due!=null?(due>0?JONE.formatNaira(due):"<span class='text-success'>Settled</span>"):"—")+'</td><td><button class="btn btn-sm btn-accent" data-checkin-btn="'+encodeURIComponent(ref)+'">Check in</button></td></tr>';
     }).join("") || '<tr><td colspan="6"><div class="empty-state"><span data-icon="logOut"></span><h3>No arrivals today</h3></div></td></tr>';
     JONE.icons.inject(tbody);
   }
 
   function apply(){
     var q=(document.getElementById("chi-q")?document.getElementById("chi-q").value.trim():"");
-    render(arrivals.filter(function(b){return !q || refOf(b).toLowerCase().indexOf(q.toLowerCase())>-1 || guestName(b).toLowerCase().indexOf(q.toLowerCase())>-1;}));
+    render(arrivals.filter(function(b){return !q || String(refOf(b)).toLowerCase().indexOf(q.toLowerCase())>-1 || String(b.guest_name||"").toLowerCase().indexOf(q.toLowerCase())>-1;}));
   }
 
   async function load(){
     DATA.loading(tbody);
     try{
-      var res=await window.API.list("checkIns");
-      var list=window.API.normalizeList?window.API.normalizeList(res.data).items:((res.data&&res.data.results)||res.data||[]);
+      var res=await window.API.list("bookings",{ status:"CONFIRMED", check_in:JONE.hotelTodayISO(0), ordering:"check_in", page_size:50 });
+      var list=window.API.normalizeList?window.API.normalizeList(res.data,res.pagination).items:((res.data&&res.data.results)||res.data||[]);
       arrivals=list||[];
-      if(!arrivals.length){ DATA.empty(tbody,"logOut","No arrivals today","Expected arrivals will appear here.",6); return; }
+      if(!arrivals.length){ DATA.empty(tbody,"logOut","No arrivals today","Guests expected to check in today will appear here.",6); return; }
       apply();
-    }catch(err){ DATA.error(tbody,"Arrivals couldn't be loaded","Please try again in a moment.",6); }
+    }catch(err){ DATA.error(tbody,"Arrivals couldn't be loaded",(err&&err.message)||"Please try again in a moment.",6); }
   }
   load();
 
@@ -124,8 +124,8 @@
   var qEl=document.getElementById("chi-q");
   if(qEl) qEl.addEventListener("input", JONE.debounce(apply,200));
 
-  // Check-in is a real backend action: only show success AFTER the server
-  // confirms. If the endpoint isn't configured, fail honestly.
+  // Check-in is a real backend action (POST /api/admin/bookings/{ref}/check-in/):
+  // success is only shown AFTER the server confirms.
   document.addEventListener("click", async function(e){
     var btn=e.target.closest("[data-checkin-btn]");
     if(!btn) return;
@@ -133,13 +133,13 @@
     if(!JONE.guardSubmit(btn)) return;
     try{
       btn.disabled=true;
-      await window.API.create("checkIns", { booking: ref, checked_in_at: new Date().toISOString() });
-      JONE.ui.toast("Guest checked into "+ref+" successfully.","success");
+      await window.API.checkInBooking(ref);
+      JONE.ui.toast("Guest checked in ("+ref+").","success");
       load();
     }catch(err){
       JONE.releaseGuard(btn);
       btn.disabled=false;
-      JONE.ui.toast(err && err.status===0 ? (err.message||"Backend not configured. Contact the administrator.") : "Couldn't check in this guest. Please try again.","error");
+      JONE.ui.toast(err && (err.message || "Couldn't check in this guest. Please try again."),"error");
     }
   });
 })();

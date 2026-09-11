@@ -32,7 +32,8 @@
       email: (fd.get("email") || "").trim(),
       phone: (fd.get("phone") || "").trim(),
       subject: (fd.get("subject") || "").trim(),
-      message: (fd.get("message") || "").trim()
+      message: (fd.get("message") || "").trim(),
+      website: (fd.get("website") || "").trim()   // honeypot — must stay blank
     };
 
     submitting = true;

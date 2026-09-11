@@ -20,9 +20,12 @@ The frontend delivers three coherent experiences in one product:
 3. **Staff dashboard** — a dense, operational console (bookings, guests, rooms, availability,
    check-in/out, payments, receipts, reports, content + communications management, settings).
 
-The design language is **quiet luxury**: editorial serif display type, generous whitespace, restrained
-motion, and a brand palette taken directly from the official J-ONE mark
-(charcoal `#373435` · grey `#727376` · yellow `#FFF212` · off-white `#FAF9F6`).
+The design language is **quiet luxury**: editorial serif display type (Cormorant Garamond) paired with
+a precise UI face (Inter), generous whitespace, restrained motion, and a calm palette built around
+central CSS variables — charcoal ink `#26241F`, warm off-white `#F6F4F0`, and a restrained ink-blue
+accent `#33526E` (light) / `#8FB0CB` (dark). The official J-ONE mark keeps its signature yellow
+strictly inside the logo; it never dominates the interface. Light and dark themes are first-class,
+persisted per visitor.
 
 ## Technology stack
 
@@ -31,6 +34,26 @@ motion, and a brand palette taken directly from the official J-ONE mark
 - **Vanilla JavaScript** (ES modules not required; pattern-based IIFE modules on `window`)
 - **REST API** via a single centralized layer (`js/api.js`)
 - No build step at runtime — optional `build.py` inlines shared chrome for zero component-request overhead
+- `dev_server.py` — tiny zero-dependency dev server that serves the static site and proxies
+  `/api/` + `/media/` to the Django backend, so the site runs exactly as in production (same-origin API)
+
+## Running locally
+
+```bash
+# 1. Start the Django backend (see its own README for setup)
+cd backend && python manage.py runserver 127.0.0.1:8000
+
+# 2. Serve the frontend with same-origin API proxying
+cd frontend && python3 dev_server.py 5500 http://127.0.0.1:8000
+# → open http://127.0.0.1:5500
+```
+
+In production, host the `frontend/` folder on any static web server (or Django) and expose `/api/`
+on the same origin. If the API lives on a different origin, set `API_BASE_URL` in `js/config.js`
+(and enable CORS on the backend).
+
+> After editing `components/` (header/footer/mobile-nav), re-run `python3 build.py` to re-inline
+> them into the public pages, then `python3 validate.py` to check the result.
 
 ## Folder structure
 
@@ -67,7 +90,7 @@ frontend/
 │   ├── site.js           # public page controllers (availability search, reveal)
 │   └── dashboard.js      # staff dashboard shared behaviours + nav + loading/empty/error states
 ├── assets/
-│   ├── icons/            # logo-dark.svg, logo-light/dark, watermark, spinner
+│   ├── icons/            # logo-official.svg, logo-light/dark, watermark, spinner
 │   └── images/           # photography (placeholders until authentic shots are supplied)
 ├── favicon/              # official favicons (supplied)
 ├── robots.txt
@@ -218,12 +241,12 @@ choice is made. A `preload-theme` class on `<html>` avoids any flash of the wron
 
 ## Logo / branding
 
-The site uses the **official** `assets/icons/logo-dark.svg` (a pure-vector mark) in the header,
+The site uses the **official** `assets/icons/logo-official.svg` (a pure-vector mark) in the header,
 footer and the staff console, rendered at its intrinsic aspect ratio (never stretched, cropped,
 recoloured or re-drawn) next to an HTML/CSS "J·ONE" wordmark that adapts to the active theme via
 CSS variables.
 
-`assets/icons/logo-light.svg` and `logo-dark.svg` are supplied, but they render their wordmark with
+`assets/icons/logo-light.svg` and `logo-official.svg` are supplied, but they render their wordmark with
 a font-dependent `<text>` element (not baked vector paths), so cross-platform rendering can vary.
 **Recommendation:** supply a baked, path-only full logo for the dark and light headers if you want
 pixel-perfect variant switching. Until then the correct, official mark asset is used and the

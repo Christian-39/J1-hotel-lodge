@@ -14,7 +14,7 @@
 <div class="dash">
   <aside class="dash-sidebar" aria-label="Staff navigation">
     <div class="dash-sidebar-brand">
-      <img src="../assets/icons/logo-dark.svg" alt="" width="30" height="42">
+      <img src="../assets/icons/logo-official.svg" alt="" width="30" height="42">
       <span>
         <span class="brand-word">J-ONE</span><br>
         <span class="brand-sub">Staff Console</span>
@@ -65,12 +65,13 @@
 <script src="../js/theme.js"></script>
 <script src="../js/ui.js"></script>
 <script src="../js/auth.js"></script>
+<script src="../js/hotel-data.js"></script>
 <script src="../js/navigation.js"></script>
 <script src="../js/dashboard.js"></script>
 <script>
   JONE.ui.initChrome();
   JONE.nav.initDashboardNav();
-  JONE.dashboard.boot("receptionist");
+  JONE.dashboard.boot("admin");
   document.querySelector("[data-logout]") && document.querySelector("[data-logout]").addEventListener("click", function(){ window.Auth.logout(); });
 
 (function(){
@@ -78,11 +79,15 @@
   var tbody=document.querySelector("[data-tbody=audit]");
   var logs=[];
 
-  function time(e){ return e.timestamp || e.created_at || e.time || null; }
-  function user(e){ return e.user || (e.user_name) || "System"; }
-  function action(e){ return e.action || e.event || e.verb || ""; }
-  function detail(e){ return e.description || e.detail || e.message || ""; }
-  function ip(e){ return e.ip_address || e.ip || ""; }
+  /* Verified /api/admin/audit-logs/ row: { id, actor_email, actor_name,
+     action, object_type, object_id, summary, changes, metadata,
+     ip_address, created_at } — filters: action, object_type, actor,
+     date_from, date_to. */
+  function time(e){ return e.created_at || null; }
+  function user(e){ return e.actor_name || e.actor_email || "System"; }
+  function action(e){ return e.action || ""; }
+  function detail(e){ return e.summary || ""; }
+  function ip(e){ return e.ip_address || ""; }
 
   function render(list){
     tbody.innerHTML=list.map(function(e){

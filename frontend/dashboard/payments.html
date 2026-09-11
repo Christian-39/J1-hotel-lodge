@@ -14,7 +14,7 @@
 <div class="dash">
   <aside class="dash-sidebar" aria-label="Staff navigation">
     <div class="dash-sidebar-brand">
-      <img src="../assets/icons/logo-dark.svg" alt="" width="30" height="42">
+      <img src="../assets/icons/logo-official.svg" alt="" width="30" height="42">
       <span>
         <span class="brand-word">J-ONE</span><br>
         <span class="brand-sub">Staff Console</span>
@@ -48,10 +48,25 @@
 
 <section class="panel">
   <div class="filter-bar">
-    <div class="field"><label class="field-label" for="p-q">Search</label><input class="input" id="p-q" placeholder="Reference, guest"></div>
-    <div class="field"><label class="field-label" for="p-method">Method</label><select class="select" id="p-method"><option value="">All</option><option>paystack</option><option>cash</option><option>pos</option><option>bank_transfer</option></select></div>
-    <div class="field"><label class="field-label" for="p-status">Status</label><select class="select" id="p-status"><option value="">All</option><option>paid</option><option>pending</option><option>failed</option></select></div>
+    <div class="field"><label class="field-label" for="p-q">Search</label><input class="input" id="p-q" placeholder="Reference, booking, guest"></div>
+    <div class="field"><label class="field-label" for="p-method">Method</label><select class="select" id="p-method"><option value="">All</option><option value="PAYSTACK">Paystack</option><option value="CASH">Cash</option><option value="POS">POS</option><option value="BANK_TRANSFER">Bank transfer</option></select></div>
+    <div class="field"><label class="field-label" for="p-status">Status</label><select class="select" id="p-status"><option value="">All</option><option value="SUCCESS">Success</option><option value="PENDING">Pending</option><option value="FAILED">Failed</option><option value="REFUNDED">Refunded</option></select></div>
+    <div class="field"><button class="btn btn-sm" id="p-apply" type="button">Apply</button></div>
   </div>
+
+  <details class="panel" style="border:1px solid var(--color-border);margin-bottom:1.25rem;">
+    <summary style="padding:0.85rem 1.1rem;cursor:pointer;font-weight:600;">Record offline payment (cash / POS / transfer)</summary>
+    <div class="panel-body">
+      <form id="record-payment-form" class="filter-bar" style="flex-wrap:wrap;">
+        <div class="field" style="min-width:200px;"><label class="field-label" for="rp-booking">Booking reference</label><input class="input" id="rp-booking" required placeholder="J1-…"></div>
+        <div class="field" style="min-width:140px;"><label class="field-label" for="rp-amount">Amount (₦)</label><input class="input" id="rp-amount" type="number" min="100" step="0.01" required></div>
+        <div class="field"><label class="field-label" for="rp-provider">Method</label><select class="select" id="rp-provider" required><option value="CASH">Cash</option><option value="POS">POS</option><option value="BANK_TRANSFER">Bank transfer</option></select></div>
+        <div class="field" style="min-width:220px;"><label class="field-label" for="rp-notes">Notes</label><input class="input" id="rp-notes" placeholder="Optional"></div>
+        <div class="field" style="align-self:flex-end;"><button class="btn btn-accent" type="submit">Record payment</button></div>
+      </form>
+      <div class="field-error" data-record-error style="display:none;margin-top:0.5rem;"></div>
+    </div>
+  </details>
   <div class="panel-body no-pad">
     <div class="table-wrap"><table class="table">
       <thead><tr><th>Payment ref</th><th>Booking</th><th class="hide-sm">Guest</th><th>Method</th><th class="hide-sm">Date</th><th>Amount</th><th>Status</th><th class="hide-sm">By</th></tr></thead>
@@ -69,6 +84,7 @@
 <script src="../js/theme.js"></script>
 <script src="../js/ui.js"></script>
 <script src="../js/auth.js"></script>
+<script src="../js/hotel-data.js"></script>
 <script src="../js/navigation.js"></script>
 <script src="../js/dashboard.js"></script>
 <script>
@@ -81,33 +97,76 @@
   var DATA=JONE.dashboard.DATA;
   var tbody=document.querySelector("[data-tbody=payments]");
 
-  function ref(p){ return p.reference || p.ref || p.reference_number || "—"; }
-  function bookingRef(p){ return p.booking_ref || p.booking || (p.booking&&(p.booking.reference||p.booking.ref)) || "—"; }
-  function guestName(p){ return p.guest_name || (p.guest&&(p.guest.full_name||p.guest.name)) || "—"; }
-  function method(p){ return p.method || p.payment_method || ""; }
-  function date(p){ return p.paid_at || p.date || p.created_at || null; }
-  function amount(p){ return p.amount != null ? p.amount : p.total; }
-  function by(p){ return p.paid_by || (p.user&&p.user.name) || "—"; }
-
+  /* Verified /api/admin/payments/ row:
+     { id, reference, booking_reference, guest_name, staff_email, provider,
+       amount, currency, status, channel, gateway_response, transaction_id,
+       paid_at, notes, created_at } — filters: status, provider, date_from,
+       date_to, paid_on, search. */
   function render(list){
-    if(!list.length){ tbody.innerHTML='<tr><td colspan="8"><div class="empty-state"><span data-icon="creditCard"></span><h3>No payments found</h3></div></td></tr>'; JONE.icons.inject(tbody); return; }
+    if(!list.length){ tbody.innerHTML='<tr><td colspan="8"><div class="empty-state"><span data-icon="creditCard"></span><h3>No payments found</h3><p>No payments match the current filters.</p></div></td></tr>'; JONE.icons.inject(tbody); return; }
     tbody.innerHTML=list.map(function(p){
-      var b=bookingRef(p);
-      return '<tr><td>'+JONE.esc(ref(p))+'</td><td>'+(b==="—"?JONE.esc(b):'<a href="booking-details.html?ref='+encodeURIComponent(b)+'">'+JONE.esc(b)+'</a>')+'</td><td class="hide-sm">'+JONE.esc(guestName(p))+'</td><td>'+JONE.esc(method(p).replace(/_/g," "))+'</td><td class="hide-sm">'+JONE.formatDate(date(p),"mid")+'</td><td class="num">'+JONE.formatNaira(amount(p))+'</td><td>'+JONE.dashboard.statusPill(p.status)+'</td><td class="hide-sm">'+JONE.esc(by(p))+'</td></tr>';
+      var b=p.booking_reference;
+      return '<tr><td>'+JONE.esc(p.reference||"—")+'</td><td>'+(b?'<a href="booking-details.html?ref='+encodeURIComponent(b)+'">'+JONE.esc(b)+'</a>':"—")+'</td><td class="hide-sm">'+JONE.esc(p.guest_name||"—")+'</td><td>'+JONE.esc(String(p.provider||"—").toLowerCase())+'</td><td class="hide-sm">'+JONE.esc(p.paid_at?JONE.formatDate(p.paid_at,"mid"):"—")+'</td><td class="num">'+JONE.esc(JONE.formatNaira(p.amount))+'</td><td>'+JONE.dashboard.statusPill(p.status)+'</td><td class="hide-sm">'+JONE.esc(p.staff_email||"—")+'</td></tr>';
     }).join("");
     JONE.icons.inject(tbody);
+  }
+
+  function filters(){
+    var f={ page_size:50 };
+    var q=document.getElementById("p-q"); if(q&&q.value.trim()) f.search=q.value.trim();
+    var m=document.getElementById("p-method"); if(m&&m.value) f.provider=m.value;
+    var s=document.getElementById("p-status"); if(s&&s.value) f.status=s.value;
+    return f;
   }
 
   async function load(){
     DATA.loading(tbody);
     try{
-      var res=await window.API.list("payments");
-      var list=window.API.normalizeList?window.API.normalizeList(res.data).items:((res.data&&res.data.results)||res.data||[]);
-      if(!(list||[]).length){ DATA.empty(tbody,"creditCard","No payments found","Payments will appear here once recorded.",8); return; }
-      render(list);
-    }catch(err){ DATA.error(tbody,"Payments couldn't be loaded","Please try again in a moment.",8); }
+      var res=await window.API.list("payments",filters());
+      var list=window.API.normalizeList?window.API.normalizeList(res.data,res.pagination).items:((res.data&&res.data.results)||res.data||[]);
+      render(list||[]);
+    }catch(err){ DATA.error(tbody,"Payments couldn't be loaded",(err&&err.message)||"Please try again in a moment.",8); }
   }
   load();
+
+  var applyBtn=document.getElementById("p-apply");
+  if(applyBtn) applyBtn.addEventListener("click",load);
+  var qEl=document.getElementById("p-q");
+  if(qEl) qEl.addEventListener("input",JONE.debounce(load,300));
+
+  // Prefill the booking reference when handed off from a booking (?bookings=).
+  (function(){
+    var pre=new URLSearchParams(location.search).get("booking");
+    if(pre){ var el=document.getElementById("rp-booking"); if(el&&!el.value) el.value=pre; }
+  })();
+
+  // Record an offline payment — POST /api/admin/payments/record/ (verified).
+  // Success toast only AFTER the backend confirms.
+  var form=document.getElementById("record-payment-form");
+  if(form) form.addEventListener("submit", async function(e){
+    e.preventDefault();
+    var errBox=document.querySelector("[data-record-error]");
+    if(errBox){ errBox.style.display="none"; }
+    if(!form.checkValidity()){ form.reportValidity(); return; }
+    var btn=form.querySelector("[type=submit]");
+    if(!JONE.guardSubmit(btn)) return;
+    try{
+      await window.API.recordPayment({
+        booking_reference: document.getElementById("rp-booking").value.trim(),
+        amount: String(document.getElementById("rp-amount").value),
+        provider: document.getElementById("rp-provider").value,
+        notes: document.getElementById("rp-notes").value.trim()
+      });
+      JONE.ui.toast("Payment recorded.","success");
+      form.reset();
+      load();
+    }catch(err){
+      JONE.releaseGuard(btn);
+      var msg=(err&&err.message)||"The payment couldn't be recorded.";
+      if(errBox){ errBox.textContent=msg; errBox.style.display="block"; }
+      JONE.ui.toast(msg,"error");
+    }
+  });
 })();
 
 </script>

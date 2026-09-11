@@ -14,7 +14,7 @@
 <div class="dash">
   <aside class="dash-sidebar" aria-label="Staff navigation">
     <div class="dash-sidebar-brand">
-      <img src="../assets/icons/logo-dark.svg" alt="" width="30" height="42">
+      <img src="../assets/icons/logo-official.svg" alt="" width="30" height="42">
       <span>
         <span class="brand-word">J-ONE</span><br>
         <span class="brand-sub">Staff Console</span>
@@ -97,6 +97,7 @@
 <script src="../js/theme.js"></script>
 <script src="../js/ui.js"></script>
 <script src="../js/auth.js"></script>
+<script src="../js/hotel-data.js"></script>
 <script src="../js/navigation.js"></script>
 <script src="../js/dashboard.js"></script>
 <script>
@@ -109,15 +110,12 @@
   var DATA=JONE.dashboard.DATA;
   var tbody = document.querySelector("[data-tbody=arrivals]");
 
-  function guestOf(a){ return a.guest_name || (a.guest&&(a.guest.full_name||a.guest.name)) || "—"; }
-  function roomOf(a){ return a.room_number || (a.room&&(a.room.number)) || a.room_type || "—"; }
-  function dateOf(a){ return a.date_label || a.date || (a.check_in?JONE.formatDate(a.check_in,"mid"):"—"); }
-
   function renderArrivals(list){
     if(!tbody) return;
-    if(!list.length){ DATA.empty(tbody,"calendar","No arrivals","Expected arrivals today will appear here.",4); return; }
+    if(!list.length){ DATA.empty(tbody,"calendar","No recent bookings","New bookings will appear here.",4); return; }
     tbody.innerHTML = list.map(function(a){
-      return "<tr><td>"+JONE.esc(guestOf(a))+"</td><td>"+JONE.esc(roomOf(a))+"</td><td>"+JONE.esc(dateOf(a))+"</td><td>"+JONE.dashboard.statusPill(a.status||"confirmed")+"</td></tr>";
+      var room = (a.room_numbers && a.room_numbers.length) ? a.room_numbers.join(", ") : (a.room_type_name || "—");
+      return "<tr><td>"+JONE.esc(a.guest_name||"—")+"</td><td>"+JONE.esc(room)+"</td><td>"+JONE.esc(a.check_in?JONE.formatDate(a.check_in,"mid"):"—")+"</td><td>"+JONE.dashboard.statusPill(a.status||"—")+"</td></tr>";
     }).join("");
     JONE.icons.inject(tbody);
   }
@@ -126,51 +124,66 @@
     document.querySelectorAll("[data-kpi="+name+"]").forEach(function(el){ el.textContent = (val==null||val==="") ? "--" : val; });
   }
 
-  function applyStats(s){
-    if(!s) return;
-    setKpi("today_checkins", s.today_checkins != null ? s.today_checkins : s.checkins_today);
-    setKpi("today_checkouts", s.today_checkouts != null ? s.today_checkouts : s.checkouts_today);
-    setKpi("in_house", s.in_house != null ? s.in_house : s.guests_in_house);
-    setKpi("occupied", s.occupied != null ? s.occupied : s.occupied_rooms);
-    setKpi("available_rooms", s.available_rooms != null ? s.available_rooms : s.rooms_available);
-    setKpi("total_rooms", s.total_rooms != null ? s.total_rooms : s.rooms_total);
-    setKpi("pending_bookings", s.pending_bookings != null ? s.pending_bookings : s.bookings_pending);
-    if(s.today_revenue != null || s.revenue_today != null) setKpi("today_revenue", JONE.formatNaira(s.today_revenue != null ? s.today_revenue : s.revenue_today));
-    if(s.outstanding != null) setKpi("outstanding", JONE.formatNaira(s.outstanding));
+  /* Verified /api/admin/dashboard/ shape:
+     { today:{arrivals,departures,in_house,no_shows}, rooms:{total,occupied,available,out_of_order,occupancy_rate_percent},
+       bookings:{created_today,pending,confirmed_upcoming,cancelled_today}, recent_bookings[],
+       notifications:{unread_count}, revenue?{today,this_month,outstanding_total,outstanding_bookings},
+       recent_payments?[], alerts?[] } — revenue/recent_payments/alerts exist for MANAGER+ only. */
+  function applyStats(d){
+    if(!d) return;
+    var today = d.today || {}, rooms = d.rooms || {}, bk = d.bookings || {};
+    setKpi("today_checkins", today.arrivals);
+    setKpi("today_checkouts", today.departures);
+    setKpi("in_house", today.in_house);
+    setKpi("occupied", rooms.occupied);
+    setKpi("available_rooms", rooms.available);
+    setKpi("total_rooms", rooms.total);
+    setKpi("pending_bookings", bk.pending);
+    if(d.revenue){
+      if(d.revenue.today != null) setKpi("today_revenue", JONE.formatNaira(d.revenue.today));
+      if(d.revenue.outstanding_total != null) setKpi("outstanding", JONE.formatNaira(d.revenue.outstanding_total));
+    } else {
+      // Revenue is MANAGER+ only — receptionists see an honest "n/a".
+      setKpi("today_revenue", "n/a");
+      setKpi("outstanding", "n/a");
+    }
   }
 
-  function renderActivity(list){
+  function renderActivity(items){
     var act = document.querySelector("[data-activity]");
     if(!act) return;
-    act.innerHTML = list.length ? list.map(function(a){
-      return '<div class="activity-item"><span class="activity-icon"><span data-icon="'+JONE.esc(a.icon||"bell")+'" data-size="18"></span></span><div class="activity-body"><p>'+JONE.esc(a.message||a.title||"")+'</p><div class="activity-time">'+JONE.esc(a.time_label||a.time||"")+'</div></div></div>';
+    act.innerHTML = items.length ? items.map(function(n){
+      var icon = "bell";
+      if(n.type && n.type.indexOf("PAYMENT") === 0) icon = "wallet";
+      else if(n.type === "CHECK_IN" || n.type === "CHECK_OUT") icon = "logOut";
+      else if(n.type === "BOOKING_CREATED" || n.type === "BOOKING_CONFIRMED") icon = "calendar";
+      return '<div class="activity-item"><span class="activity-icon"><span data-icon="'+icon+'" data-size="18"></span></span><div class="activity-body"><p>'+JONE.esc(n.title||n.message||"")+'</p><div class="activity-time">'+JONE.esc(n.created_at?JONE.formatDate(n.created_at,"mid"):"")+'</div></div></div>';
     }).join("") : '<div class="empty-state" style="margin:1rem;"><span data-icon="bell"></span><h3>No recent activity</h3></div>';
     JONE.icons.inject(act);
   }
 
   async function load(){
-    // KPI / stats
+    // KPI block + recent bookings — one authenticated call, backend-shaped.
+    var dash = null;
+    if(tbody) DATA.loading(tbody);
     try{
-      var sr=await window.API.list("stats");
-      applyStats(sr.data && sr.data.stats ? sr.data.stats : sr.data);
-    }catch(_){ /* stats may not be configured — leave KPIs at '--' */ }
-    // Arrivals (today's expected check-ins) — real backend data only.
-    if(tbody){
-      DATA.loading(tbody);
-      try{
-        var ar=await window.API.list("checkIns");
-        var list=window.API.normalizeList?window.API.normalizeList(ar.data).items:((ar.data&&ar.data.results)||ar.data||[]);
-        renderArrivals(list||[]);
-      }catch(_){ DATA.error(tbody,"Arrivals couldn't be loaded","Please try again in a moment.",4); }
+      var sr = await window.API.list("stats");
+      dash = (sr && sr.data) || null;
+      applyStats(dash);
+      renderArrivals((dash && dash.recent_bookings) || []);
+    }catch(_){
+      applyStats(null);
+      if(tbody) DATA.error(tbody,"Dashboard couldn't be loaded","Please try again in a moment.",4);
     }
-    // Recent activity from notifications (real).
+    // Recent activity — real notifications for the signed-in staff user.
+    // Verified shape: { unread_count, notifications: [...] }
     try{
-      var nr=await window.API.list("notifications");
-      var nlist=window.API.normalizeList?window.API.normalizeList(nr.data).items:((nr.data&&nr.data.results)||nr.data||[]);
-      renderActivity((nlist||[]).slice(0,6).map(function(n){
-        return {icon:n.icon||(n.type==="payment"?"wallet":"bell"), message:n.title||n.message, time:n.time_label||n.time||""};
-      }));
-    }catch(_){ var act=document.querySelector("[data-activity]"); if(act){ try{ DATA.error(act,"Activity couldn't be loaded","",1,false);}catch(e){} } }
+      var nr = await window.API.getNotifications({ page_size: 6 });
+      renderActivity(((nr && nr.data && nr.data.notifications) || []));
+    }catch(_){
+      var act = document.querySelector("[data-activity]");
+      if(act){ try{ DATA.error(act,"Activity couldn't be loaded","",1,false); }catch(e){} }
+    }
   }
   load();
 })();

@@ -26,9 +26,16 @@
     });
   }
 
-  function toggle() {
+  function toggle(btn) {
     const current = root.getAttribute("data-theme") || resolve();
     apply(current === "dark" ? "light" : "dark");
+    // Polished one-rotation cue on the pressed icon.
+    if (btn) {
+      btn.classList.remove("spin");
+      void btn.offsetWidth;           // restart the animation
+      btn.classList.add("spin");
+      setTimeout(() => btn.classList.remove("spin"), 520);
+    }
   }
 
   function init() {
@@ -39,7 +46,7 @@
 
     document.addEventListener("click", (e) => {
       const btn = e.target.closest(".theme-toggle");
-      if (btn) toggle();
+      if (btn) toggle(btn);
     });
 
     if (window.matchMedia) {

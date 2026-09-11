@@ -14,7 +14,7 @@
 <div class="dash">
   <aside class="dash-sidebar" aria-label="Staff navigation">
     <div class="dash-sidebar-brand">
-      <img src="../assets/icons/logo-dark.svg" alt="" width="30" height="42">
+      <img src="../assets/icons/logo-official.svg" alt="" width="30" height="42">
       <span>
         <span class="brand-word">J-ONE</span><br>
         <span class="brand-sub">Staff Console</span>
@@ -46,13 +46,48 @@
     </div>
     <div class="dash-content">
 
-<section class="panel" style="max-width:640px;">
+<section class="panel" style="max-width:680px;">
   <div class="panel-head"><h2>My profile</h2></div>
   <div class="panel-body">
-    <div class="field"><label class="field-label" for="pf-name">Full name</label><input class="input" id="pf-name" value="Reception Staff"></div>
-    <div class="field"><label class="field-label" for="pf-email">Email</label><input class="input" id="pf-email" type="email" value="staff@j-onehotel.com"></div>
-    <div class="field"><label class="field-label" for="pf-pass">New password</label><input class="input" id="pf-pass" type="password" placeholder="Leave blank to keep current"></div>
-    <button class="btn" data-profile-save>Save changes</button>
+    <div id="pf-loading"><div class="loading-block"><div class="spinner" role="status"></div><p class="muted">Loading profile&hellip;</p></div></div>
+    <div id="pf-error" style="display:none;"></div>
+
+    <form id="pf-form" style="display:none;" novalidate>
+      <div style="display:flex;align-items:center;gap:0.9rem;margin-bottom:1.25rem;">
+        <img id="pf-avatar" alt="" src="" style="width:56px;height:56px;border-radius:50%;object-fit:cover;background:var(--surface-alt);display:none;">
+        <span id="pf-avatar-fb" data-icon="user" data-size="26" style="width:56px;height:56px;border-radius:50%;background:var(--surface-alt);display:inline-flex;align-items:center;justify-content:center;"></span>
+        <div>
+          <div style="font-weight:600;" id="pf-fullname">&nbsp;</div>
+          <div class="caption" id="pf-role">&nbsp;</div>
+        </div>
+      </div>
+      <div class="form-grid fg-2">
+        <div class="field"><label class="field-label" for="pf-first">First name</label><input class="input" id="pf-first" name="first_name" autocomplete="given-name" required></div>
+        <div class="field"><label class="field-label" for="pf-last">Last name</label><input class="input" id="pf-last" name="last_name" autocomplete="family-name" required></div>
+      </div>
+      <div class="field"><label class="field-label" for="pf-email">Email (sign-in address)</label><input class="input" id="pf-email" type="email" disabled></div>
+      <div class="form-grid fg-2">
+        <div class="field"><label class="field-label" for="pf-phone">Phone</label><input class="input" id="pf-phone" name="phone" type="tel" autocomplete="tel"></div>
+        <div class="field"><label class="field-label" for="pf-image">Profile photo</label><input class="input" id="pf-image" name="profile_image" type="file" accept="image/*" style="padding:0.45em;"></div>
+      </div>
+      <div class="field-error" id="pf-form-error" style="display:none;"></div>
+      <button class="btn btn-accent" type="submit" id="pf-save"><span data-icon="save" data-size="15"></span> Save profile</button>
+    </form>
+  </div>
+</section>
+
+<section class="panel" style="max-width:680px;">
+  <div class="panel-head"><h2>Change password</h2></div>
+  <div class="panel-body">
+    <form id="pw-form" novalidate>
+      <div class="field"><label class="field-label" for="pw-current">Current password</label><input class="input" id="pw-current" name="current_password" type="password" autocomplete="current-password" required></div>
+      <div class="form-grid fg-2">
+        <div class="field"><label class="field-label" for="pw-new">New password</label><input class="input" id="pw-new" name="new_password" type="password" autocomplete="new-password" minlength="8" required></div>
+        <div class="field"><label class="field-label" for="pw-confirm">Confirm new password</label><input class="input" id="pw-confirm" name="new_password_confirm" type="password" autocomplete="new-password" minlength="8" required></div>
+      </div>
+      <div class="field-error" id="pw-form-error" style="display:none;"></div>
+      <button class="btn" type="submit" id="pw-save"><span data-icon="key" data-size="15"></span> Update password</button>
+    </form>
   </div>
 </section>
     </div>
@@ -65,6 +100,7 @@
 <script src="../js/theme.js"></script>
 <script src="../js/ui.js"></script>
 <script src="../js/auth.js"></script>
+<script src="../js/hotel-data.js"></script>
 <script src="../js/navigation.js"></script>
 <script src="../js/dashboard.js"></script>
 <script>
@@ -74,7 +110,102 @@
   document.querySelector("[data-logout]") && document.querySelector("[data-logout]").addEventListener("click", function(){ window.Auth.logout(); });
 
 (function(){
-  document.querySelector("[data-profile-save]").addEventListener("click",function(){JONE.ui.toast("Profile updated.","success");});
+  "use strict";
+  /* Verified contracts:
+     GET /api/auth/profile/ -> { id,email,first_name,last_name,full_name,phone,
+        role,email_verified,profile_image_url,date_joined,last_login } (read-only)
+     PATCH /api/auth/profile/ -> { first_name,last_name,phone,profile_image? } (multipart)
+     POST /api/auth/password/change/ -> { current_password,new_password,new_password_confirm } */
+
+  var me = null;
+
+  function $(id){ return document.getElementById(id); }
+  function show(id){ $(id).style.display = ""; }
+  function hide(id){ $(id).style.display = "none"; }
+
+  function paint(){
+    $("pf-fullname").textContent = me.full_name || (me.first_name + " " + me.last_name);
+    $("pf-role").textContent = String(me.role || "staff").replace(/_/g, " ").toLowerCase() + " \u00B7 member since " + (me.date_joined ? new Date(me.date_joined).toLocaleDateString(undefined,{year:"numeric",month:"short"}) : "");
+    $("pf-first").value = me.first_name || "";
+    $("pf-last").value = me.last_name || "";
+    $("pf-email").value = me.email || "";
+    $("pf-phone").value = me.phone || "";
+    if (me.profile_image_url) {
+      $("pf-avatar").src = me.profile_image_url;
+      show("pf-avatar"); hide("pf-avatar-fb");
+    }
+    hide("pf-loading"); show("pf-form");
+    JONE.icons.inject($("pf-form"));
+  }
+
+  async function load(){
+    try{
+      var res = await window.API.me();
+      me = res.data;
+      paint();
+    }catch(err){
+      hide("pf-loading");
+      $("pf-error").innerHTML = '<div class="empty-state"><span data-icon="alertTriangle" data-size="34"></span><h3>Profile couldn\'t be loaded</h3><p>' + ((err&&err.message)||"Please refresh the page.") + '</p></div>';
+      show("pf-error"); JONE.icons.inject($("pf-error"));
+    }
+  }
+
+  $("pf-form").addEventListener("submit", async function(e){
+    e.preventDefault();
+    var errBox = $("pf-form-error"); errBox.style.display = "none";
+    var btn = $("pf-save");
+    if(!this.checkValidity()){ this.reportValidity(); return; }
+    if(!JONE.guardSubmit(btn)) return;
+    var fd = new FormData();
+    fd.append("first_name", $("pf-first").value.trim());
+    fd.append("last_name", $("pf-last").value.trim());
+    fd.append("phone", $("pf-phone").value.trim());
+    var file = $("pf-image").files[0];
+    if(file) fd.append("profile_image", file, file.name);
+    try{
+      var res = await window.API.patch("/api/auth/profile/", fd);
+      me = res.data || me;
+      JONE.ui.toast("Profile updated.","success");
+      paint();  // refresh avatar/name from the server response
+      $("pf-image").value = "";
+      // Keep the cached session user in sync (sidebar/topbar name).
+      try{
+        var u = JSON.parse(localStorage.getItem("jone.auth") || "null");
+        if(u){ u.first_name = me.first_name; u.last_name = me.last_name; u.full_name = me.full_name; localStorage.setItem("jone.user", JSON.stringify(u)); }
+      }catch(_){}
+    }catch(err){
+      var msg = (err && err.message) || "Couldn't save the profile.";
+      errBox.textContent = msg; errBox.style.display = "block";
+      JONE.ui.toast(msg, "error");
+    }finally{ JONE.releaseGuard(btn); }
+  });
+
+  $("pw-form").addEventListener("submit", async function(e){
+    e.preventDefault();
+    var errBox = $("pw-form-error"); errBox.style.display = "none";
+    var btn = $("pw-save");
+    if(!this.checkValidity()){ this.reportValidity(); return; }
+    if($("pw-new").value !== $("pw-confirm").value){
+      errBox.textContent = "The new passwords don't match."; errBox.style.display = "block";
+      return;
+    }
+    if(!JONE.guardSubmit(btn)) return;
+    try{
+      await window.API.post("/api/auth/password/change/", {
+        current_password: $("pw-current").value,
+        new_password: $("pw-new").value,
+        new_password_confirm: $("pw-confirm").value
+      });
+      JONE.ui.toast("Password updated.","success");
+      this.reset();
+    }catch(err){
+      var msg = (err && err.message) || "Couldn't change the password.";
+      errBox.textContent = msg; errBox.style.display = "block";
+      JONE.ui.toast(msg, "error");
+    }finally{ JONE.releaseGuard(btn); }
+  });
+
+  load();
 })();
 
 </script>

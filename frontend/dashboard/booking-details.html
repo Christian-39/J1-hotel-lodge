@@ -14,7 +14,7 @@
 <div class="dash">
   <aside class="dash-sidebar" aria-label="Staff navigation">
     <div class="dash-sidebar-brand">
-      <img src="../assets/icons/logo-dark.svg" alt="" width="30" height="42">
+      <img src="../assets/icons/logo-official.svg" alt="" width="30" height="42">
       <span>
         <span class="brand-word">J-ONE</span><br>
         <span class="brand-sub">Staff Console</span>
@@ -104,6 +104,7 @@
 <script src="../js/theme.js"></script>
 <script src="../js/ui.js"></script>
 <script src="../js/auth.js"></script>
+<script src="../js/hotel-data.js"></script>
 <script src="../js/navigation.js"></script>
 <script src="../js/dashboard.js"></script>
 <script>
@@ -117,40 +118,62 @@
   var ref=params.get("ref");
   var book=null;
 
+  /* Verified: GET /api/admin/bookings/{id|ref}/ returns the full detail
+     (guest, room_assignments, price breakdown, lifecycle timestamps);
+     GET /api/bookings/{ref}/receipt/ (staff allowed) adds the payments list. */
   function set(k,v){var n=document.querySelector("[data-bd-"+k+"]"); if(n&&v!=null) n.textContent=v;}
-  function guestName(){ return book.guest_name || (book.guest&&(book.guest.full_name||book.guest.name)) || "—"; }
-  function contact(){ return book.guest_contact || (book.guest&&(book.guest.phone||book.guest.email)) || (book.email||book.phone) || "—"; }
-  function roomLabel(){ return book.room_number || (book.room&&book.room.number) || book.room_type || "—"; }
-  function total(){ return book.total!=null?book.total:book.amount; }
-  function paid(){ return book.paid!=null?book.paid:(book.amount_paid||0); }
+  function guestName(){ return (book.guest&&(book.guest.full_name)) || book.guest_name || "—"; }
+  function contact(){ return (book.guest&&(book.guest.phone||book.guest.email)) || book.guest_phone || book.guest_email || "—"; }
+  function roomLabel(){
+    if(book.room_assignments && book.room_assignments.length) return book.room_assignments.map(function(a){return a.room_number;}).join(", ");
+    return book.room_type_name || "—";
+  }
 
   function renderBookings(){
-    var b=book.ref||book.reference||ref||"—";
+    var b=book.booking_reference||ref||"—";
     set("ref",b); set("guest",guestName()); set("contact",contact()); set("room",roomLabel());
     set("ci",JONE.formatDate(book.check_in)); set("co",JONE.formatDate(book.check_out));
-    set("nights", (book.nights||JONE.nightsBetween(book.check_in,book.check_out))+" nights");
-    set("total",JONE.formatNaira(total())); set("paid",JONE.formatNaira(paid()));
-    set("balance",JONE.formatNaira(total()-paid()));
-    set("status", (book.status||"").toUpperCase());
-    // Payment history — backend records only, never synthesized.
-    var tbody=document.querySelector("[data-tbody=bd-payments]");
-    if(tbody){
-      var pays=(book.payments||book.payment_history||[]);
-      tbody.innerHTML = pays.length ? pays.map(function(p){
-        var pr=p.reference||p.ref||"PAY-"+b;
-        return '<tr><td>'+JONE.esc(pr)+'</td><td>'+JONE.esc(p.method||p.payment_method||"Online")+'</td><td class="hide-sm">'+JONE.formatDate(p.paid_at||p.date,"mid")+'</td><td class="num">'+JONE.formatNaira(p.amount)+'</td><td>'+JONE.dashboard.statusPill(p.status||"paid")+'</td></tr>';
-      }).join("") : '<tr><td colspan="5"><div class="empty-state"><span data-icon="wallet"></span><h3>No payments recorded</h3></div></td></tr>';
-      JONE.icons.inject(tbody);
-    }
-    // Activity — backend history only.
+    set("nights", (book.nights!=null?book.nights:JONE.nightsBetween(book.check_in,book.check_out))+" nights");
+    set("total",JONE.formatNaira(book.total_amount));
+    set("paid",JONE.formatNaira(book.amount_paid!=null?book.amount_paid:0));
+    set("balance",JONE.formatNaira(book.amount_due!=null?book.amount_due:0));
+    set("status", String(book.status||"").toUpperCase()+" · "+String(book.payment_status||"").toLowerCase().replace(/_/g," "));
+
+    // Lifecycle timeline — the booking's OWN backend timestamps (never invented).
     var act=document.querySelector("[data-bd-activity]");
     if(act){
-      var hist=(book.history||book.activity||[]);
-      act.innerHTML = hist.length ? hist.map(function(h){
-        return '<div class="activity-item"><span class="activity-icon"><span data-icon="checkCircle" data-size="18"></span></span><div><p>'+JONE.esc(h.action||h.message||"Updated")+'</p><div class="activity-time">'+JONE.formatDate(h.at||h.created_at||h.time,"mid")+'</div></div></div>';
-      }).join("") : '<div class="empty-state" style="margin:1rem;"><span data-icon="fileText"></span><h3>No history yet</h3></div>';
+      var events=[];
+      if(book.created_at) events.push(["Booking created",book.created_at]);
+      if(book.checked_in_at) events.push(["Checked in",book.checked_in_at]);
+      if(book.checked_out_at) events.push(["Checked out",book.checked_out_at]);
+      if(book.cancelled_at) events.push(["Cancelled",book.cancelled_at]);
+      act.innerHTML = events.length ? events.map(function(h){
+        return '<div class="activity-item"><span class="activity-icon"><span data-icon="checkCircle" data-size="18"></span></span><div><p>'+JONE.esc(h[0])+'</p><div class="activity-time">'+JONE.esc(JONE.formatDateTime(h[1]))+'</div></div></div>';
+      }).join("") : '<div class="empty-state" style="margin:1rem;"><span data-icon="fileText"></span><h3>No lifecycle events yet</h3></div>';
       JONE.icons.inject(act);
     }
+    syncActions();
+  }
+
+  function renderPayments(payments){
+    var tbody=document.querySelector("[data-tbody=bd-payments]");
+    if(!tbody) return;
+    tbody.innerHTML = (payments||[]).length ? payments.map(function(p){
+      return '<tr><td>'+JONE.esc(p.reference||"—")+'</td><td>'+JONE.esc(String(p.provider||"online").toLowerCase())+'</td><td class="hide-sm">'+JONE.esc(p.paid_at?JONE.formatDate(p.paid_at,"mid"):"—")+'</td><td class="num">'+JONE.esc(JONE.formatNaira(p.amount))+'</td><td>'+JONE.dashboard.statusPill(p.status)+'</td></tr>';
+    }).join("") : '<tr><td colspan="5"><div class="empty-state"><span data-icon="wallet"></span><h3>No payments recorded</h3></div></td></tr>';
+    JONE.icons.inject(tbody);
+  }
+
+  function syncActions(){
+    var st=String(book.status||"").toUpperCase();
+    var checkin=document.querySelector("[data-bd-checkin]");
+    var cancel=document.querySelector("[data-bd-cancel]");
+    if(checkin){
+      if(st==="CONFIRMED"){ checkin.style.display=""; checkin.textContent="Check in"; }
+      else if(st==="CHECKED_IN"){ checkin.style.display=""; checkin.textContent="Check out"; }
+      else checkin.style.display="none";
+    }
+    if(cancel) cancel.style.display = (st==="CANCELLED"||st==="CHECKED_OUT"||st==="EXPIRED"||st==="NO_SHOW") ? "none" : "";
   }
 
   function showError(msg){
@@ -163,10 +186,14 @@
     if(!ref){ showError("No booking reference was provided."); return; }
     try{
       var res=await window.API.getOne("booking", ref);
-      var data=res.data||{};
-      book=(data.booking||data);
+      book=res.data||{};
       renderBookings();
-    }catch(err){ showError(err&&err.status===0?err.message:""); }
+    }catch(err){ showError(err&&err.status===0?err.message:""); return; }
+    // Payments come from the receipt endpoint (verified, staff allowed).
+    try{
+      var rc=await window.API.getBookingReceipt(ref);
+      renderPayments(rc.data&&rc.data.payments);
+    }catch(_){ renderPayments([]); }
   }
   load();
 
@@ -177,27 +204,36 @@
   if(cancel) cancel.addEventListener("click", async function(){
     var ok=await JONE.ui.confirm({title:"Cancel this booking?",message:"The guest will be notified. This cannot be undone.",confirmText:"Cancel booking",danger:true});
     if(!ok) return;
+    if(!JONE.guardSubmit(cancel)) return;
     try{
-      await window.API.update("booking", ref, { status:"cancelled" });
+      await window.API.staffCancelBooking(ref);
       JONE.ui.toast("Booking cancelled.","success"); load();
-    }catch(err){ JONE.ui.toast("Couldn't cancel this booking. Please try again.","error"); }
+    }catch(err){ JONE.releaseGuard(cancel); JONE.ui.toast(err.message||"Couldn't cancel this booking.","error"); }
   });
 
   var record=document.querySelector("[data-bd-record]");
   if(record) record.addEventListener("click", function(){
-    // Record payment is an integration point; route to backend and only
-    // succeed when the server confirms. Redirect to the payment flow.
     location.href="payments.html?booking="+encodeURIComponent(ref||"");
   });
 
   var checkin=document.querySelector("[data-bd-checkin]");
   if(checkin) checkin.addEventListener("click", async function(){
     if(!JONE.guardSubmit(checkin)) return;
+    var st=String((book&&book.status)||"").toUpperCase();
     try{
       checkin.disabled=true;
-      await window.API.create("checkIns", { booking: ref, checked_in_at: new Date().toISOString() });
-      JONE.ui.toast("Guest checked in.","success"); load();
-    }catch(err){ checkin.disabled=false; JONE.releaseGuard(checkin); JONE.ui.toast(err&&err.status===0?err.message:"Couldn't check in this guest. Please try again.","error"); }
+      if(st==="CHECKED_IN"){
+        var due=Number(book.amount_due||0);
+        var allow=due>0 ? window.confirm("This booking still has a balance of "+JONE.formatNaira(due)+". Check out anyway?") : true;
+        if(!allow){ checkin.disabled=false; JONE.releaseGuard(checkin); return; }
+        await window.API.checkOutBooking(ref, due>0?{allow_balance_due:true}:{});
+        JONE.ui.toast("Guest checked out.","success");
+      } else {
+        await window.API.checkInBooking(ref);
+        JONE.ui.toast("Guest checked in.","success");
+      }
+      load();
+    }catch(err){ checkin.disabled=false; JONE.releaseGuard(checkin); JONE.ui.toast(err.message||"Action failed. Please try again.","error"); }
   });
 })();
 

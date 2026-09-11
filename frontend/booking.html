@@ -37,13 +37,47 @@
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 </head>
-<body class="has-mobile-cta">
+<body>
 <a class="skip-link" href="#main">Skip to content</a>
 <header class="site-header">
   <div class="container header-inner">
     <a href="index.html" class="brand" aria-label="J-ONE Hotel &amp; Lodge — home">
-      <img src="assets/icons/logo-dark.svg" alt="" class="brand-mark" width="44" height="62">
+      <img src="assets/icons/logo-official.svg" alt="" class="brand-mark" width="24" height="34">
       <span>
         <span class="brand-word">J-ONE</span><br>
         <span class="brand-sub">Hotel &amp; Lodge</span>
@@ -51,7 +85,8 @@
     </a>
 
     <nav class="header-nav" aria-label="Primary">
-      <a class="nav-link" data-nav="index.html" href="index.html">Rooms</a>
+      <a class="nav-link" data-nav="index.html" href="index.html">Home</a>
+      <a class="nav-link" data-nav="rooms.html" href="rooms.html">Rooms</a>
       <a class="nav-link" data-nav="facilities.html" href="facilities.html">Facilities</a>
       <a class="nav-link" data-nav="gallery.html" href="gallery.html">Gallery</a>
       <a class="nav-link" data-nav="offers.html" href="offers.html">Offers</a>
@@ -64,12 +99,11 @@
         <span class="icon-moon" data-icon="moon" data-size="20"></span>
         <span class="icon-sun" data-icon="sun" data-size="20"></span>
       </button>
-      <a class="btn btn-accent btn-book" href="booking.html">Book Your Stay</a>
+      <a class="btn btn-sm btn-accent btn-book" href="booking.html">Book</a>
       <button class="btn-icon btn-outline menu-toggle" type="button" aria-label="Open menu" aria-expanded="false" data-icon="menu" data-size="22"></button>
     </div>
   </div>
 </header>
-
 
 <main id="main">
   <div class="container booking-shell">
@@ -121,7 +155,7 @@
             <span data-nights-text></span>
           </div>
           <div class="field-error" data-form-error style="display:none;color:var(--color-danger);margin-bottom:1rem;"></div>
-          <button class="btn btn-lg" type="submit">Check Availability</button>
+          <button class="btn" type="submit">Check Availability</button>
         </form>
 
         <!-- STEP 2: room selection -->
@@ -162,8 +196,8 @@
   <div class="container">
     <div class="footer-top">
       <div class="footer-brand">
-        <a href="index.html" class="brand" style="margin-bottom:1rem;">
-          <img src="assets/icons/logo-dark.svg" alt="" class="brand-mark" width="44" height="62">
+        <a href="index.html" class="brand">
+          <img src="assets/icons/logo-official.svg" alt="" class="brand-mark" width="21" height="30">
           <span>
             <span class="brand-word">J-ONE</span><br>
             <span class="brand-sub">Hotel &amp; Lodge</span>
@@ -185,10 +219,10 @@
       <div class="footer-col">
         <h5>Booking</h5>
         <a href="booking.html">Book Your Stay</a>
-        <a href="booking.html">Check Availability</a>
+        <a href="my-bookings.html">Your stays</a>
         <a href="policies.html">Hotel Policies</a>
-        <a href="privacy.html">Privacy</a>
-        <a href="terms.html">Terms</a>
+        <a href="cancellation-policy.html">Cancellation</a>
+        <a href="refund-policy.html">Refunds</a>
       </div>
 
       <div class="footer-col">
@@ -210,15 +244,12 @@
     </div>
   </div>
 </footer>
-<div class="mobile-cta-bar no-print">
-  <a class="btn btn-accent" href="booking.html">Book Your Stay</a>
-</div>
 
 <div class="mobile-drawer-backdrop" aria-hidden="true"></div>
 <div class="mobile-drawer" role="dialog" aria-modal="true" aria-label="Menu" aria-hidden="true">
   <div class="mobile-drawer-head">
     <span class="brand-word">J-ONE</span>
-    <button class="btn-icon btn-ghost" type="button" aria-label="Close menu" data-icon="x" data-size="22"></button>
+    <button class="btn-icon btn-ghost" type="button" aria-label="Close menu" data-drawer-close data-icon="x" data-size="20"></button>
   </div>
   <div class="mobile-drawer-body">
     <nav class="mobile-nav" aria-label="Mobile">
@@ -270,7 +301,12 @@
   adults.value = params.get("adults") || draft.adults || 2;
   children.value = params.get("children") || draft.children || 0;
 
-  ci.min = JONE.todayISO(0);
+  function applyDateMin() {
+    ci.min = JONE.hotelTodayISO(0);
+    if (ci.value && ci.value < ci.min) { ci.value = ci.min; syncNote(); }
+  }
+  applyDateMin();
+  document.addEventListener("jone:hotel", applyDateMin);
   function syncNote() {
     var n = 0;
     if (ci.value && co.value) {
@@ -287,20 +323,18 @@
   [ci, co, adults, children].forEach(function (el) { el.addEventListener("change", syncNote); });
   syncNote();
 
-  // ROOMS data (dev defaults; API authoritative when available)
-  var ROOMS = [
-    { slug: "standard-room", name: "Standard Room", price: 45000, capacity: 2, bed: "Queen", size: "18 m²" },
-    { slug: "deluxe-room", name: "Deluxe Room", price: 60000, capacity: 2, bed: "King", size: "24 m²" },
-    { slug: "executive-suite", name: "Executive Suite", price: 95000, capacity: 3, bed: "King + Sofa", size: "32 m²" }
-  ];
-
+  // Availability is ALWAYS answered by the backend (no local room list, no
+  // fake fallback — an API failure shows an honest error state).
   document.getElementById("booking-step1").addEventListener("submit", async function (e) {
     e.preventDefault();
     errBox.style.display = "none";
     var n = JONE.nightsBetween(ci.value, co.value);
     if (!ci.value || !co.value) { errBox.textContent = "Please choose check-in and check-out dates."; errBox.style.display = "block"; return; }
     if (n < 1) { errBox.textContent = "Check-out must be later than check-in."; errBox.style.display = "block"; return; }
-    var payload = { check_in: ci.value, check_out: co.value, adults: adults.value, children: children.value };
+    var adults = Number(document.getElementById("b-adults").value) || 1;
+    var children = Number(document.getElementById("b-children").value) || 0;
+    // Verified backend contract: guests (total) + rooms; the backend validates.
+    var payload = { check_in: ci.value, check_out: co.value, guests: adults + children, rooms: 1 };
 
     var step1 = document.getElementById("booking-step1");
     step1.style.opacity = "0.6";
@@ -308,22 +342,22 @@
     var btn = step1.querySelector("button[type=submit]");
     btn.textContent = "Checking...";
 
-    // Persist draft (no payment secrets)
-    JONE.storage.set(S, payload);
+    // Persist draft (no payment secrets, no client-authoritative prices).
+    JONE.storage.set(S, { check_in: ci.value, check_out: co.value, adults: adults, children: children });
 
-    // Backend is authoritative; fall back to dev defaults only if unreachable.
-    var rooms = ROOMS;
     try {
       var res = await window.API.checkAvailability(payload);
-      var data = res.data;
-      rooms = (data && data.results) || data || ROOMS;
-    } catch (_) { rooms = ROOMS; }
+      var data = res.data || {};
+      renderRooms(data.results || [], n);
+    } catch (err) {
+      // Honest error state — never a fabricated room list.
+      renderRoomsError(err);
+    }
 
     step1.style.opacity = "1";
     step1.dataset.busy = "";
     btn.textContent = "Check Availability";
 
-    renderRooms(rooms, n);
     var st2 = document.getElementById("booking-step2");
     st2.style.display = "block";
     st2.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -339,71 +373,109 @@
     });
   }
 
-  function renderRooms(rooms, nights) {
+  function renderRoomsError(err) {
     var holder = document.getElementById("room-results");
-    if (!rooms.length) {
+    var msg = (err && err.status === 0)
+      ? "We couldn't reach the hotel's booking service. Please check your connection and try again."
+      : ((err && err.message) || "We couldn't check availability just now. Please try again.");
+    holder.innerHTML = '<div class="empty-state"><span data-icon="wifi-off"></span><h3>Availability check failed</h3><p>' + JONE.esc(msg) + '</p></div>';
+    JONE.icons.inject(holder);
+    var cont = document.getElementById("booking-continue");
+    if (cont) cont.style.display = "none";
+  }
+
+  function renderRooms(results, nights) {
+    var holder = document.getElementById("room-results");
+    if (!results.length) {
       holder.innerHTML = '<div class="empty-state"><span data-icon="bed"></span><h3>No rooms available</h3><p>No rooms are currently available for your selected dates. Please choose different dates.</p></div>';
       JONE.icons.inject(holder);
+      var cont = document.getElementById("booking-continue");
+      if (cont) cont.style.display = "none";
       return;
     }
-    holder.innerHTML = rooms.map(function (r, i) {
-      var img = '<div class="media"><div class="placeholder-placeholder"><span data-icon="bed" data-size="28"></span></div></div>';
-      var name = r.name || r.room_name || r.title || "Room";
-      var price = Number(r.price) || 0;
-      var total = price * nights;
-      return '<label class="room-option" data-room-opt>' +
+    holder.innerHTML = results.map(function (r) {
+      // Verified contract shape: { room_type: {...}, available_rooms, bookable,
+      // message, pricing: {price_per_night, total, ...}|null }
+      var rt = r.room_type || {};
+      var bookable = r.bookable !== false;
+      var pricing = r.pricing || null;
+      if (pricing && rt.slug) roomPricing[rt.slug] = pricing;
+      var img = (rt.primary_image_url)
+        ? '<div class="media"><img src="' + JONE.esc(rt.primary_image_url) + '" alt="' + JONE.esc(rt.name || "Room") + '" loading="lazy"></div>'
+        : '<div class="media"><div class="placeholder-placeholder"><span data-icon="bed" data-size="28"></span></div></div>';
+      var name = rt.name || "Room";
+      var priceLabel = pricing ? JONE.formatNaira(pricing.price_per_night) : "—";
+      var totalLabel = pricing ? JONE.formatNaira(pricing.total) : (r.message || "Not available");
+      var note = (!bookable && r.message)
+        ? '<p class="caption" style="color:var(--color-danger,#b3261e);margin:0.25rem 0 0;">' + JONE.esc(r.message) + '</p>'
+        : (r.available_rooms != null && r.available_rooms <= 3 && bookable)
+          ? '<p class="caption" style="margin:0.25rem 0 0;">Only ' + r.available_rooms + ' left for these dates</p>'
+          : "";
+      return '<label class="room-option' + (bookable ? '' : ' is-disabled') + '" data-room-opt' + (bookable ? '' : ' aria-disabled="true"') + '>' +
         img +
         '<div class="room-option-info">' +
           '<h4>' + JONE.esc(name) + '</h4>' +
-          '<div class="room-option-specs"><span><span data-icon="users"></span>' + (r.capacity || 2) + ' guests</span><span><span data-icon="maximize"></span>' + JONE.esc(r.size || "") + '</span><span><span data-icon="bed"></span>' + JONE.esc(r.bed || "") + '</span></div>' +
+          '<div class="room-option-specs"><span><span data-icon="users"></span>' + JONE.esc(rt.max_guests || "—") + ' guests</span>' + (rt.room_size ? '<span><span data-icon="maximize"></span>' + JONE.esc(rt.room_size) + '</span>' : '') + (rt.bed_type ? '<span><span data-icon="bed"></span>' + JONE.esc(rt.bed_type) + '</span>' : '') + '</div>' +
+          note +
         '</div>' +
-        '<div class="room-option-price"><div class="price">' + JONE.formatNaira(price) + '<small> / night</small></div><div class="caption">' + JONE.formatNaira(total) + ' total</div></div>' +
-        '<input type="radio" name="room-choice" value="' + JONE.esc(r.slug || r.id || name) + '" data-price="' + price + '" data-name="' + JONE.esc(name) + '" style="position:absolute;opacity:0;">' +
+        '<div class="room-option-price"><div class="price">' + priceLabel + '<small> / night</small></div><div class="caption">' + JONE.esc(totalLabel) + ' total</div></div>' +
+        '<input type="radio" name="room-choice" value="' + JONE.esc(rt.slug || rt.id || name) + '" data-name="' + JONE.esc(name) + '"' + (bookable ? '' : ' disabled') + ' style="position:absolute;opacity:0;">' +
       '</label>';
     }).join("");
     JONE.icons.inject(holder);
 
     holder.querySelectorAll("[data-room-opt]").forEach(function (opt) {
       opt.addEventListener("click", function () {
+        var radio = opt.querySelector("input");
+        if (!radio || radio.disabled) return;
         holder.querySelectorAll("[data-room-opt]").forEach(function (o) { o.classList.remove("is-selected"); o.querySelector("input").checked = false; });
         opt.classList.add("is-selected");
-        opt.querySelector("input").checked = true;
+        radio.checked = true;
         selectRoom(opt);
       });
     });
   }
 
   var selRoom = null;
+  // Backend-provided pricing per room type (display-only; the review page
+  // re-quotes server-side and the backend computes the authoritative total).
+  var roomPricing = {};
 
   function selectRoom(opt) {
     var radio = opt.querySelector("input");
-    var price = Number(radio.dataset.price) || 0;
     var nights = JONE.nightsBetween(ci.value, co.value) || 1;
+    var slug = radio.value;
+    var adults = Number(document.getElementById("b-adults").value) || 1;
+    var children = Number(document.getElementById("b-children").value) || 0;
     selRoom = {
-      slug: radio.value,
+      slug: slug,
       name: radio.dataset.name,
-      price: price,
-      nights: nights,
       check_in: ci.value,
       check_out: co.value,
-      adults: adults.value,
-      children: children.value
+      adults: adults,
+      children: children,
+      rooms: 1
     };
     document.querySelector("[data-sum-room]").textContent = radio.dataset.name;
-    document.querySelector("[data-sum-total]").textContent = JONE.formatNaira(price * nights);
+    var pricing = roomPricing[slug];
+    var totalEl = document.querySelector("[data-sum-total]");
+    if (totalEl) totalEl.textContent = pricing ? JONE.formatNaira(pricing.total) + " (estimate)" : "Confirmed at next step";
     // Reveal the single persistent continue button (dedup-safe).
     var cont = document.getElementById("booking-continue");
     cont.style.display = "block";
     var btnc = document.getElementById("continue-guest");
-    // Replace handler stack safely.
+    // Replace handler stack safely. No client-computed prices travel in the
+    // URL — the backend is the sole pricing authority.
     btnc.onclick = function () {
       var q = new URLSearchParams({
         check_in: selRoom.check_in, check_out: selRoom.check_out,
         adults: selRoom.adults, children: selRoom.children,
-        room: selRoom.slug, room_price: selRoom.price,
-        room_name: selRoom.name, nights: selRoom.nights
-      }).toString();
-      location.href = "booking-review.html?" + q;
+        room: selRoom.slug, room_name: selRoom.name
+      });
+      // Carry an offer code (e.g. from the Offers page) into the review step.
+      var offer = new URLSearchParams(location.search).get("offer");
+      if (offer) q.set("offer", offer);
+      location.href = "booking-review.html?" + q.toString();
     };
     btnc.focus({ preventScroll: true });
   }

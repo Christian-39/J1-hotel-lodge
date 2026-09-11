@@ -14,7 +14,7 @@
 <div class="dash">
   <aside class="dash-sidebar" aria-label="Staff navigation">
     <div class="dash-sidebar-brand">
-      <img src="../assets/icons/logo-dark.svg" alt="" width="30" height="42">
+      <img src="../assets/icons/logo-official.svg" alt="" width="30" height="42">
       <span>
         <span class="brand-word">J-ONE</span><br>
         <span class="brand-sub">Staff Console</span>
@@ -72,6 +72,7 @@
 <script src="../js/theme.js"></script>
 <script src="../js/ui.js"></script>
 <script src="../js/auth.js"></script>
+<script src="../js/hotel-data.js"></script>
 <script src="../js/navigation.js"></script>
 <script src="../js/dashboard.js"></script>
 <script>
@@ -83,13 +84,19 @@
 (function(){
   var DATA = JONE.dashboard.DATA;
   var tbody = document.querySelector("[data-tbody=bookings]");
-  var bookings = [];
 
-  function guestName(b){ return b.guest_name || (b.guest && (b.guest.full_name || b.guest.name)) || "—"; }
-  function roomLabel(b){ return (b.room_number || (b.room && b.room.number) || b.room_type || "—"); }
-  function typ(b){ return b.room_type || (b.room && b.room.type) || "—"; }
-  function pay(b){ return b.payment_status || b.payment || "unpaid"; }
-  function total(b){ return b.total != null ? b.total : b.amount; }
+  /* Verified /api/admin/bookings/ row:
+     { id, booking_reference, guest_name, guest_phone, guest_email,
+       room_type_name, room_numbers[], check_in, check_out, nights,
+       number_of_rooms, number_of_guests, total_amount, amount_paid,
+       amount_due, currency, status, payment_status, source, created_at }
+     Filters (server-side): status, payment_status, source, room_type,
+     date_from, date_to, check_in, check_out, search, ordering. */
+  function refOf(b){ return b.booking_reference || b.id || "—"; }
+  function roomLabel(b){
+    if (b.room_numbers && b.room_numbers.length) return b.room_numbers.join(", ");
+    return b.room_type_name || "—";
+  }
 
   function render(list){
     if(!tbody) return;
@@ -98,57 +105,119 @@
       JONE.icons.inject(tbody); return;
     }
     tbody.innerHTML = list.map(function(b){
-      var ref = b.reference || b.ref || "—";
+      var ref = refOf(b);
       return '<tr>'+
         '<td><a class="nav-link" href="booking-details.html?ref='+encodeURIComponent(ref)+'">'+JONE.esc(ref)+'</a></td>'+
-        '<td class="hide-sm">'+JONE.esc(guestName(b))+'</td>'+
-        '<td class="hide-sm">'+JONE.esc(roomLabel(b))+' · '+JONE.esc(typ(b))+'</td>'+
-        '<td>'+JONE.formatDate(b.check_in || b.checkin,"mid")+'</td>'+
-        '<td class="hide-sm">'+JONE.formatDate(b.check_out || b.checkout,"mid")+'</td>'+
+        '<td class="hide-sm">'+JONE.esc(b.guest_name||"—")+'</td>'+
+        '<td class="hide-sm">'+JONE.esc(roomLabel(b))+'</td>'+
+        '<td>'+JONE.esc(b.check_in?JONE.formatDate(b.check_in,"mid"):"—")+'</td>'+
+        '<td class="hide-sm">'+JONE.esc(b.check_out?JONE.formatDate(b.check_out,"mid"):"—")+'</td>'+
         '<td>'+JONE.dashboard.statusPill(b.status)+'</td>'+
-        '<td class="hide-sm">'+JONE.dashboard.statusPill(pay(b))+'</td>'+
-        '<td class="hide-sm num">'+JONE.formatNaira(total(b))+ '</td>'+
+        '<td class="hide-sm">'+JONE.dashboard.statusPill(b.payment_status)+'</td>'+
+        '<td class="hide-sm num">'+JONE.esc(JONE.formatNaira(b.total_amount))+'</td>'+
         '<td><a class="btn btn-sm btn-outline" href="booking-details.html?ref='+encodeURIComponent(ref)+'">View</a></td>'+
       '</tr>';
     }).join("");
     JONE.icons.inject(tbody);
   }
 
-  function matches(b){
-    var q = (document.getElementById("bk-q") ? document.getElementById("bk-q").value.trim() : "").toLowerCase();
-    var st = document.getElementById("bk-status") ? document.getElementById("bk-status").value : "";
-    var py = document.getElementById("bk-pay") ? document.getElementById("bk-pay").value : "";
-    var ref = (b.reference || b.ref || "").toLowerCase();
-    if(q && ref.indexOf(q) === -1 && guestName(b).toLowerCase().indexOf(q) === -1) return false;
-    if(st && (b.status||"").toLowerCase() !== st.toLowerCase()) return false;
-    if(py && (pay(b)||"").toLowerCase() !== py.toLowerCase()) return false;
-    return true;
+  function filters(){
+    var f = { page_size: 50, ordering: "-created_at" };
+    var q = document.getElementById("bk-q"); if (q && q.value.trim()) f.search = q.value.trim();
+    var st = document.getElementById("bk-status"); if (st && st.value) f.status = st.value;
+    var py = document.getElementById("bk-pay"); if (py && py.value) f.payment_status = py.value;
+    var dt = document.getElementById("bk-date"); if (dt && dt.value) f.check_in = dt.value;
+    return f;
   }
 
-  function apply(){ render(bookings.filter(matches)); }
-
+  var debouncedLoad = JONE.debounce ? JONE.debounce(load, 300) : load;
   ["bk-q","bk-status","bk-pay","bk-date"].forEach(function(id){
     var el=document.getElementById(id);
-    if(el){ el.addEventListener(id==="bk-q" ? "input" : "change", apply); }
+    if(el){ el.addEventListener(id==="bk-q" ? "input" : "change", debouncedLoad); }
+  });
+
+  // Pre-fill the search from the URL (e.g. guest history handoff).
+  (function(){
+    var pre = new URLSearchParams(location.search).get("search");
+    if (pre) { var q = document.getElementById("bk-q"); if (q && !q.value) q.value = pre; }
+  })();
+
+  /* ------------------- New booking (walk-in / phone) -------------------
+     Verified POST /api/admin/bookings/ contract — AdminBookingCreateSerializer:
+     { room_type (slug), check_in, check_out, rooms, adults, children,
+       source: WALK_IN|PHONE, status: PENDING|CONFIRMED, offer_code?,
+       special_requests?, internal_notes?, guest: { first_name, last_name,
+       email, phone } } — the backend validates availability and computes
+       every amount. The response is the authoritative booking. */
+  var roomTypes = [];
+  async function loadTypes(){
+    try{
+      var res = await window.API.list("roomTypes", { page_size: 100 });
+      roomTypes = window.API.normalizeList(res.data, res.pagination).items.map(function(t){ return { value: t.slug, label: t.name + " \u2014 " + JONE.formatNaira(t.base_price) + " / night" }; });
+    }catch(_){ roomTypes = []; }
+  }
+
+  var newBtn = document.querySelector("[data-new-booking]");
+  if (newBtn) newBtn.addEventListener("click", async function(){
+    if (!roomTypes.length) await loadTypes();
+    var today = JONE.hotelTodayISO();
+    var tomorrow = new Date(Date.now() + 86400000).toISOString().slice(0,10);
+    var out = await JONE.dashboard.formModal({
+      title: "New booking (walk-in / phone)",
+      submitText: "Create booking",
+      wide: true,
+      fields: [
+        { name: "room_type", label: "Room type", type: "select", required: true, options: roomTypes.length ? roomTypes : [{ value: "", label: "No room types configured" }] },
+        { name: "check_in", label: "Check-in", type: "date", required: true, value: today },
+        { name: "check_out", label: "Check-out", type: "date", required: true, value: tomorrow },
+        { name: "rooms", label: "Rooms", type: "number", required: true, value: 1 },
+        { name: "adults", label: "Adults", type: "number", required: true, value: 1 },
+        { name: "children", label: "Children", type: "number", value: 0 },
+        { name: "source", label: "Source", type: "select", options: [{ value: "WALK_IN", label: "Walk-in" }, { value: "PHONE", label: "Phone" }], value: "WALK_IN" },
+        { name: "status", label: "Status", type: "select", options: [{ value: "CONFIRMED", label: "Confirmed" }, { value: "PENDING", label: "Pending payment" }], value: "CONFIRMED" },
+        { name: "offer_code", label: "Offer code (optional)", value: "" },
+        { name: "special_requests", label: "Special requests", type: "textarea", rows: 2, value: "" },
+        { name: "internal_notes", label: "Internal notes", type: "textarea", rows: 2, value: "" },
+        { name: "guest_first_name", label: "Guest first name", required: true },
+        { name: "guest_last_name", label: "Guest last name", required: true },
+        { name: "guest_email", label: "Guest email", type: "email", required: true },
+        { name: "guest_phone", label: "Guest phone", required: true }
+      ],
+      onSubmit: function(v){
+        var payload = {
+          room_type: v.room_type,
+          check_in: v.check_in,
+          check_out: v.check_out,
+          rooms: Number(v.rooms || 1),
+          adults: Number(v.adults || 1),
+          children: Number(v.children || 0),
+          source: v.source,
+          status: v.status,
+          special_requests: v.special_requests || "",
+          internal_notes: v.internal_notes || "",
+          guest: { first_name: v.guest_first_name, last_name: v.guest_last_name, email: v.guest_email, phone: v.guest_phone }
+        };
+        if (v.offer_code) payload.offer_code = v.offer_code;
+        return window.API.create("bookings", payload).then(function(res){
+          var ref = res && res.data && res.data.booking_reference;
+          JONE.ui.toast("Booking " + (ref || "") + " created.", "success");
+        });
+      }
+    });
+    if (out) load();
   });
 
   async function load(){
     DATA.loading(tbody);
     try {
-      var res = await window.API.list("bookings");
-      var list = window.API.normalizeList ? window.API.normalizeList(res.data).items : ((res.data && res.data.results) || res.data || []);
-      bookings = list || [];
-      if(!bookings.length) { DATA.empty(tbody, "search", "No bookings yet", "Bookings created by guests will appear here.", 9); return; }
-      apply();
+      var res = await window.API.list("bookings", filters());
+      var list = window.API.normalizeList(res.data, res.pagination).items;
+      render(list || []);
     } catch(err){
-      DATA.error(tbody, "Bookings couldn't be loaded", "Please try again in a moment.", 9);
+      DATA.error(tbody, "Bookings couldn't be loaded", (err && err.message) || "Please try again in a moment.", 9);
     }
   }
   load();
-
-  var nb=document.querySelector("[data-new-booking]"); nb && nb.addEventListener("click", function(){
-    location.href="booking-details.html";
-  });
 })();
 
 </script>

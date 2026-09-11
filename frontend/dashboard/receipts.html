@@ -14,7 +14,7 @@
 <div class="dash">
   <aside class="dash-sidebar" aria-label="Staff navigation">
     <div class="dash-sidebar-brand">
-      <img src="../assets/icons/logo-dark.svg" alt="" width="30" height="42">
+      <img src="../assets/icons/logo-official.svg" alt="" width="30" height="42">
       <span>
         <span class="brand-word">J-ONE</span><br>
         <span class="brand-sub">Staff Console</span>
@@ -67,6 +67,7 @@
 <script src="../js/theme.js"></script>
 <script src="../js/ui.js"></script>
 <script src="../js/auth.js"></script>
+<script src="../js/hotel-data.js"></script>
 <script src="../js/navigation.js"></script>
 <script src="../js/dashboard.js"></script>
 <script>
@@ -79,28 +80,25 @@
   var DATA=JONE.dashboard.DATA;
   var tbody=document.querySelector("[data-tbody=receipts]");
 
-  function no(r){ return r.receipt_number || r.number || r.reference || "—"; }
-  function booking(r){ return r.booking_ref || r.booking || (r.booking&&(r.booking.reference||r.booking.ref)) || "—"; }
-  function guest(r){ return r.guest_name || (r.guest&&(r.guest.full_name||r.guest.name)) || "—"; }
-  function amount(r){ return r.amount != null ? r.amount : r.total; }
-  function issued(r){ return r.issued_at || r.date || r.created_at || null; }
-
+  /* Receipts view = verified payment records from /api/admin/payments/.
+     Row: { reference, booking_reference, guest_name, provider, amount,
+            currency, status, channel, paid_at, created_at }. */
   function render(list){
     tbody.innerHTML=list.map(function(r){
-      var b=booking(r);
-      return '<tr><td>'+JONE.esc(no(r))+'</td><td>'+JONE.esc(b)+'</td><td class="hide-sm">'+JONE.esc(guest(r))+'</td><td class="num">'+JONE.formatNaira(amount(r))+'</td><td class="hide-sm">'+JONE.formatDate(issued(r),"mid")+'</td><td><a class="btn btn-sm btn-outline" href="receipts.html?view='+encodeURIComponent(no(r))+'"><span data-icon="printer" data-size="15"></span> View</a></td></tr>';
-    }).join("") || '<tr><td colspan="6"><div class="empty-state"><span data-icon="receipt"></span><h3>No receipts yet</h3></div></td></tr>';
+      var b=r.booking_reference;
+      return '<tr><td>'+JONE.esc(r.reference||"—")+'</td><td>'+(b?'<a href="booking-details.html?ref='+encodeURIComponent(b)+'">'+JONE.esc(b)+'</a>':"—")+'</td><td class="hide-sm">'+JONE.esc(r.guest_name||"—")+'</td><td class="num">'+JONE.esc(JONE.formatNaira(r.amount))+'</td><td class="hide-sm">'+JONE.esc(r.paid_at?JONE.formatDate(r.paid_at,"mid"):(r.created_at?JONE.formatDate(r.created_at,"mid"):"—"))+'</td><td>'+(b?'<a class="btn btn-sm btn-outline" href="booking-details.html?ref='+encodeURIComponent(b)+'"><span data-icon="printer" data-size="15"></span> View</a>':"—")+'</td></tr>';
+    }).join("") || '<tr><td colspan="6"><div class="empty-state"><span data-icon="receipt"></span><h3>No receipts yet</h3><p>Receipts appear here as payments are confirmed.</p></div></td></tr>';
     JONE.icons.inject(tbody);
   }
 
   async function load(){
     DATA.loading(tbody);
     try{
-      var res=await window.API.list("receipts");
-      var list=window.API.normalizeList?window.API.normalizeList(res.data).items:((res.data&&res.data.results)||res.data||[]);
-      if(!(list||[]).length){ DATA.empty(tbody,"receipt","No receipts yet","Receipts generated for payments will appear here.",6); return; }
+      var res=await window.API.list("receipts",{ status:"SUCCESS", page_size:50 });
+      var list=window.API.normalizeList?window.API.normalizeList(res.data,res.pagination).items:((res.data&&res.data.results)||res.data||[]);
+      if(!(list||[]).length){ DATA.empty(tbody,"receipt","No receipts yet","Receipts generated for confirmed payments will appear here.",6); return; }
       render(list);
-    }catch(err){ DATA.error(tbody,"Receipts couldn't be loaded","Please try again in a moment.",6); }
+    }catch(err){ DATA.error(tbody,"Receipts couldn't be loaded",(err&&err.message)||"Please try again in a moment.",6); }
   }
   load();
 })();

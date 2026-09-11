@@ -25,17 +25,25 @@
 
     const setOpen = (open) => {
       drawer.classList.toggle("open", open);
+      drawer.setAttribute("aria-hidden", open ? "false" : "true");
       if (backdrop) backdrop.classList.toggle("open", open);
       toggle.setAttribute("aria-expanded", open ? "true" : "false");
+      // Lock background scroll while the drawer is open; restore on close.
       document.body.classList.toggle("modal-open", open);
       if (open) {
-        const first = drawer.querySelector("a, button");
+        const first = drawer.querySelector("[data-drawer-close]") || drawer.querySelector("a, button");
         first && first.focus();
+      } else {
+        toggle.focus();
       }
     };
 
     toggle.addEventListener("click", () => {
       setOpen(!drawer.classList.contains("open"));
+    });
+    // The drawer's own close (×) button — explicitly bound, never assumed.
+    drawer.querySelectorAll("[data-drawer-close]").forEach((b) => {
+      b.addEventListener("click", () => setOpen(false));
     });
     if (backdrop) backdrop.addEventListener("click", () => setOpen(false));
     document.addEventListener("click", (e) => {
@@ -43,8 +51,11 @@
         if (drawer.classList.contains("open")) setOpen(false);
       }
     });
-    drawer.addEventListener("keydown", (e) => {
-      if (e.key === "Escape") setOpen(false);
+    // Escape closes the drawer from anywhere on the page.
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && drawer.classList.contains("open")) {
+        setOpen(false);
+      }
     });
     // Close when a nav item is chosen
     drawer.querySelectorAll("a").forEach((a) => a.addEventListener("click", () => setOpen(false)));
@@ -75,6 +86,9 @@
 
   /* Dashboard sidebar mobile drawer + active on desktop. */
   function initDashboardNav() {
+    // Dashboard pages also need hotel info (e.g. the timezone that drives
+    // date defaults on availability/check-in pages).
+    if (window.JONE && window.JONE.hotel) window.JONE.hotel.init();
     const sidebar = document.querySelector(".dash-sidebar");
     const toggle = document.querySelector(".dash-menu-toggle");
     const backdrop = document.querySelector(".dash-sidebar-backdrop");

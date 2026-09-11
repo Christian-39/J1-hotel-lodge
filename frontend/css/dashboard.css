@@ -19,12 +19,13 @@
   border-right: 1px solid rgba(255,255,255,0.06);
 }
 .dash-sidebar-brand {
-  display: flex; align-items: center; gap: var(--sp-3);
-  padding: 1.1rem 1.25rem;
+  display: flex; align-items: center; gap: 0.7rem;
+  padding: 0.9rem 1.1rem;
   border-bottom: 1px solid rgba(255,255,255,0.1);
 }
-.dash-sidebar-brand img { height: 34px; }
-.dash-sidebar-brand .brand-word { color: #fff; font-size: 1.1rem; }
+.dash-sidebar-brand img { height: 28px; }
+.dash-sidebar-brand .brand-word { color: #fff; font-size: 1.05rem; }
+.dash-sidebar-brand .brand-sub { color: #8f8e8c; }
 .dash-sidebar-nav { flex: 1; overflow-y: auto; padding: 1rem 0.75rem; }
 .dash-nav-group { margin-bottom: 1.25rem; }
 .dash-nav-label {
@@ -44,7 +45,7 @@
 }
 .dash-nav-item svg { width: 18px; height: 18px; flex-shrink: 0; opacity: 0.85; }
 .dash-nav-item:hover { background: rgba(255,255,255,0.06); color: #fff; }
-.dash-nav-item.is-active { background: var(--color-accent); color: var(--color-accent-ink); font-weight: 600; }
+.dash-nav-item.is-active { background: rgba(255,255,255,0.1); color: #fff; font-weight: 600; box-shadow: inset 2px 0 0 var(--color-accent); }
 .dash-nav-item.is-active svg { opacity: 1; }
 .dash-nav-item .count { margin-left: auto; background: rgba(255,255,255,0.15); font-size: 0.7rem; padding: 0.1em 0.5em; border-radius: var(--radius-pill); }
 .dash-nav-item.is-active .count { background: rgba(0,0,0,0.2); }
@@ -52,13 +53,13 @@
 .dash-sidebar-footer { padding: 1rem 1.25rem; border-top: 1px solid rgba(255,255,255,0.1); }
 .dash-user { display: flex; align-items: center; gap: 0.7rem; margin-bottom: 0.6rem; }
 .dash-avatar {
-  width: 36px; height: 36px; border-radius: 50%;
+  width: 32px; height: 32px; border-radius: 50%;
   background: var(--color-accent); color: var(--color-accent-ink);
   display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: var(--fs-sm);
   flex-shrink: 0;
 }
 .dash-user-name { font-size: var(--fs-sm); font-weight: 600; color: #fff; line-height: 1.2; }
-.dash-user-role { font-size: 0.7rem; color: #9a9998; text-transform: uppercase; letter-spacing: var(--tracking-wide); }
+.dash-user-role { font-size: 0.7rem; color: #9AA3AF; text-transform: uppercase; letter-spacing: var(--tracking-wide); }
 
 /* ------------------------------- Main area ------------------------------- */
 .dash-main { min-width: 0; display: flex; flex-direction: column; }
@@ -75,7 +76,7 @@
 .dash-title h1 { font-size: var(--fs-lg); }
 .dash-title p { font-size: var(--fs-sm); color: var(--color-text-muted); }
 .dash-topbar-actions { display: flex; align-items: center; gap: var(--sp-2); }
-.dash-topbar-actions .btn { font-size: var(--fs-xs); padding: 0.7em 1.1em; }
+.dash-topbar-actions .btn { font-size: var(--fs-xs); padding: 0 0.75rem; }
 .dash-topbar-right { display: flex; align-items: center; gap: var(--sp-2); }
 .dash-topbar-right .theme-toggle { width: 38px; height: 38px; }
 
@@ -111,10 +112,10 @@
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius);
-  padding: 1.15rem 1.25rem;
+  padding: 0.95rem 1.05rem;
 }
 .kpi-label { font-size: var(--fs-xs); letter-spacing: var(--tracking-wide); text-transform: uppercase; color: var(--color-text-muted); }
-.kpi-value { margin-top: 0.5rem; }
+.kpi-value { margin-top: 0.5rem; font-size: var(--fs-2xl); font-weight: 600; letter-spacing: -0.02em; line-height: 1.15; }
 .kpi-sub { font-size: var(--fs-xs); color: var(--color-text-faint); margin-top: 0.35rem; display: flex; gap: 0.4rem; align-items: center; }
 .kpi-sub .up { color: var(--color-success); }
 .kpi-sub .down { color: var(--color-danger); }
@@ -169,17 +170,17 @@
 .status-pill {
   display: inline-flex; align-items: center; gap: 0.4em;
   padding: 0.28em 0.6em;
-  border-radius: var(--radius-pill);
-  font-size: 0.72rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.7rem;
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
 .status-pill::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
-.status-available, .status-confirmed, .status-checked_in, .status-paid, .status-active { color: var(--color-success); background: var(--color-success-bg); }
-.status-reserved, .status-pending, .status-partial, .status-cleaning { color: var(--color-warning); background: var(--color-warning-bg); }
-.status-occupied, .status-attention { color: var(--color-info); background: var(--color-info-bg); }
-.status-maintenance, .status-unavailable, .status-cancelled, .status-failed, .status-noshow, .status-inactive { color: var(--color-danger); background: var(--color-danger-bg); }
+.status-available, .status-confirmed, .status-checked_in, .status-checked_out, .status-paid, .status-success, .status-active, .status-clean { color: var(--color-success); background: var(--color-success-bg); }
+.status-reserved, .status-pending, .status-partial, .status-partially_paid, .status-cleaning, .status-unpaid, .status-in_progress, .status-new { color: var(--color-warning); background: var(--color-warning-bg); }
+.status-occupied, .status-attention, .status-out_of_service { color: var(--color-info); background: var(--color-info-bg); }
+.status-maintenance, .status-unavailable, .status-cancelled, .status-failed, .status-no_show, .status-expired, .status-refunded, .status-noshow, .status-inactive, .status-closed, .status-resolved, .status-dirty { color: var(--color-danger); background: var(--color-danger-bg); }
 
 /* --------------------------- Availability calendar ----------------------- */
 .avo-scroller { overflow-x: auto; }
@@ -205,7 +206,7 @@
   background: var(--color-surface);
   text-align: center;
 }
-.balance-card .amount { font-family: var(--font-display); font-size: 2.5rem; }
+.balance-card .amount { font-family: var(--font-body); font-weight: 600; letter-spacing: -0.02em; font-size: var(--fs-3xl); }
 
 /* ------------------------------- Activity --------------------------------- */
 .activity-list { display: grid; }
@@ -245,5 +246,5 @@
   padding: 0.85rem;
   background: var(--color-surface);
 }
-.room-tile .room-no { font-family: var(--font-display); font-size: var(--fs-lg); color: var(--color-heading); }
+.room-tile .room-no { font-family: var(--font-body); font-weight: 600; letter-spacing: -0.01em; font-size: var(--fs-md); color: var(--color-heading); }
 .room-tile .room-type { font-size: var(--fs-xs); color: var(--color-text-muted); }

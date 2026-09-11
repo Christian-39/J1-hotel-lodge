@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Payment Verification | J-ONE Hotel &amp; Lodge</title>
+<meta name="robots" content="noindex, nofollow">
+<meta name="theme-color" content="#373435">
+<link rel="icon" href="favicon/favicon-32.png" sizes="32x32">
+<link rel="apple-touch-icon" href="favicon/apple-touch-icon.png">
+<link rel="stylesheet" href="css/main.css">
+<script>(function(){var t;try{t=JSON.parse(localStorage.getItem("jone.theme"))}catch(e){}if(t!=="dark"&&t!=="light"){t=(window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches)?"dark":"light"}document.documentElement.setAttribute("data-theme",t);})();</script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<main id="main" style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:2rem 1rem;background:var(--color-background);">
+  <div style="width:100%;max-width:520px;">
+    <div class="center" style="margin-bottom:2rem;">
+      <a href="index.html" class="brand" style="display:inline-flex;justify-content:center;">
+        <img src="assets/icons/logo-official.svg" alt="J-ONE Hotel &amp; Lodge" width="22" height="38" style="margin:0 auto;display:block;">
+      </a>
+      <h1 style="font-size:var(--fs-xl);margin-top:1rem;">Verifying your payment</h1>
+    </div>
+
+    <div class="card card-pad center">
+      <!-- Loading: real verification in flight -->
+      <div id="verify-loading" aria-live="polite">
+        <div class="spinner" style="margin:0 auto 1rem;"></div>
+        <p class="muted">Checking with our payment provider&hellip; please don't close this page.</p>
+      </div>
+
+      <!-- Success: ONLY after the backend confirms PAID -->
+      <div id="verify-success" style="display:none;" aria-live="polite">
+        <div style="font-size:3rem;line-height:1;margin-bottom:0.5rem;color:var(--color-success,#1a7f37);">&#10003;</div>
+        <h2>Payment confirmed</h2>
+        <p class="muted" id="success-line">Your booking is confirmed.</p>
+        <dl class="detail-list" style="text-align:left;margin:1.25rem 0;">
+          <div><dt>Payment reference</dt><dd id="s-payref">—</dd></div>
+          <div><dt>Booking reference</dt><dd id="s-bookref">—</dd></div>
+          <div><dt>Amount paid</dt><dd id="s-amount">—</dd></div>
+          <div><dt>Payment status</dt><dd id="s-status">—</dd></div>
+        </dl>
+        <a id="s-view-booking" class="btn btn-block" href="booking-confirmation.html">View booking &amp; receipt</a>
+      </div>
+
+      <!-- Failure / pending: honest state, never a faked success -->
+      <div id="verify-failed" style="display:none;" aria-live="polite">
+        <div style="font-size:3rem;line-height:1;margin-bottom:0.5rem;color:var(--color-danger,#b3261e);">&#9888;</div>
+        <h2 id="f-title">We couldn't confirm this payment</h2>
+        <p class="muted" id="f-line">The payment may have failed or is still processing. If you were debited, the refund is automatic — or contact the hotel with your reference.</p>
+        <dl class="detail-list" style="text-align:left;margin:1.25rem 0;">
+          <div><dt>Payment reference</dt><dd id="f-ref">—</dd></div>
+        </dl>
+        <button id="f-retry" class="btn btn-block" type="button">Check again</button>
+        <a class="btn btn-block btn-outline" style="margin-top:0.5rem;" href="contact.html">Contact the hotel</a>
+      </div>
+    </div>
+
+    <p class="caption center" style="margin-top:1.5rem;"><a href="index.html">&larr; Back to website</a></p>
+  </div>
+</main>
+
+<script src="js/config.js"></script>
+<script src="js/utils.js"></script>
+<script src="js/icons.js"></script>
+<script src="js/api.js"></script>
+<script src="js/theme.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/auth.js"></script>
+<script src="js/hotel-data.js"></script>
+<script src="js/navigation.js"></script>
+<script>
+JONE.ui.initChrome();
+(function () {
+  "use strict";
+
+  var params = new URLSearchParams(location.search);
+  var reference = (params.get("reference") || params.get("trxref") || "").trim();
+
+  var elLoading = document.getElementById("verify-loading");
+  var elSuccess = document.getElementById("verify-success");
+  var elFailed  = document.getElementById("verify-failed");
+
+  function show(el) {
+    [elLoading, elSuccess, elFailed].forEach(function (n) { n.style.display = "none"; });
+    if (el) el.style.display = "block";
+  }
+
+  function setTxt(id, v) { var n = document.getElementById(id); if (n) n.textContent = (v == null || v === "") ? "—" : String(v); }
+
+  if (!reference) {
+    elLoading.querySelector("p").textContent = "No payment reference was supplied. If you just paid, please check your booking from the confirmation email or contact the hotel.";
+    return;
+  }
+
+  // The verify endpoint requires the booking owner to be signed in.
+  if (!window.Auth.isAuthenticated()) {
+    location.replace("/login.html?next=" + encodeURIComponent(location.pathname + location.search));
+    return;
+  }
+
+  async function verify() {
+    show(elLoading);
+    try {
+      var res = await window.API.verifyPayment(reference);
+      var d = (res && res.data) || {};
+      var paymentStatus = String(d.payment_status || "").toUpperCase();
+      if (paymentStatus === "PAID" || paymentStatus === "PARTIALLY_PAID") {
+        // Backend confirmed — only now show success.
+        setTxt("s-payref", d.payment_reference || reference);
+        setTxt("s-bookref", d.booking_reference);
+        setTxt("s-amount", JONE.formatNaira ? JONE.formatNaira(d.amount_paid_this_transaction != null ? d.amount_paid_this_transaction : d.booking_amount_paid) : (d.amount_paid_this_transaction || ""));
+        setTxt("s-status", (paymentStatus || "").replace(/_/g, " ").toLowerCase());
+        var line = document.getElementById("success-line");
+        if (line) line.textContent = (d.booking_status === "CONFIRMED") ? "Your booking is confirmed. We look forward to hosting you." : "Payment received. Your booking is being confirmed.";
+        var view = document.getElementById("s-view-booking");
+        if (view && d.booking_reference) view.href = "booking-confirmation.html?ref=" + encodeURIComponent(d.booking_reference);
+        show(elSuccess);
+      } else if (paymentStatus === "FAILED") {
+        setTxt("f-ref", reference);
+        var t = document.getElementById("f-title"); if (t) t.textContent = "This payment failed";
+        var l = document.getElementById("f-line"); if (l) l.textContent = "The transaction was not completed. No amount was debited — you can safely try again.";
+        show(elFailed);
+      } else {
+        // PENDING / unknown — honest "still processing", retry available.
+        setTxt("f-ref", reference);
+        var t2 = document.getElementById("f-title"); if (t2) t2.textContent = "Payment still processing";
+        var l2 = document.getElementById("f-line"); if (l2) l2.textContent = "Your payment hasn't been confirmed yet. It can take a few moments — use \u201CCheck again\u201D shortly. If you were debited, nothing is lost: the booking updates automatically once the provider confirms.";
+        show(elFailed);
+      }
+    } catch (err) {
+      setTxt("f-ref", reference);
+      var msg = (err && err.status === 404)
+        ? "We couldn't find this payment reference. Please check the link or contact the hotel."
+        : (err && err.status === 0)
+          ? "We can't reach the payment service right now. Please try again in a moment."
+          : ((err && err.message) || "We couldn't confirm this payment yet.");
+      var l3 = document.getElementById("f-line"); if (l3) l3.textContent = msg;
+      show(elFailed);
+    }
+  }
+
+  var retry = document.getElementById("f-retry");
+  if (retry) retry.addEventListener("click", verify);
+  verify();
+})();
+</script>
+</body>
+</html>

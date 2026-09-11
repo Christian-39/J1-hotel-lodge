@@ -36,13 +36,47 @@
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 </head>
 <body>
 <a class="skip-link" href="#main">Skip to content</a>
 <header class="site-header">
   <div class="container header-inner">
     <a href="index.html" class="brand" aria-label="J-ONE Hotel &amp; Lodge — home">
-      <img src="assets/icons/logo-dark.svg" alt="" class="brand-mark" width="44" height="62">
+      <img src="assets/icons/logo-official.svg" alt="" class="brand-mark" width="24" height="34">
       <span>
         <span class="brand-word">J-ONE</span><br>
         <span class="brand-sub">Hotel &amp; Lodge</span>
@@ -64,7 +98,7 @@
         <span class="icon-moon" data-icon="moon" data-size="20"></span>
         <span class="icon-sun" data-icon="sun" data-size="20"></span>
       </button>
-      <a class="btn btn-accent btn-book" href="booking.html">Book Your Stay</a>
+      <a class="btn btn-sm btn-accent btn-book" href="booking.html">Book</a>
       <button class="btn-icon btn-outline menu-toggle" type="button" aria-label="Open menu" aria-expanded="false" data-icon="menu" data-size="22"></button>
     </div>
   </div>
@@ -99,7 +133,7 @@
     <div class="container">
       <h2>See it in person</h2>
       <p>Check availability and book your stay.</p>
-      <div class="cta-actions"><a class="btn btn-accent btn-lg" href="booking.html">Book Your Stay</a></div>
+      <div class="cta-actions"><a class="btn btn-accent " href="booking.html">Book Your Stay</a></div>
     </div>
   </section>
 </main>
@@ -107,8 +141,8 @@
   <div class="container">
     <div class="footer-top">
       <div class="footer-brand">
-        <a href="index.html" class="brand" style="margin-bottom:1rem;">
-          <img src="assets/icons/logo-dark.svg" alt="" class="brand-mark" width="44" height="62">
+        <a href="index.html" class="brand">
+          <img src="assets/icons/logo-official.svg" alt="" class="brand-mark" width="21" height="30">
           <span>
             <span class="brand-word">J-ONE</span><br>
             <span class="brand-sub">Hotel &amp; Lodge</span>
@@ -130,10 +164,10 @@
       <div class="footer-col">
         <h5>Booking</h5>
         <a href="booking.html">Book Your Stay</a>
-        <a href="booking.html">Check Availability</a>
+        <a href="my-bookings.html">Your stays</a>
         <a href="policies.html">Hotel Policies</a>
-        <a href="privacy.html">Privacy</a>
-        <a href="terms.html">Terms</a>
+        <a href="cancellation-policy.html">Cancellation</a>
+        <a href="refund-policy.html">Refunds</a>
       </div>
 
       <div class="footer-col">
@@ -155,15 +189,12 @@
     </div>
   </div>
 </footer>
-<div class="mobile-cta-bar no-print">
-  <a class="btn btn-accent" href="booking.html">Book Your Stay</a>
-</div>
 
 <div class="mobile-drawer-backdrop" aria-hidden="true"></div>
 <div class="mobile-drawer" role="dialog" aria-modal="true" aria-label="Menu" aria-hidden="true">
   <div class="mobile-drawer-head">
     <span class="brand-word">J-ONE</span>
-    <button class="btn-icon btn-ghost" type="button" aria-label="Close menu" data-icon="x" data-size="22"></button>
+    <button class="btn-icon btn-ghost" type="button" aria-label="Close menu" data-drawer-close data-icon="x" data-size="20"></button>
   </div>
   <div class="mobile-drawer-body">
     <nav class="mobile-nav" aria-label="Mobile">
@@ -200,18 +231,25 @@
   var data = [];
   var currentCat = "";
 
-  // Demo placeholders if the API is unreachable. Authentic photography replaces
-  // these later — the layout stays identical.
-  var PLACE = [
-    { src: "assets/images/hero.jpg", cat: "exterior", cap: "The hotel" },
-    { src: "assets/images/intro.jpg", cat: "hotel", cap: "Reception & lobby" },
-    { src: "assets/images/experience.jpg", cat: "restaurant", cap: "Dining" }
-  ];
+  /* Verified /api/gallery/ response: { categories: [...], items: [...] }.
+     No fake fallback — API failure shows an honest error state. */
+  var categories = [];
   function filtered() {
     return data.filter(function (i) { return !currentCat || (i.category || "").toLowerCase() === currentCat; });
   }
   function makeLightboxItems() {
-    return filtered().map(function (g) { return { src: g.image_url || g.src, caption: g.caption || "" }; });
+    return filtered().map(function (g) { return { src: g.image_url || g.src, caption: g.alt_text || g.caption || g.title || "" }; });
+  }
+  function renderFilters() {
+    var wrap = document.getElementById("gallery-filters");
+    if (!wrap) return;
+    var cats = ["", "HOTEL", "ROOMS", "RESTAURANT", "FACILITIES", "EVENTS", "EXTERIOR", "OTHER"].filter(function (c) {
+      return !c || categories.indexOf(c) !== -1;   // only categories with content
+    });
+    wrap.innerHTML = cats.map(function (c) {
+      var label = c ? c.charAt(0) + c.slice(1).toLowerCase() : "All";
+      return '<button type="button"' + (currentCat === c.toLowerCase() ? ' class="is-active"' : '') + ' data-cat="' + c.toLowerCase() + '">' + label + '</button>';
+    }).join("");
   }
   function render() {
     var grid = document.getElementById("gallery-grid");
@@ -222,9 +260,10 @@
     }
     grid.innerHTML = list.map(function (g, idx) {
       var wide = ["rooms","hotel"].includes((g.category||"").toLowerCase()) ? " wide" : "";
+      var alt = g.alt_text || g.title || "J-ONE Hotel & Lodge";
       var img = g.image_url || g.src;
       if (img) {
-        return '<button class="media' + wide + '" data-gallery-item="' + idx + '" aria-label="View ' + (g.caption || "photo") + '"><img src="' + JONE.esc(img) + '" alt="' + JONE.esc(g.caption || "J-ONE Hotel & Lodge") + '" loading="lazy"></button>';
+        return '<button class="media' + wide + '" data-gallery-item="' + idx + '" aria-label="View ' + JONE.esc(alt) + '"><img src="' + JONE.esc(img) + '" alt="' + JONE.esc(alt) + '" loading="lazy"></button>';
       }
       return '<div class="media' + wide + '"><div class="placeholder-placeholder"><span data-icon="image" data-size="32"></span></div></div>';
     }).join("");
@@ -251,11 +290,19 @@
   });
 
   async function load() {
+    var grid = document.getElementById("gallery-grid");
+    if (grid) grid.innerHTML = '<div class="loading-block" style="grid-column:1/-1;"><div class="spinner" role="status"></div><p class="muted">Loading gallery&hellip;</p></div>';
     try {
-      var res = await window.API.getGallery();
-      data = (res.data && res.data.results) || res.data || [];
-    } catch (_) { data = PLACE; }
-    render();
+      var res = await window.API.getGallery({ page_size: 60 });
+      var d = (res && res.data) || {};
+      data = d.items || [];
+      categories = d.categories || [];
+      renderFilters();
+      render();
+    } catch (_) {
+      data = [];
+      if (grid) grid.innerHTML = '<div class="empty-state" style="grid-column:1/-1;"><span data-icon="alertTriangle" data-size="34"></span><h3>Gallery couldn\'t be loaded</h3><p>Please try again in a moment, or contact the hotel.</p></div>';
+    }
   }
   load();
 })();

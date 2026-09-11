@@ -15,7 +15,7 @@
     const applyMin = () => {
       if (!co || !ci.value) return;
       const min = (JONE.APP_CONFIG && JONE.APP_CONFIG.MIN_STAY_NIGHTS) || 1;
-      const start = JONE.todayISO(0);
+      const start = JONE.hotelTodayISO(0);
       ci.min = start;
       // checkout min = checkin + min nights
       const d = JONE.parseISO(ci.value);

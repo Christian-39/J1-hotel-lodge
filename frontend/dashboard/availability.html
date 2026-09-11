@@ -14,7 +14,7 @@
 <div class="dash">
   <aside class="dash-sidebar" aria-label="Staff navigation">
     <div class="dash-sidebar-brand">
-      <img src="../assets/icons/logo-dark.svg" alt="" width="30" height="42">
+      <img src="../assets/icons/logo-official.svg" alt="" width="30" height="42">
       <span>
         <span class="brand-word">J-ONE</span><br>
         <span class="brand-sub">Staff Console</span>
@@ -48,21 +48,21 @@
 
 <section class="panel">
   <div class="panel-head">
-    <h2>Room availability</h2>
-    <div class="panel-actions">
-      <button class="btn btn-sm btn-outline" data-av-prev>‹ Prev</button>
-      <input class="input" type="date" id="av-from" style="width:150px;padding:0.5em 0.8em;font-size:var(--fs-sm);">
-      <button class="btn btn-sm btn-outline" data-av-next>Next ›</button>
+    <h2>Availability search</h2>
+    <div class="panel-actions" style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:end;">
+      <div class="field"><label class="field-label" for="av-from">Check-in</label><input class="input" type="date" id="av-from"></div>
+      <div class="field"><label class="field-label" for="av-to">Check-out</label><input class="input" type="date" id="av-to"></div>
+      <div class="field"><label class="field-label" for="av-guests">Guests</label><input class="input" type="number" id="av-guests" min="1" value="2" style="width:90px;"></div>
+      <div class="field"><label class="field-label" for="av-rooms">Rooms</label><input class="input" type="number" id="av-rooms" min="1" value="1" style="width:90px;"></div>
+      <button class="btn btn-sm btn-accent" id="av-search" type="button">Search</button>
     </div>
   </div>
   <div class="panel-body no-pad">
-    <div class="avo-legend">
-      <span><i style="background:var(--color-success-bg);border:1px solid var(--color-border);"></i> Available</span>
-      <span><i style="background:var(--color-warning-bg);border:1px solid var(--color-border);"></i> Reserved</span>
-      <span><i style="background:var(--color-info-bg);border:1px solid var(--color-border);"></i> Occupied</span>
-      <span><i style="background:var(--color-danger-bg);border:1px solid var(--color-border);"></i> Maintenance</span>
-    </div>
-    <div class="avo-scroller"><table class="avo-table" data-avo></table></div>
+    <p class="caption" style="padding:0.75rem 1.1rem 0;">Results come straight from the booking system: rooms free for the whole stay, with the system-computed total for the party size.</p>
+    <div class="table-wrap"><table class="table">
+      <thead><tr><th>Room type</th><th class="hide-sm">Sleeps</th><th>Rooms free</th><th class="hide-sm">Rate / night</th><th>Est. total</th><th>Status</th></tr></thead>
+      <tbody data-tbody="av-results"></tbody>
+    </table></div>
   </div>
 </section>
     </div>
@@ -75,6 +75,7 @@
 <script src="../js/theme.js"></script>
 <script src="../js/ui.js"></script>
 <script src="../js/auth.js"></script>
+<script src="../js/hotel-data.js"></script>
 <script src="../js/navigation.js"></script>
 <script src="../js/dashboard.js"></script>
 <script>
@@ -84,80 +85,71 @@
   document.querySelector("[data-logout]") && document.querySelector("[data-logout]").addEventListener("click", function(){ window.Auth.logout(); });
 
 (function(){
-  var state={from:JONE.todayISO(0)};
-  var table=document.querySelector("[data-avo]");
-  var rooms=[];        // real rooms from the staff endpoint
-  var avail=[];        // real availability entries from the staff endpoint
+  var DATA=JONE.dashboard.DATA;
+  var tbody=document.querySelector("[data-tbody=av-results]");
+  var fromEl=document.getElementById("av-from");
+  var toEl=document.getElementById("av-to");
 
-  function roomLabel(r){ return r.number || r.name || r.label || r.id || "Room"; }
-  function roomType(r){ return r.type || r.category || ""; }
+  // Default: tonight → tomorrow, in the hotel's business timezone.
+  function applyDefaults(){ fromEl.value=JONE.hotelTodayISO(0); toEl.value=JONE.hotelTodayISO(1); }
+  applyDefaults();
+  // The hotel timezone arrives asynchronously (cached fast, else one fetch).
+  // Don't fire the first search with a browser-local "today" the API may
+  // consider past — wait for hotel data, with a safety timeout so the page
+  // still searches when the backend is unreachable.
+  var searched = false;
+  function firstSearch(){ if (searched) return; searched = true; search(); }
+  document.addEventListener("jone:hotel", function(){
+    var stale = fromEl.value && fromEl.value < JONE.hotelTodayISO(0);
+    applyDefaults();
+    if (stale || !searched) firstSearch();
+  });
+  if (JONE.hotelTimezone) firstSearch();
+  else setTimeout(firstSearch, 1500);
 
-  function cellStatus(roomKey, dateISO){
-    // Backend-provided status only. No synthetic pattern here.
-    var hit=avail.find && avail.find(function(a){
-      var aKey=(a.room && (a.room.number || a.room.id)) || a.room_number || a.room_id;
-      var aDate=a.date || a.check_in || null;
-      return String(aKey)===String(roomKey) && aDate===dateISO;
-    });
-    return hit ? (hit.status || "free") : "";
-  }
-
-  function render(){
-    if(!table) return;
-    var cols=7;
-    var rowName=rooms.map(function(r){
-      return '<th style="text-align:left;min-width:70px;">'+JONE.esc(roomLabel(r))+' <span style="color:var(--color-text-faint);font-weight:400;">'+JONE.esc(roomType(r))+'</span></th>';
+  /* Verified: GET /api/rooms/availability/?check_in&check_out&guests&rooms
+     → { nights, results: [ { room_type:{...}, available_rooms, bookable,
+        message, pricing:{ price_per_night, total, ... }|null } ] } */
+  function render(results, nights){
+    if(!results.length){
+      DATA.empty(tbody,"calendar","No rooms available","Nothing is free for those dates. Try different dates.",6);
+      return;
+    }
+    tbody.innerHTML=results.map(function(r){
+      var rt=r.room_type||{};
+      var bookable=r.bookable!==false;
+      var pr=r.pricing||null;
+      return '<tr'+(bookable?'':' style="opacity:0.55;"')+'>'+
+        '<td><strong>'+JONE.esc(rt.name||"—")+'</strong>'+(r.message?'<div class="caption">'+JONE.esc(r.message)+'</div>':'')+'</td>'+
+        '<td class="hide-sm">'+JONE.esc(rt.max_guests!=null?rt.max_guests:"—")+'</td>'+
+        '<td>'+JONE.esc(r.available_rooms!=null?r.available_rooms:"—")+'</td>'+
+        '<td class="hide-sm">'+(pr?JONE.esc(JONE.formatNaira(pr.price_per_night)):"—")+'</td>'+
+        '<td>'+(pr?JONE.esc(JONE.formatNaira(pr.total)):"—")+'</td>'+
+        '<td>'+(bookable?JONE.dashboard.statusPill("available"):JONE.dashboard.statusPill("unavailable"))+'</td>'+
+      '</tr>';
     }).join("");
-    var header='<tr><th style="text-align:left;min-width:130px;">Room</th>'+rowName+'</tr>';
-    var body="";
-    for(var d=0;d<cols;d++){
-      var dt=new Date(state.from); dt.setDate(dt.getDate()+d);
-      var dateISO=dt.toISOString().slice(0,10);
-      var wd=dt.toLocaleDateString("en-GB",{weekday:"short"});
-      var num=dt.getDate();
-      body+='<tr><th style="text-align:left;color:var(--color-text-muted);">'+wd+' '+num+'</th>';
-      body+=rooms.map(function(r){
-        var key=(r.number || r.id);
-        var st=cellStatus(key, dateISO) || "free";
-        return '<td><span class="avo-cell '+JONE.esc(st)+'" title="'+JONE.esc(st)+'"></span></td>';
-      }).join("");
-      body+='</tr>';
-    }
-    table.innerHTML=header+body;
+    JONE.icons.inject(tbody);
   }
 
-  function showError(msg){
-    if(!table) return;
-    table.innerHTML='<tr><td><div class="empty-state" style="padding:2rem;text-align:left;"><span data-icon="alertTriangle" data-size="34"></span><h3>Availability couldn\'t be loaded</h3><p>'+(msg||"Please try again in a moment.")+'</p></div></td></tr>';
-    JONE.icons.inject(table);
-  }
-
-  async function load(){
-    if(!table) return;
-    table.innerHTML='<tr><td><div class="loading-block"><div class="spinner" role="status"></div><p class="muted">Loading availability&hellip;</p></div></td></tr>';
+  async function search(){
+    if(!fromEl.value||!toEl.value){ JONE.ui.toast("Choose both check-in and check-out dates.","warning"); return; }
+    if(fromEl.value>=toEl.value){ JONE.ui.toast("Check-out must be after check-in.","warning"); return; }
+    DATA.loading(tbody);
     try{
-      var rr=await window.API.list("rooms");
-      var rl=window.API.normalizeList?window.API.normalizeList(rr.data).items:((rr.data&&rr.data.results)||rr.data||[]);
-      rooms=rl||[];
-      if(!rooms.length){ showError("No rooms are configured in the system yet."); return; }
-      var ar=await window.API.list("availability",{ from:state.from, days:7 });
-      var al=window.API.normalizeList?window.API.normalizeList(ar.data).items:((ar.data&&ar.data.results)||ar.data||[]);
-      avail=al||[];
-      render();
+      var res=await window.API.checkAvailability({
+        check_in: fromEl.value, check_out: toEl.value,
+        guests: Number(document.getElementById("av-guests").value)||1,
+        rooms: Number(document.getElementById("av-rooms").value)||1
+      });
+      var d=(res&&res.data)||{};
+      render(d.results||[], d.nights);
     }catch(err){
-      showError(err && err.message && err.status===0 ? err.message : "");
+      DATA.error(tbody,"Availability couldn't be loaded",(err&&err.message)||"Please try again in a moment.",6);
     }
   }
 
-  var inp=document.getElementById("av-from");
-  if(inp) inp.value=state.from;
-  if(inp) inp.addEventListener("change",function(){state.from=inp.value;load();});
-  var prev=document.querySelector("[data-av-prev]");
-  if(prev) prev.addEventListener("click",function(){var d=new Date(state.from);d.setDate(d.getDate()-7);state.from=d.toISOString().slice(0,10);if(inp)inp.value=state.from;load();});
-  var next=document.querySelector("[data-av-next]");
-  if(next) next.addEventListener("click",function(){var d=new Date(state.from);d.setDate(d.getDate()+7);state.from=d.toISOString().slice(0,10);if(inp)inp.value=state.from;load();});
-
-  load();
+  document.getElementById("av-search").addEventListener("click",search);
+  // first search is triggered by firstSearch() above (hotel-timezone aware)
 })();
 
 </script>

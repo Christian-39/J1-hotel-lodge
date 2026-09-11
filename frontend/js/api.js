@@ -2,6 +2,12 @@
    Centralized API layer.
    All HTTP to the Django REST backend flows through here. Pages never build
    their own fetch(). The backend remains the single source of truth.
+
+   Endpoint paths below are taken VERBATIM from the verified backend contract
+   (backend/docs/FRONTEND_CONTRACT.md + live API inspection). Every response
+   uses the envelope { success, message, data, pagination? } — errors use
+   { success: false, code, message, errors? }. Money values are STRINGS
+   ("25000.00") and are formatted for display only, never recomputed.
    ========================================================================== */
 
 const API = (() => {
@@ -24,7 +30,6 @@ const API = (() => {
         return parsed.access || parsed.token || null;
       }
     } catch (_) {}
-    // Fallback to cookie-based session if the backend uses one.
     return null;
   }
 
@@ -44,21 +49,27 @@ const API = (() => {
       this.name = "APIError";
       this.status = status;
       this.data = data;
+      // Contract error code (e.g. ROOM_UNAVAILABLE) when present.
+      this.code = (data && data.code) || null;
     }
   }
 
   // Map HTTP status codes to human-friendly, non-technical messages.
+  // Backend-provided messages (envelope `message`) win when they are
+  // user-safe; technical/token messages are replaced.
   function friendlyMessage(status, data) {
-    // Field-level errors first: "Email: This field is required."
-    if (data && data.errors && typeof data.errors === "object") {
-      const parts = Object.entries(data.errors).map(([k, v]) =>
-        `${k.charAt(0).toUpperCase() + k.slice(1)}: ${Array.isArray(v) ? v[0] : v}`);
-      if (parts.length) return parts.join(" ");
-    }
-    const dmsg = data && (data.detail || data.message || data.error);
+    const dmsg = data && (data.message || data.detail || data.error);
     if (dmsg && typeof dmsg === "string" && !TOKEN_RE.test(dmsg)) return dmsg;
     switch (status) {
-      case 400: return "We couldn't process that request. Please check your details and try again.";
+      case 400: {
+        // Field-level errors from the contract: { errors: { field: [msgs] } }
+        const errs = data && data.errors;
+        if (errs && typeof errs === "object") {
+          const first = Object.values(errs).flat()[0];
+          if (first && typeof first === "string") return first;
+        }
+        return "We couldn't process that request. Please check your details and try again.";
+      }
       case 401: return "Your session has expired. Please sign in again.";
       case 403: return "You don't have permission to perform this action.";
       case 404: return "The requested item could not be found.";
@@ -119,6 +130,7 @@ const API = (() => {
         status: 204,
         ok: true,
         data: null,
+        pagination: null,
         response: res,
         headers: res.headers
       };
@@ -131,18 +143,28 @@ const API = (() => {
         data = await res.text().catch(() => null);
       }
 
-      // Unwrap the backend's { success, code, message, data } envelope so the
-      // rest of the frontend works with the payload directly. Error bodies
-      // are passed through untouched (they carry `message`/`errors`).
-      if (res.ok && data && typeof data === "object" && data.success === true && "data" in data) {
-        data = data.data;
-      }
-
       if (!res.ok) {
+        // Error path keeps the FULL envelope (it carries {errors} for forms).
         throw new APIError(res.status, friendlyMessage(res.status, data), data);
       }
 
-      return { status: res.status, ok: true, data, response: res, headers: res.headers };
+      /* The backend wraps every response as {success, message?, data, pagination?}.
+         Unwrap it ONCE here so every caller receives the actual payload at
+         res.data (and pagination at res.pagination) — the documented contract
+         of normalizeList(res.data, res.pagination). */
+      let pagination = (data && typeof data === "object" && !Array.isArray(data) && data.pagination) || null;
+      if (data && typeof data === "object" && !Array.isArray(data) && data.success !== undefined && "data" in data) {
+        data = data.data !== undefined ? data.data : null;
+      }
+
+      return {
+        status: res.status,
+        ok: true,
+        data,
+        pagination,
+        response: res,
+        headers: res.headers
+      };
     } catch (err) {
       clearTimeout(timer);
       if (signal) signal.removeEventListener("abort", onAbort);
@@ -163,20 +185,23 @@ const API = (() => {
     } catch (err) {
       // On a 401 (expired access token) attempt exactly one refresh, then retry
       // the original request once. Prevents infinite refresh loops.
-      if (err instanceof APIError && err.status === 401 && !_retry && refreshProvider) {
+      // IMPORTANT: only for requests that actually carried a token. A 401 from
+      // a public request (e.g. wrong password on /auth/login/) is a real,
+      // expected failure and must surface to the caller as-is.
+      const wasAuthenticated = opts.auth !== false && !!tokenProvider();
+      if (err instanceof APIError && err.status === 401 && !_retry && wasAuthenticated && refreshProvider) {
         const refreshed = await refreshProvider();
         if (refreshed) {
           return request(path, opts, true);
         }
-        // Refresh failed -> clear session and redirect to login, preserving the
-        // original destination for post-login return.
+        // Refresh failed -> clear session and notify, preserving the original
+        // destination for post-login return.
         if (window.Auth && typeof window.Auth.onUnauthorized === "function") {
           window.Auth.onUnauthorized();
         }
       }
       throw err;
     }
-    // 204 / empty
     return response;
   }
 
@@ -187,26 +212,46 @@ const API = (() => {
   const patch = (path, body, opts = {}) => request(path, { ...opts, method: "PATCH", body });
   const del = (path, opts = {}) => request(path, { ...opts, method: "DELETE" });
 
-  /* ------------------------- Authoritative helpers ------------------------- */
+  /* ------------------------- Response helpers ------------------------------ */
 
-  /* Normalize a DRF paginated or bare array list response.
-     Returns { items, count, next, previous, page, pageSize }. */
-  function normalizeList(data, defaultPageSize = 10) {
-    if (Array.isArray(data)) {
-      return { items: data, count: data.length, next: null, previous: null, page: 1, pageSize: defaultPageSize };
-    }
-    if (data && typeof data === "object") {
-      const results = Array.isArray(data.results) ? data.results : [];
+  /* Normalize a list response to { items, count, next, previous, page, pageSize }.
+     Accepts the verified contract envelope (data array + pagination object),
+     a bare array, or a legacy {results} shape — all without ever inventing rows. */
+  function normalizeList(payload, pagination, defaultPageSize = 20) {
+    // Contract shape: API layer passes (res.data, res.pagination).
+    if (Array.isArray(payload)) {
+      const pg = pagination || {};
       return {
-        items: results,
-        count: data.count != null ? data.count : results.length,
-        next: data.next || null,
-        previous: data.previous || null,
-        page: data.page || (data.pagination && data.pagination.page) || 1,
-        pageSize: data.page_size || (data.pagination && data.pagination.page_size) || defaultPageSize
+        items: payload,
+        count: pg.count != null ? pg.count : payload.length,
+        next: pg.next || null,
+        previous: pg.previous || null,
+        page: pg.page || 1,
+        pageSize: pg.page_size || defaultPageSize
       };
     }
+    if (payload && typeof payload === "object") {
+      // Legacy/defensive: {results, count} or response object with .data
+      if (Array.isArray(payload.results)) {
+        return {
+          items: payload.results,
+          count: payload.count != null ? payload.count : payload.results.length,
+          next: payload.next || null,
+          previous: payload.previous || null,
+          page: 1,
+          pageSize: defaultPageSize
+        };
+      }
+      if (payload.data !== undefined) return normalizeList(payload.data, payload.pagination, defaultPageSize);
+    }
     return { items: [], count: 0, next: null, previous: null, page: 1, pageSize: defaultPageSize };
+  }
+
+  /* Unwrap helper: contract responses are { success, message, data } — return data. */
+  function unwrap(res) {
+    // res.data is already the unwrapped payload (envelope is stripped in
+    // requestOnce). Returns the payload, or the raw value for bare inputs.
+    return res && res.data !== undefined ? res.data : res;
   }
 
   /* Assert a raw value is safe to render (never undefined/null/NaN). */
@@ -216,13 +261,20 @@ const API = (() => {
     return value;
   }
 
-  /* Rooms */
-  function getRooms(params, opts = {}) { return get("/api/rooms/", { params, ...opts }); }
-  function getRoom(slug, opts = {}) { return get(`/api/rooms/${slug}/`, opts); }
+  /* --------------------------- PUBLIC ENDPOINTS ----------------------------
+     Paths verified against the live backend (see config.js for base URL). */
 
-  /* Availability — always consult backend. Never compute locally. */
+  /* Hotel info & policies */
+  function getHotelInfo(opts = {}) { return get("/api/hotel/", { auth: false, ...opts }); }
+  function getPolicies(opts = {}) { return get("/api/hotel/policies/", { auth: false, ...opts }); }
+
+  /* Rooms catalog (room types) */
+  function getRooms(params, opts = {}) { return get("/api/rooms/", { params, auth: false, ...opts }); }
+  function getRoom(slugOrId, opts = {}) { return get(`/api/rooms/${encodeURIComponent(slugOrId)}/`, { auth: false, ...opts }); }
+
+  /* Availability — the AUTHORITATIVE search (backend computes everything). */
   function checkAvailability(params, opts = {}) {
-    return get("/api/availability/", { params, auth: false, ...opts });
+    return get("/api/rooms/availability/", { params, auth: false, ...opts });
   }
 
   /* Offers / facilities / gallery */
@@ -230,30 +282,72 @@ const API = (() => {
   function getFacilities(params, opts = {}) { return get("/api/facilities/", { params, auth: false, ...opts }); }
   function getGallery(params, opts = {}) { return get("/api/gallery/", { params, auth: false, ...opts }); }
 
-  /* Hotel info / settings (public-safe subset) */
-  function getHotelInfo(opts = {}) { return get("/api/hotel/", { auth: false, ...opts }); }
-  function getSettings(opts = {}) { return get("/api/settings/", { auth: false, ...opts }); }
-
-  /* Public bookings */
-  function initBooking(payload, opts = {}) { return post("/api/bookings/", payload, { auth: false, ...opts }); }
-  function getBookingByRef(ref, opts = {}) { return get(`/api/bookings/ref/${ref}/`, { auth: false, ...opts }); }
-
-  /* Payments — Initiate. Frontend never holds a Paystack secret. */
-  function initPayment(bookingRef, payload = {}, opts = {}) {
-    return post(`/api/bookings/${bookingRef}/pay/`, payload, { auth: false, ...opts });
-  }
-  function checkPaymentStatus(bookingRef, opts = {}) {
-    return get(`/api/bookings/${bookingRef}/payment-status/`, { auth: false, ...opts });
-  }
-
-  /* Enquiries / contact */
+  /* Enquiries / contact (honeypot `website` field must stay blank). */
   function submitEnquiry(payload, opts = {}) { return post("/api/enquiries/", payload, { auth: false, ...opts }); }
 
+  /* ------------------------ BOOKING FLOW (guest) ---------------------------
+     Quote & availability are public. Creating, viewing, paying for and
+     cancelling a booking REQUIRES AUTHENTICATION (verified: IsAuthenticated). */
+
+  /* Quote — authoritative price preview. Nothing is persisted. */
+  function quoteBooking(payload, opts = {}) { return post("/api/bookings/quote/", payload, { auth: false, ...opts }); }
+
+  /* Create booking (auth required). The backend validates availability and
+     computes every amount; the response is the authoritative booking detail. */
+  function createBooking(payload, opts = {}) { return post("/api/bookings/", payload, opts); }
+
+  /* My bookings (auth required, paginated, ?status= filter supported). */
+  function myBookings(params, opts = {}) { return get("/api/bookings/", { params, ...opts }); }
+
+  /* Booking detail by id or booking_reference (auth + owner). */
+  function getBooking(lookup, opts = {}) { return get(`/api/bookings/${encodeURIComponent(lookup)}/`, opts); }
+
+  /* Cancel a booking (auth + owner). Body: { reason? }. */
+  function cancelBooking(lookup, reason, opts = {}) {
+    return post(`/api/bookings/${encodeURIComponent(lookup)}/cancel/`, reason ? { reason } : {}, opts);
+  }
+
+  /* Receipt for a booking (auth + owner) — renders the confirmation page. */
+  function getBookingReceipt(lookup, opts = {}) {
+    return get(`/api/bookings/${encodeURIComponent(lookup)}/receipt/`, opts);
+  }
+
+  /* --------------------------- PAYMENTS (Paystack) -------------------------
+     The frontend never holds a Paystack secret. Initialize returns the
+     backend-generated payment reference + authorization_url; success is ONLY
+     ever confirmed by verifyPayment (or the server-side webhook). */
+
+  function initPayment(bookingReference, opts = {}) {
+    return post("/api/payments/initialize/", { booking_reference: bookingReference }, opts);
+  }
+  function verifyPayment(paymentReference, opts = {}) {
+    return get(`/api/payments/verify/${encodeURIComponent(paymentReference)}/`, opts);
+  }
+
+  /* ------------------------------ AUTH ------------------------------------- */
+
+  function login(payload, opts = {}) { return post("/api/auth/login/", payload, { auth: false, ...opts }); }
+  function register(payload, opts = {}) { return post("/api/auth/register/", payload, { auth: false, ...opts }); }
+  function logout(refreshToken, opts = {}) {
+    return post("/api/auth/logout/", refreshToken ? { refresh: refreshToken } : {}, { auth: false, ...opts });
+  }
+  function me(opts = {}) { return get("/api/auth/profile/", opts); }
+  function refreshTokenCall(refresh, opts = {}) {
+    return post("/api/auth/token/refresh/", { refresh }, { auth: false, ...opts });
+  }
+
+  /* --------------------- NOTIFICATIONS (authenticated) --------------------- */
+
+  function getNotifications(params, opts = {}) { return get("/api/notifications/", { params, ...opts }); }
+  function getUnreadCount(opts = {}) { return get("/api/notifications/unread-count/", opts); }
+  function markNotificationRead(id, opts = {}) { return post(`/api/notifications/${encodeURIComponent(id)}/read/`, {}, opts); }
+  function markAllNotificationsRead(opts = {}) { return post("/api/notifications/read-all/", {}, opts); }
+
   /* ======================================================================
-     Staff/dashboard resources — resolved from APP_CONFIG.API_ENDPOINTS.
-     These are a SINGLE integration point: the paths are contract-dependent
-     and set in config.js. We never guess a path here. Until configured, the
-     call fails with a clear APIError so the page shows a real error state.
+     STAFF/DASHBOARD RESOURCES — resolved from APP_CONFIG.API_ENDPOINTS
+     (the single place staff paths are declared; verified against the real
+     backend). A resource that is not configured fails with a clear
+     APIError so the page shows an honest error state.
      ====================================================================== */
   const EPS = (window.APP_CONFIG && window.APP_CONFIG.API_ENDPOINTS) || {};
   function resourceEp(name) {
@@ -261,55 +355,84 @@ const API = (() => {
     return p ? p.replace(/\/$/, "") : "";
   }
 
+  function notConfigured(name) {
+    return new APIError(0, `The "${name}" module isn't configured. Please contact the administrator.`);
+  }
+
   // List a staff resource. Throws an APIError(0) if not configured.
   async function list(name, params, opts = {}) {
     const base = resourceEp(name);
-    if (!base) throw new APIError(0, "This module isn't configured yet. Please contact the administrator.");
-    return get(base, { params, ...opts });
+    if (!base) throw notConfigured(name);
+    return get(base + "/", { params, ...opts });
   }
-  // Get a single staff resource by id/slug.
+  // Get a single staff resource by id/slug/reference.
   async function getOne(name, id, opts = {}) {
     const base = resourceEp(name);
-    if (!base) throw new APIError(0, "This module isn't configured yet. Please contact the administrator.");
+    if (!base) throw notConfigured(name);
     return get(`${base}/${encodeURIComponent(id)}/`, opts);
   }
   // Create a staff resource. Returns backend-created record; success only on ok.
   async function create(name, payload, opts = {}) {
     const base = resourceEp(name);
-    if (!base) throw new APIError(0, "This module isn't configured yet. Please contact the administrator.");
-    return post(`${base}/`, payload, opts);
+    if (!base) throw notConfigured(name);
+    return post(base + "/", payload, opts);
   }
   async function update(name, id, payload, opts = {}) {
     const base = resourceEp(name);
-    if (!base) throw new APIError(0, "This module isn't configured yet. Please contact the administrator.");
+    if (!base) throw notConfigured(name);
     return patch(`${base}/${encodeURIComponent(id)}/`, payload, opts);
   }
   async function remove(name, id, opts = {}) {
     const base = resourceEp(name);
-    if (!base) throw new APIError(0, "This module isn't configured yet. Please contact the administrator.");
+    if (!base) throw notConfigured(name);
     return del(`${base}/${encodeURIComponent(id)}/`, opts);
+  }
+
+  /* -------------------- STAFF BOOKING ACTIONS (verified) -------------------
+     All are POST /api/admin/bookings/{lookup}/<action>/ — lookup is the
+     booking id or booking_reference. Bodies: {} or { reason? }; check-out
+     also accepts { allow_balance_due? }. */
+
+  const BOOKINGS_EP = () => resourceEp("bookings");
+  function bookingAction(action, lookup, payload, opts = {}) {
+    const base = BOOKINGS_EP();
+    if (!base) throw notConfigured("bookings");
+    return post(`${base}/${encodeURIComponent(lookup)}/${action}/`, payload || {}, opts);
+  }
+  const confirmBooking   = (lookup, opts = {}) => bookingAction("confirm", lookup, {}, opts);
+  const staffCancelBooking = (lookup, reason, opts = {}) => bookingAction("cancel", lookup, reason ? { reason } : {}, opts);
+  const checkInBooking   = (lookup, opts = {}) => bookingAction("check-in", lookup, {}, opts);
+  const checkOutBooking  = (lookup, payload, opts = {}) => bookingAction("check-out", lookup, payload || {}, opts);
+  const noShowBooking    = (lookup, opts = {}) => bookingAction("no-show", lookup, {}, opts);
+  const assignRoom       = (lookup, roomId, opts = {}) => bookingAction("assign-room", lookup, { room: roomId }, opts);
+
+  /* Record an offline payment (CASH / POS / BANK_TRANSFER). */
+  function recordPayment(payload, opts = {}) {
+    const base = resourceEp("payments");
+    if (!base) throw notConfigured("payments");
+    return post(base + "/record/", payload, opts);
   }
 
   return {
     get, post, put, patch, del, request,
-    getRooms, getRoom, checkAvailability,
-    getOffers, getFacilities, getGallery,
-    getHotelInfo, getSettings,
-    initBooking, getBookingByRef,
-    initPayment, checkPaymentStatus,
-    submitEnquiry,
-    // Auth endpoints (wired by auth.js)
-    login: (payload, opts = {}) => post("/api/auth/login/", payload, { auth: false, ...opts }),
-    logout: (opts = {}) => {
-      let refresh = null;
-      try { refresh = JSON.parse(sessionStorage.getItem(SESSION_KEY) || "{}").refresh; } catch (_) {}
-      return post("/api/auth/logout/", refresh ? { refresh } : {}, opts);
-    },
-    me: (opts = {}) => get("/api/auth/me/", opts),
+    // Public site
+    getHotelInfo, getPolicies, getRooms, getRoom, checkAvailability,
+    getOffers, getFacilities, getGallery, submitEnquiry,
+    // Booking flow (guest)
+    quoteBooking, createBooking, myBookings, getBooking, cancelBooking, getBookingReceipt,
+    // Payments
+    initPayment, verifyPayment,
+    // Auth
+    login, register, logout, me, refreshTokenCall,
+    // Notifications
+    getNotifications, getUnreadCount, markNotificationRead, markAllNotificationsRead,
+    // Staff resources + actions
+    list, getOne, create, update, remove,
+    confirmBooking, staffCancelBooking, checkInBooking, checkOutBooking,
+    noShowBooking, assignRoom, recordPayment,
+    // Helpers
     setTokenProvider, setRefreshProvider, APIError, BASE,
-    normalizeList, safe,
-    // Staff resource helpers (resolved from API_ENDPOINTS integration point)
-    list, getOne, create, update, remove
+    normalizeList, unwrap, safe
   };
 })();
 

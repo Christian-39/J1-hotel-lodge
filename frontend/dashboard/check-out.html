@@ -14,7 +14,7 @@
 <div class="dash">
   <aside class="dash-sidebar" aria-label="Staff navigation">
     <div class="dash-sidebar-brand">
-      <img src="../assets/icons/logo-dark.svg" alt="" width="30" height="42">
+      <img src="../assets/icons/logo-official.svg" alt="" width="30" height="42">
       <span>
         <span class="brand-word">J-ONE</span><br>
         <span class="brand-sub">Staff Console</span>
@@ -65,6 +65,7 @@
 <script src="../js/theme.js"></script>
 <script src="../js/ui.js"></script>
 <script src="../js/auth.js"></script>
+<script src="../js/hotel-data.js"></script>
 <script src="../js/navigation.js"></script>
 <script src="../js/dashboard.js"></script>
 <script>
@@ -78,30 +79,31 @@
   var tbody=document.querySelector("[data-tbody=checkout]");
   var departures=[];
 
-  function guestName(b){ return b.guest_name || (b.guest&&(b.guest.full_name||b.guest.name)) || "—"; }
-  function roomLabel(b){ return b.room_number || (b.room&&(b.room.number)) || b.room_type || "—"; }
-  function total(b){ return b.total != null ? b.total : b.amount; }
-  function paid(b){ return b.paid != null ? b.paid : b.paid_amount; }
-  function refOf(b){ return b.reference || b.ref || b.id; }
+  /* Verified /api/admin/bookings/ rows. In-house guests to check out today:
+     status=CHECKED_IN (optionally check_out=today). The check-out action is
+     POST /api/admin/bookings/{ref}/check-out/ and may require
+     { allow_balance_due: true } when a balance remains. */
+  function refOf(b){ return b.booking_reference || b.id; }
+  function roomLabel(b){ return (b.room_numbers && b.room_numbers.length) ? b.room_numbers.join(", ") : (b.room_type_name || "—"); }
 
   function render(list){
     tbody.innerHTML=list.map(function(b){
       var ref=refOf(b);
-      var bal=(total(b)||0)-(paid(b)||0);
-      return '<tr><td>'+JONE.esc(ref)+'</td><td>'+JONE.esc(guestName(b))+'</td><td class="hide-sm">'+JONE.esc(roomLabel(b))+'</td><td class="num">'+JONE.formatNaira(total(b))+'</td><td class="hide-sm num">'+JONE.formatNaira(paid(b))+'</td><td class="num '+(bal?"text-danger":"text-success")+'">'+JONE.formatNaira(bal)+'</td><td><button class="btn btn-sm btn-accent" data-checkout-btn="'+encodeURIComponent(ref)+'">Check out</button></td></tr>';
-    }).join("") || '<tr><td colspan="7"><div class="empty-state"><span data-icon="logOut"></span><h3>No departures today</h3></div></td></tr>';
+      var due=Number(b.amount_due||0);
+      return '<tr><td>'+JONE.esc(ref)+'</td><td>'+JONE.esc(b.guest_name||"—")+'</td><td class="hide-sm">'+JONE.esc(roomLabel(b))+'</td><td class="num">'+JONE.esc(JONE.formatNaira(b.total_amount))+'</td><td class="hide-sm num">'+JONE.esc(JONE.formatNaira(b.amount_paid))+'</td><td class="num '+(due>0?"text-danger":"text-success")+'">'+JONE.esc(JONE.formatNaira(due))+'</td><td><button class="btn btn-sm btn-accent" data-checkout-btn="'+encodeURIComponent(ref)+'"'+(due>0?' data-due="1"':'')+'>Check out</button></td></tr>';
+    }).join("") || '<tr><td colspan="7"><div class="empty-state"><span data-icon="logOut"></span><h3>No guests in-house</h3></div></td></tr>';
     JONE.icons.inject(tbody);
   }
 
   async function load(){
     DATA.loading(tbody);
     try{
-      var res=await window.API.list("checkOuts");
-      var list=window.API.normalizeList?window.API.normalizeList(res.data).items:((res.data&&res.data.results)||res.data||[]);
+      var res=await window.API.list("bookings",{ status:"CHECKED_IN", ordering:"check_out", page_size:50 });
+      var list=window.API.normalizeList?window.API.normalizeList(res.data,res.pagination).items:((res.data&&res.data.results)||res.data||[]);
       departures=list||[];
-      if(!departures.length){ DATA.empty(tbody,"logOut","No departures today","Expected departures will appear here.",7); return; }
+      if(!departures.length){ DATA.empty(tbody,"logOut","No guests in-house","Checked-in guests appear here until they check out.",7); return; }
       render(departures);
-    }catch(err){ DATA.error(tbody,"Departures couldn't be loaded","Please try again in a moment.",7); }
+    }catch(err){ DATA.error(tbody,"Departures couldn't be loaded",(err&&err.message)||"Please try again in a moment.",7); }
   }
   load();
 
@@ -109,16 +111,18 @@
     var btn=e.target.closest("[data-checkout-btn]");
     if(!btn) return;
     var ref=decodeURIComponent(btn.getAttribute("data-checkout-btn"));
+    var hasDue=btn.getAttribute("data-due")==="1";
+    if(hasDue && !window.confirm("This booking still has an unpaid balance. Check out anyway?")) return;
     if(!JONE.guardSubmit(btn)) return;
     try{
       btn.disabled=true;
-      await window.API.create("checkOuts", { booking: ref, checked_out_at: new Date().toISOString() });
-      JONE.ui.toast("Guest checked out of "+ref+" successfully.","success");
+      await window.API.checkOutBooking(ref, hasDue ? { allow_balance_due: true } : {});
+      JONE.ui.toast("Guest checked out ("+ref+").","success");
       load();
     }catch(err){
       JONE.releaseGuard(btn);
       btn.disabled=false;
-      JONE.ui.toast(err && err.status===0 ? (err.message||"Backend not configured. Contact the administrator.") : "Couldn't check out this guest. Please try again.","error");
+      JONE.ui.toast(err && (err.message || "Couldn't check out this guest. Please try again."),"error");
     }
   });
 })();

@@ -100,11 +100,12 @@
     },
     close(silent = false) {
       if (!this.wrapper) return;
-      this.wrapper.classList.remove("open");
+      const wrapper = this.wrapper;          // capture: this.wrapper is nulled below
+      this.wrapper = null;
+      wrapper.classList.remove("open");
       document.body.classList.remove("modal-open");
       document.removeEventListener("keydown", this.keydown);
-      setTimeout(() => this.wrapper.remove(), 200);
-      this.wrapper = null;
+      setTimeout(() => wrapper.remove(), 200);
       if (!silent && this.onClose) this.onClose();
       if (this.lastFocus && this.lastFocus.focus) this.lastFocus.focus();
     }
@@ -113,6 +114,7 @@
   /* --------------------------- Confirmation ------------------------------- */
   function confirm({ title = "Are you sure?", message = "", confirmText = "Confirm", cancelText = "Back", danger = false }) {
     return new Promise((resolve) => {
+      let decided = false;   // a button decision wins; onClose only settles dismissals
       const confirmBtn = JONE.el("button", {
         class: `btn ${danger ? "btn-danger" : ""}`, textContent: confirmText
       });
@@ -122,9 +124,9 @@
         message ? JONE.el("p", { textContent: message }) : null,
         JONE.el("div", { class: "confirm-actions" }, cancelBtn, confirmBtn)
       );
-      modal.open({ title, body, onClose: () => resolve(false) });
-      cancelBtn.addEventListener("click", () => { modal.close(); resolve(false); });
-      confirmBtn.addEventListener("click", () => { modal.close(); resolve(true); });
+      modal.open({ title, body, onClose: () => { if (!decided) resolve(false); } });
+      cancelBtn.addEventListener("click", () => { decided = true; modal.close(); resolve(false); });
+      confirmBtn.addEventListener("click", () => { decided = true; modal.close(); resolve(true); });
     });
   }
 
@@ -142,6 +144,7 @@
       if (!this.wrap || !this.wrap.parentNode) {
         if (this.wrap) this.wrap.remove();
         this.wrap = this.build();
+        document.body.appendChild(this.wrap);   // build() returns a detached node
       }
       const item = this.items[this.index];
       this.wrap.classList.add("open");
@@ -164,7 +167,7 @@
       this.wrap.querySelector(".lightbox-close").focus();
     },
     build() {
-      const closeBtn = JONE.el("button", { class: "lightbox-btn", "aria-label": "Close", innerHTML: JONE.icons.get("x") });
+      const closeBtn = JONE.el("button", { class: "lightbox-btn lightbox-close", "aria-label": "Close", innerHTML: JONE.icons.get("x") });
       const prevBtn = JONE.el("button", { class: "lightbox-btn lightbox-nav prev", "aria-label": "Previous", innerHTML: JONE.icons.get("chevronLeft") });
       const nextBtn = JONE.el("button", { class: "lightbox-btn lightbox-nav next", "aria-label": "Next", innerHTML: JONE.icons.get("chevronRight") });
       const wrap = JONE.el("div", { class: "lightbox" },
