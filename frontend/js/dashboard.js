@@ -129,7 +129,7 @@
     const m = msg ? '<p>' + JONE.esc(msg) + '</p>' : '';
     return '<div class="' + (kind === "loading" ? "loading-block" : "empty-state") + '">' +
       (kind === "loading"
-        ? '<div class="spinner" role="status"></div><p class="muted">' + JONE.esc(msg || "Loading&hellip;") + '</p>'
+        ? '<div class="spinner" role="status"></div><p class="muted">' + JONE.esc(msg || "Loading page") + '</p>'
         : ic + '<h3>' + JONE.esc(title) + '</h3>' + m + (extra || '')) +
       '</div>';
   }
@@ -143,8 +143,8 @@
       const tbl = isTable(el);
       const colspan = el.getAttribute ? (el.getAttribute("colspan") || 8) : 8;
       el.innerHTML = tbl
-        ? '<tr><td colspan="8">' + stateBody("loading", "", "", "Loading&hellip;") + '</td></tr>'
-        : stateBody("loading", "", "", "Loading&hellip;");
+        ? '<tr><td colspan="8">' + stateBody("loading", "", "", "Loading page") + '</td></tr>'
+        : stateBody("loading", "", "", "Loading page");
     },
     empty(el, icon, title, msg, colspan = 8) {
       if (!el) return;
