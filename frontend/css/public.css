@@ -23,14 +23,55 @@
 }
 .site-header.scrolled .header-inner { height: var(--header-h-scrolled); }
 
+.brand-mark-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-color: 3px var(--brand-charcoal-deep);
+  border-radius: 50%;          /* switch to var(--radius) for a rounded box instead */
+  background: var(--color-surface-deep);
+  flex-shrink: 0;
+  transition: background var(--speed-2);
+}
+.brand-mark-badge .brand-mark {
+  height: 22px;
+  width: auto;
+}
+
+/* Header/drawer sit on a theme-aware surface — badge inverts with the theme */
+html[data-theme="dark"] .site-header .brand-mark-badge,
+html[data-theme="dark"] .mobile-drawer .brand-mark-badge {
+  background: #F1F3F6;
+}
+
+/* Footer's surface is ALWAYS dark charcoal, in both themes — so its badge
+   is always the light variant, unconditionally (not nested under [data-theme=dark]) */
+.footer-brand .brand-mark-badge {
+  width: 34px;
+  height: 34px;
+  background: #F1F3F6;
+}
+.footer-brand .brand-mark-badge .brand-mark {
+  height: 19px;
+}
+
 .brand { display: flex; align-items: center; gap: 0.7rem; flex-shrink: 0; }
 .brand-mark { height: 34px; width: auto; }
+
+.brand > span {
+  display: flex;
+  flex-direction: column;
+  line-height: 1;
+}
+
 .brand-word {
   font-family: var(--font-body);
   font-size: 1.06rem;
   letter-spacing: 0.06em;
   font-weight: 650;
-  line-height: 1;
+  line-height: 1.15;
   color: var(--color-heading);
 }
 .brand-sub {
@@ -38,6 +79,7 @@
   letter-spacing: var(--tracking-widest);
   text-transform: uppercase;
   color: var(--color-text-muted);
+  margin-top: 0.2rem;   /* small, controlled gap instead of default line spacing */
 }
 
 .header-nav { display: flex; align-items: center; gap: var(--sp-5); }
@@ -429,9 +471,8 @@ html[data-theme="dark"] .theme-toggle .icon-moon { opacity: 0; }
 .footer-brand .brand-mark { height: 30px; }
 .footer-brand .brand-word { color: #fff; font-size: 1.02rem; }
 .footer-brand .brand-sub { color: #9AA3AF; }
-.footer-brand p { overflow-wrap: anywhere; }
+.footer-brand p { color: #ADACAA; font-size: var(--fs-sm); max-width: 38ch; line-height: 1.55; margin: 0.9rem 0 0; overflow-wrap: anywhere; }
 .footer-col a, .footer-col h5 { overflow-wrap: anywhere; }
-.footer-brand p { color: #ADACAA; font-size: var(--fs-sm); max-width: 38ch; line-height: 1.55; margin: 0.9rem 0 0; }
 .footer-col h5 { font-weight: 600; letter-spacing: var(--tracking-wider); text-transform: uppercase; font-size: var(--fs-xs); color: #8f8e8c; margin-bottom: 0.75rem; }
 .footer-col a, .footer-col .footer-line {
   display: block; padding: 0.24rem 0; color: #CFCECC; font-size: var(--fs-sm);
@@ -449,17 +490,30 @@ html[data-theme="dark"] .theme-toggle .icon-moon { opacity: 0; }
 }
 .footer-bottom a:hover { color: #fff; }
 
+/* ---------------- Tablet: brand full-width, two link columns beneath ---------------- */
 @media (max-width: 860px) {
-  .footer-top { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--sp-4); }
-  .footer-brand { grid-column: 1 / -1; }
-  .footer-brand p { max-width: none; }
+  .footer-top { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--sp-5) var(--sp-4); }
+  .footer-brand { grid-column: 1 / -1; padding-bottom: var(--sp-4); border-bottom: 1px solid rgba(255,255,255,0.08); }
+  .footer-brand p { max-width: 46ch; }
 }
+
+/* ---------------- Mobile: single stacked column, centered, sectioned ---------------- */
 @media (max-width: 560px) {
-  /* Keep the two-column flow from the 860px rule — a single stacked column
-     would make the footer dominate small screens. */
-  .footer-top { gap: var(--sp-4); }
-  .footer-col a, .footer-col .footer-line { padding: 0.3rem 0; }
-  .footer-col h5 { margin-bottom: 0.5rem; }
+  .footer-top {
+    display: none;
+  }
+
+  .site-footer {
+    padding: var(--sp-4) 0 1.25rem;
+  }
+
+  .footer-bottom {
+    flex-direction: column;
+    text-align: center;
+    gap: 0.5rem;
+    border-top: none;
+    padding-top: 0;
+  }
 }
 
 /* ---------------------------- Page hero (inner) -------------------------- */
