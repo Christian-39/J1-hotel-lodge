@@ -73,7 +73,13 @@
   position: sticky; top: 0; z-index: 800;
 }
 .dash-topbar-left { display: flex; align-items: center; gap: var(--sp-3); }
-.dash-title h1 { font-size: var(--fs-lg); }
+.dash-title { min-width: 0; }
+.dash-title h1 {
+  font-size: var(--fs-lg);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .dash-title p { font-size: var(--fs-sm); color: var(--color-text-muted); }
 .dash-topbar-actions { display: flex; align-items: center; gap: var(--sp-2); }
 .dash-topbar-actions .btn { font-size: var(--fs-xs); padding: 0 0.75rem; }
@@ -137,7 +143,10 @@
 .panel-body.no-pad { padding: 0; }
 
 .panel-grid { display: grid; grid-template-columns: 2fr 1fr; gap: 1.5rem; align-items: start; }
+.panel-grid > * { min-width: 0; }
 @media (max-width: 1100px) { .panel-grid { grid-template-columns: 1fr; } }
+
+.table-wrap { max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
 
 /* ------------------------------ Filter bar ------------------------------- */
 .filter-bar {
@@ -183,7 +192,7 @@
 .status-maintenance, .status-unavailable, .status-cancelled, .status-failed, .status-no_show, .status-expired, .status-refunded, .status-noshow, .status-inactive, .status-closed, .status-resolved, .status-dirty { color: var(--color-danger); background: var(--color-danger-bg); }
 
 /* --------------------------- Availability calendar ----------------------- */
-.avo-scroller { overflow-x: auto; }
+.avo-scroller { overflow-x: auto; max-width: 100%; }
 .avo-table { border-collapse: separate; border-spacing: 0; font-size: var(--fs-sm); }
 .avo-table th, .avo-table td { border: 1px solid var(--color-border); padding: 0.45rem 0.55rem; white-space: nowrap; }
 .avo-table thead th { position: sticky; top: 0; background: var(--color-surface-alt); text-transform: uppercase; font-size: 0.65rem; letter-spacing: 0.06em; }
@@ -198,6 +207,7 @@
 
 /* ----------------------------- Check-in/out ------------------------------ */
 .checkout-panel { display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; }
+.checkout-panel > * { min-width: 0; }
 @media (max-width: 900px) { .checkout-panel { grid-template-columns: 1fr; } }
 .balance-card {
   border: 1px solid var(--color-border);
@@ -254,7 +264,7 @@
 @media (max-width: 560px) {
   .dash-topbar { padding: .65rem .8rem; gap: .5rem; }
   .dash-topbar-left, .dash-topbar-right { min-width: 0; }
-  .dash-title h1 { font-size: var(--fs-md); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .dash-title h1 { font-size: var(--fs-md); }
   .dash-topbar-actions { gap: .25rem; }
   .dash-topbar-actions .btn { max-width: 9rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .dash-content { padding: .75rem; gap: .9rem; }
@@ -266,7 +276,6 @@
   .filter-bar .field .btn, .filter-actions { width: 100%; }
   .form-grid.fg-2 { grid-template-columns: 1fr; }
   .quick-actions { grid-template-columns: 1fr 1fr; }
-  .table-wrap { max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
   .table-wrap .table { min-width: 600px; }
   .table-wrap .table th, .table-wrap .table td { padding: .65rem .55rem; }
   .modal-panel, .modal-lg { width: calc(100vw - 1rem); max-width: calc(100vw - 1rem); max-height: calc(100dvh - 1rem); overflow-y: auto; }
