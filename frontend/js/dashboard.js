@@ -73,6 +73,50 @@
       '<div><div class="dash-user-name">' + JONE.esc(name) + '</div><div class="dash-user-role">' + JONE.esc(role) + "</div></div>";
   }
 
+  /* ------------------------------- Sidebar toggle --------------------------
+     Mobile drawer: the CSS already provides .dash-sidebar.open and
+     .dash-sidebar-backdrop.open. Listeners are delegated on document so they
+     survive the icon injector rewriting the toggle button's children, and the
+     backdrop element is created here if the page shell didn't include one. */
+  function setupSidebar() {
+    const sidebar = document.querySelector(".dash-sidebar");
+    if (!sidebar) return;
+
+    let backdrop = document.querySelector(".dash-sidebar-backdrop");
+    if (!backdrop) {
+      backdrop = document.createElement("div");
+      backdrop.className = "dash-sidebar-backdrop";
+      document.body.appendChild(backdrop);
+    }
+
+    function open() {
+      sidebar.classList.add("open");
+      backdrop.classList.add("open");
+      const t = document.querySelector(".dash-menu-toggle");
+      if (t) t.setAttribute("aria-label", "Close menu");
+    }
+    function close() {
+      sidebar.classList.remove("open");
+      backdrop.classList.remove("open");
+      const t = document.querySelector(".dash-menu-toggle");
+      if (t) t.setAttribute("aria-label", "Open menu");
+    }
+
+    document.addEventListener("click", (e) => {
+      if (e.target.closest(".dash-menu-toggle")) {
+        sidebar.classList.contains("open") ? close() : open();
+        return;
+      }
+      // Tap backdrop or a nav link closes the drawer.
+      if (e.target.closest(".dash-sidebar-backdrop") || e.target.closest(".dash-sidebar a")) {
+        close();
+      }
+    });
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") close();
+    });
+  }
+
   /* ------------------------ Data-state renderers -------------------------- */
   // Central loading / empty / error states so dashboard pages never show fake
   // records or blank space. States only appear for genuine API outcomes.
@@ -172,6 +216,7 @@
     if (!window.Auth.guard(minRole)) return false;
     renderSidebar("[data-dash-nav]");
     renderUser("[data-dash-user]");
+    setupSidebar();
     window.JONE.nav && window.JONE.nav.initDashboardNav();
     if (window.JONE.nav) window.JONE.nav.markActive(document);
     return true;
@@ -429,5 +474,5 @@
   }
 
   window.JONE = window.JONE || {};
-  window.JONE.dashboard = { renderSidebar, renderUser, statusPill, boot, topbar, NAV, badge, DATA, formModal };
+  window.JONE.dashboard = { renderSidebar, renderUser, setupSidebar, statusPill, boot, topbar, NAV, badge, DATA, formModal };
 })();
