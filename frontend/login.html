@@ -69,7 +69,7 @@
   // Already signed in? Skip the form (staff → console, guests → home).
   if (window.Auth.isAuthenticated()) {
     window.Auth.restore();
-    location.replace(window.Auth.isStaffRole() ? "/dashboard/" : "index.html");
+    location.replace(window.Auth.isStaffRole() ? "dashboard/index.html" : "index.html");
   } else {
     window.Auth.bindLoginForm("#login-form");
   }

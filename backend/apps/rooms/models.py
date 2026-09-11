@@ -106,6 +106,25 @@ class RoomTypeImage(TimeStampedModel):
             ).update(is_primary=False)
 
 
+class RoomImage(TimeStampedModel):
+    """Images of a specific physical room, distinct from room-type marketing images."""
+    room = models.ForeignKey("Room", on_delete=models.CASCADE, related_name="images")
+    image = models.ImageField(upload_to="rooms/%Y/%m/", validators=[validate_image_upload])
+    alt_text = models.CharField(max_length=200, blank=True, default="")
+    caption = models.CharField(max_length=200, blank=True, default="")
+    display_order = models.PositiveIntegerField(default=0)
+    is_primary = models.BooleanField(default=False)
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ["display_order", "id"]
+
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        if self.is_primary:
+            RoomImage.objects.filter(room=self.room, is_primary=True).exclude(pk=self.pk).update(is_primary=False)
+
+
 class Room(TimeStampedModel):
     class Status(models.TextChoices):
         AVAILABLE = "AVAILABLE", "Available"

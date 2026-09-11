@@ -259,7 +259,36 @@ class FrontDeskTests(StaffBase):
             self.assertIn(field, row)
 
 
+    def test_checkin_search_includes_checked_in_and_phone(self):
+        booking = self._confirmed_booking()
+        self.auth(self.receptionist)
+        self.assertEqual(self.client.post(f"/api/admin/bookings/{booking.booking_reference}/check-in/").status_code, 200)
+        for query in (booking.booking_reference, self.guest.phone):
+            response = self.client.get("/api/admin/bookings/", {
+                "status": "CONFIRMED,CHECKED_IN", "search": query,
+            })
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.json()["pagination"]["count"], 1)
+            self.assertEqual(response.json()["data"][0]["status"], Booking.Status.CHECKED_IN)
+
+    def test_dashboard_uses_operational_arrivals_and_in_house(self):
+        booking = self._confirmed_booking()
+        self.auth(self.receptionist)
+        before = self.client.get("/api/admin/dashboard/").json()["data"]
+        self.assertIn(booking.booking_reference, [row["booking_reference"] for row in before["upcoming_arrivals"]])
+        self.client.post(f"/api/admin/bookings/{booking.booking_reference}/check-in/")
+        after = self.client.get("/api/admin/dashboard/").json()["data"]
+        self.assertIn(booking.booking_reference, [row["booking_reference"] for row in after["in_house_guests"]])
+        self.assertEqual(after["today"]["in_house"], 1)
+
 class DashboardDataTests(StaffBase):
+    def _confirmed_booking(self):
+        self.guest = make_guest(phone="08022223333")
+        return make_booking(
+            self.guest, self.room_type, rooms=[self.room_a],
+            check_in=self.today, check_out=self.today + timedelta(days=2),
+        )
+
     def test_dashboard_counts_and_recent_lists(self):
         guest = make_guest()
         booking = make_booking(guest, self.room_type, rooms=[self.room_a],
@@ -280,3 +309,52 @@ class DashboardDataTests(StaffBase):
         response = self.client.get("/api/health/")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["status"], "ok")
+
+    def test_checkin_search_includes_checked_in_and_phone(self):
+        booking = self._confirmed_booking()
+        self.auth(self.receptionist)
+        self.assertEqual(self.client.post(f"/api/admin/bookings/{booking.booking_reference}/check-in/").status_code, 200)
+        for query in (booking.booking_reference, self.guest.phone):
+            response = self.client.get("/api/admin/bookings/", {
+                "status": "CONFIRMED,CHECKED_IN", "search": query,
+            })
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.json()["pagination"]["count"], 1)
+            self.assertEqual(response.json()["data"][0]["status"], Booking.Status.CHECKED_IN)
+
+    def test_dashboard_uses_operational_arrivals_and_in_house(self):
+        booking = self._confirmed_booking()
+        self.auth(self.receptionist)
+        before = self.client.get("/api/admin/dashboard/").json()["data"]
+        self.assertIn(booking.booking_reference, [row["booking_reference"] for row in before["upcoming_arrivals"]])
+        self.client.post(f"/api/admin/bookings/{booking.booking_reference}/check-in/")
+        after = self.client.get("/api/admin/dashboard/").json()["data"]
+        self.assertIn(booking.booking_reference, [row["booking_reference"] for row in after["in_house_guests"]])
+        self.assertEqual(after["today"]["in_house"], 1)
+
+class RoomImageTests(StaffBase):
+    def test_room_serialization_includes_physical_images_field(self):
+        self.auth(self.receptionist)
+        response = self.client.get("/api/admin/rooms/")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("images", response.json()["data"][0])
+
+    def test_receptionist_cannot_upload_physical_room_image(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        image = SimpleUploadedFile("room.jpg", b"not-an-image", content_type="image/jpeg")
+        self.auth(self.receptionist)
+        response = self.client.post(f"/api/admin/room-images/room/{self.room_a.pk}/", {"image": image})
+        self.assertEqual(response.status_code, 403)
+
+    def test_manager_can_upload_physical_room_image(self):
+        from io import BytesIO
+        from PIL import Image
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        buffer = BytesIO()
+        Image.new("RGB", (2, 2), "white").save(buffer, format="JPEG")
+        image = SimpleUploadedFile("room.jpg", buffer.getvalue(), content_type="image/jpeg")
+        self.auth(self.manager)
+        response = self.client.post(f"/api/admin/room-images/room/{self.room_a.pk}/", {"image": image})
+        self.assertEqual(response.status_code, 201, response.json())
+        self.assertTrue(response.json()["data"]["image"].split("/")[-1].endswith(".jpg"))
+

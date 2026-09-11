@@ -87,7 +87,7 @@
   .dash { grid-template-columns: 1fr; }
   .dash-sidebar {
     position: fixed; left: 0; top: 0; z-index: 1000;
-    width: 272px;
+    width: min(78vw, 248px);
     transform: translateX(-100%);
     transition: transform var(--speed-3) var(--ease);
     box-shadow: var(--shadow-lg);
@@ -248,3 +248,34 @@
 }
 .room-tile .room-no { font-family: var(--font-body); font-weight: 600; letter-spacing: -0.01em; font-size: var(--fs-md); color: var(--color-heading); }
 .room-tile .room-type { font-size: var(--fs-xs); color: var(--color-text-muted); }
+
+/* Small-screen operational layout: preserve readable controls without forcing
+   the dashboard viewport wider than the device. */
+@media (max-width: 560px) {
+  .dash-topbar { padding: .65rem .8rem; gap: .5rem; }
+  .dash-topbar-left, .dash-topbar-right { min-width: 0; }
+  .dash-title h1 { font-size: var(--fs-md); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .dash-topbar-actions { gap: .25rem; }
+  .dash-topbar-actions .btn { max-width: 9rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .dash-content { padding: .75rem; gap: .9rem; }
+  .panel-head { padding: .8rem .9rem; align-items: flex-start; flex-wrap: wrap; }
+  .panel-head .panel-actions { width: 100%; flex-wrap: wrap; }
+  .panel-body { padding: .9rem; }
+  .filter-bar { padding: .8rem .9rem; gap: .65rem; align-items: stretch; }
+  .filter-bar .field { min-width: 0; width: 100%; }
+  .filter-bar .field .btn, .filter-actions { width: 100%; }
+  .form-grid.fg-2 { grid-template-columns: 1fr; }
+  .quick-actions { grid-template-columns: 1fr 1fr; }
+  .table-wrap { max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .table-wrap .table { min-width: 600px; }
+  .table-wrap .table th, .table-wrap .table td { padding: .65rem .55rem; }
+  .modal-panel, .modal-lg { width: calc(100vw - 1rem); max-width: calc(100vw - 1rem); max-height: calc(100dvh - 1rem); overflow-y: auto; }
+  .modal-body { padding: .9rem; }
+  .room-board { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 360px) {
+  .quick-actions { grid-template-columns: 1fr; }
+  .dash-sidebar { width: min(78vw, 248px); }
+  .dash-topbar-right .theme-toggle { width: 34px; height: 34px; }
+}

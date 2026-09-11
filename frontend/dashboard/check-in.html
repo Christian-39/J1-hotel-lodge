@@ -56,10 +56,17 @@
   </div>
 </section>
 <section class="panel">
-  <div class="panel-head"><h2>Find a booking to check in</h2></div>
+  <div class="panel-head"><h2>Currently in-house</h2></div>
+  <div class="panel-body no-pad"><div class="table-wrap"><table class="table">
+    <thead><tr><th>Reference</th><th>Guest</th><th>Room</th><th>Scheduled checkout</th><th>Status</th><th></th></tr></thead>
+    <tbody data-tbody="inhouse"></tbody>
+  </table></div></div>
+</section>
+<section class="panel">
+  <div class="panel-head"><h2>Find a booking</h2></div>
   <div class="panel-body">
     <div class="form-grid fg-2">
-      <div class="field"><label class="field-label" for="chi-q">Booking reference or guest name</label><input class="input" id="chi-q" placeholder="e.g. J1-2048"></div>
+      <div class="field"><label class="field-label" for="chi-q">Guest name, reference, phone, email, or room</label><input class="input" id="chi-q" placeholder="e.g. J1-2048"></div>
       <div class="field" style="display:flex;align-items:end;"><button class="btn" data-chi-search style="width:100%;">Search</button></div>
     </div>
   </div>
@@ -86,7 +93,13 @@
 (function(){
   var DATA=JONE.dashboard.DATA;
   var tbody=document.querySelector("[data-tbody=checkin]");
+  var inhouseBody=document.querySelector("[data-tbody=inhouse]");
   var arrivals=[];
+  function renderInHouse(list){
+    if(!list.length){ DATA.empty(inhouseBody,"bed","No guests currently in-house","Checked-in guests will remain visible here.",6); return; }
+    inhouseBody.innerHTML=list.map(function(b){ var ref=refOf(b); return '<tr><td>'+JONE.esc(ref)+'</td><td>'+JONE.esc(b.guest_name||"—")+'</td><td>'+JONE.esc(roomLabel(b))+'</td><td>'+JONE.esc(b.check_out?JONE.formatDate(b.check_out,"mid"):"—")+'</td><td>'+JONE.dashboard.statusPill(b.status)+'</td><td><a class="btn btn-sm btn-outline" href="booking-details.html?ref='+encodeURIComponent(ref)+'">View</a></td></tr>'; }).join("");
+    JONE.icons.inject(inhouseBody);
+  }
 
   /* Verified /api/admin/bookings/ row shape. Today's expected arrivals:
      status=CONFIRMED & check_in=<today> (exact-date filter). */
@@ -110,9 +123,13 @@
   async function load(){
     DATA.loading(tbody);
     try{
-      var res=await window.API.list("bookings",{ status:"CONFIRMED", check_in:JONE.hotelTodayISO(0), ordering:"check_in", page_size:50 });
-      var list=window.API.normalizeList?window.API.normalizeList(res.data,res.pagination).items:((res.data&&res.data.results)||res.data||[]);
-      arrivals=list||[];
+      var results=await Promise.all([
+        window.API.list("bookings",{ status:"CONFIRMED", check_in:JONE.hotelTodayISO(0), ordering:"check_in", page_size:50 }),
+        window.API.list("bookings",{ status:"CHECKED_IN", ordering:"check_out", page_size:50 })
+      ]);
+      var list=window.API.normalizeList?window.API.normalizeList(results[0].data,results[0].pagination).items:((results[0].data&&results[0].data.results)||results[0].data||[]);
+      var housed=window.API.normalizeList?window.API.normalizeList(results[1].data,results[1].pagination).items:((results[1].data&&results[1].data.results)||results[1].data||[]);
+      arrivals=list||[]; renderInHouse(housed||[]);
       if(!arrivals.length){ DATA.empty(tbody,"logOut","No arrivals today","Guests expected to check in today will appear here.",6); return; }
       apply();
     }catch(err){ DATA.error(tbody,"Arrivals couldn't be loaded",(err&&err.message)||"Please try again in a moment.",6); }
@@ -122,7 +139,11 @@
   var s=document.querySelector("[data-chi-search]");
   if(s) s.addEventListener("click",apply);
   var qEl=document.getElementById("chi-q");
-  if(qEl) qEl.addEventListener("input", JONE.debounce(apply,200));
+  if(qEl) qEl.addEventListener("input", JONE.debounce(async function(){
+    var q=qEl.value.trim(); if(!q){ apply(); return; }
+    try { var res=await window.API.list("bookings",{status:"CONFIRMED,CHECKED_IN",search:q,ordering:"check_in",page_size:25}); var rows=window.API.normalizeList?window.API.normalizeList(res.data,res.pagination).items:((res.data&&res.data.results)||res.data||[]); render(rows.filter(function(b){return b.status!=="CHECKED_IN";})); renderInHouse(rows.filter(function(b){return b.status==="CHECKED_IN";})); }
+    catch(err){ DATA.error(tbody,"Search failed",err.message||"Please try again.",6); }
+  },300));
 
   // Check-in is a real backend action (POST /api/admin/bookings/{ref}/check-in/):
   // success is only shown AFTER the server confirms.

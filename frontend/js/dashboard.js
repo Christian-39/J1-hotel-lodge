@@ -23,18 +23,19 @@
     { group: "Finance", items: [
       { label: "Payments", href: "payments.html", icon: "creditCard", view: "payments" },
       { label: "Receipts", href: "receipts.html", icon: "receipt", view: "receipts" },
-      { label: "Reports", href: "reports.html", icon: "barChart", view: "reports" },
+      { label: "Reports", href: "reports.html", icon: "barChart", view: "reports", minRole: "manager" },
     ]},
     { group: "Content", items: [
-      { label: "Facilities", href: "facilities.html", icon: "building", view: "facilities" },
-      { label: "Gallery", href: "gallery.html", icon: "image", view: "gallery" },
-      { label: "Offers", href: "offers.html", icon: "tag", view: "offers" },
+      { label: "Facilities", href: "facilities.html", icon: "building", view: "facilities", minRole: "manager" },
+      { label: "Gallery", href: "gallery.html", icon: "image", view: "gallery", minRole: "manager" },
+      { label: "Offers", href: "offers.html", icon: "tag", view: "offers", minRole: "manager" },
     ]},
     { group: "Communication", items: [
       { label: "Enquiries", href: "enquiries.html", icon: "message", view: "enquiries" },
       { label: "Notifications", href: "notifications.html", icon: "bell", view: "notifications" },
     ]},
     { group: "Administration", items: [
+      { label: "Staff", href: "staff.html", icon: "users", view: "staff", role: "admin" },
       { label: "Audit Logs", href: "audit-logs.html", icon: "fileText", view: "audit-logs", role: "admin" },
       { label: "Settings", href: "settings.html", icon: "settings", view: "settings", role: "admin" },
     ]},
@@ -46,7 +47,11 @@
     const current = location.pathname;
     let html = "";
     NAV.forEach((g) => {
-      const items = g.items.filter((it) => !it.role || (window.Auth && window.Auth.hasRole && window.Auth.hasRole(it.role)));
+      const items = g.items.filter((it) => {
+        if (it.role && !(window.Auth && window.Auth.hasRole && window.Auth.hasRole(it.role))) return false;
+        if (it.minRole && !(window.Auth && window.Auth.hasRole && window.Auth.hasRole(it.minRole))) return false;
+        return true;
+      });
       if (!items.length) return;
       html += '<div class="dash-nav-group"><div class="dash-nav-label">' + JONE.esc(g.group).toUpperCase() + '</div>';
       items.forEach((it) => {
@@ -69,7 +74,9 @@
     const roleRaw = String(user.role || "staff").toLowerCase().replace(/_/g, " ");
     const role = roleRaw.charAt(0).toUpperCase() + roleRaw.slice(1);
     c.innerHTML =
-      '<div class="dash-avatar">' + JONE.esc(JONE.initials(name)) + "</div>" +
+      (user.profile_image_url
+        ? '<img class="dash-avatar" src="' + JONE.esc(user.profile_image_url) + '" alt="" loading="lazy" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'inline-flex\';">' : '') +
+      '<div class="dash-avatar"' + (user.profile_image_url ? ' style="display:none;"' : '') + '>' + JONE.esc(JONE.initials(name)) + "</div>" +
       '<div><div class="dash-user-name">' + JONE.esc(name) + '</div><div class="dash-user-role">' + JONE.esc(role) + "</div></div>";
   }
 

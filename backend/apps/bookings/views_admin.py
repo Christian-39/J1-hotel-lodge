@@ -11,6 +11,7 @@ from rest_framework.views import APIView
 
 from apps.core.permissions import IsStaffRole
 from apps.core.responses import success_response
+from apps.core.emails import send_email_safe
 from apps.rooms.models import Room
 
 from .models import Booking, BookingRoom, Guest
@@ -25,6 +26,7 @@ from .serializers_admin import (
     AssignRoomSerializer,
     RecordActionSerializer,
 )
+from .serializers import ReceiptSerializer
 from .services import booking_service
 
 logger = logging.getLogger("apps")
@@ -49,7 +51,10 @@ class AdminBookingListCreateView(generics.ListCreateAPIView):
         qs = _admin_booking_queryset()
         params = self.request.query_params
         if status_param := params.get("status"):
-            qs = qs.filter(status=status_param.upper())
+            # Accept comma-separated statuses for operational screens (for
+            # example CONFIRMED,CHECKED_IN) without loading all bookings.
+            statuses = [value.strip().upper() for value in status_param.split(",") if value.strip()]
+            qs = qs.filter(status__in=statuses) if len(statuses) > 1 else qs.filter(status=statuses[0])
         if payment_status := params.get("payment_status"):
             qs = qs.filter(payment_status=payment_status.upper())
         if source := params.get("source"):
@@ -292,4 +297,33 @@ class AdminGuestDetailView(generics.RetrieveUpdateAPIView):
         return success_response(
             AdminGuestDetailSerializer(instance, context={"request": request}).data,
             message="Guest updated.",
+        )
+
+class AdminBookingSendReceiptView(APIView):
+    """Send a confirmed payment receipt to the guest after staff approval."""
+    permission_classes = [IsStaffRole]
+
+    def post(self, request, lookup):
+        booking = _get_admin_booking(lookup)
+        if not booking.guest.email:
+            from rest_framework.exceptions import ValidationError
+            raise ValidationError({"email": ["This guest has no email address."]})
+        receipt = ReceiptSerializer().to_representation(booking)
+        payments = "\n".join(
+            f"{p['reference']}: {p['amount']} {p['status']} ({p['paid_at'] or 'date unavailable'})"
+            for p in receipt["payments"]
+        ) or "No successful payment recorded."
+        message = (
+            f"{receipt['hotel']['name']}\n\nPayment receipt for booking {receipt['booking_reference']}\n"
+            f"Guest: {receipt['guest']['name']}\nStay: {receipt['check_in']} to {receipt['check_out']}\n"
+            f"Room: {receipt['room_type']}\nTotal: {receipt['total']} {receipt['currency']}\n"
+            f"Amount paid: {receipt['amount_paid']} {receipt['currency']}\n"
+            f"Outstanding: {receipt['amount_due']} {receipt['currency']}\n\nPayments:\n{payments}"
+        )
+        send_email_safe(
+            f"Payment receipt — {receipt['booking_reference']}", message, [booking.guest.email]
+        )
+        return success_response(
+            {"booking_reference": booking.booking_reference, "recipient": booking.guest.email},
+            message="Receipt queued for delivery.",
         )

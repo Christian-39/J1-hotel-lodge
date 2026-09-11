@@ -175,7 +175,7 @@
         { name: "children", label: "Children", type: "number", value: 0 },
         { name: "source", label: "Source", type: "select", options: [{ value: "WALK_IN", label: "Walk-in" }, { value: "PHONE", label: "Phone" }], value: "WALK_IN" },
         { name: "status", label: "Status", type: "select", options: [{ value: "CONFIRMED", label: "Confirmed" }, { value: "PENDING", label: "Pending payment" }], value: "CONFIRMED" },
-        { name: "offer_code", label: "Offer code (optional)", value: "" },
+        { name: "offer_code", label: "Discount / offer code (optional)", value: "", help: "Apply an approved offer to this guest. The server calculates the discount and final total." },
         { name: "special_requests", label: "Special requests", type: "textarea", rows: 2, value: "" },
         { name: "internal_notes", label: "Internal notes", type: "textarea", rows: 2, value: "" },
         { name: "guest_first_name", label: "Guest first name", required: true },

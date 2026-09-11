@@ -171,7 +171,7 @@
       // Keep the cached session user in sync (sidebar/topbar name).
       try{
         var u = JSON.parse(localStorage.getItem("jone.auth") || "null");
-        if(u){ u.first_name = me.first_name; u.last_name = me.last_name; u.full_name = me.full_name; localStorage.setItem("jone.user", JSON.stringify(u)); }
+        if(u){ u.first_name = me.first_name; u.last_name = me.last_name; u.full_name = me.full_name; localStorage.setItem("jone.auth", JSON.stringify(u)); }
       }catch(_){}
     }catch(err){
       var msg = (err && err.message) || "Couldn't save the profile.";

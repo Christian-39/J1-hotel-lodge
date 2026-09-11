@@ -1,6 +1,6 @@
 from rest_framework import serializers
 
-from .models import Amenity, Room, RoomType, RoomTypeImage
+from .models import Amenity, Room, RoomType, RoomTypeImage, RoomImage
 
 
 def _absolute(serializer, image_field):
@@ -22,9 +22,19 @@ class RoomTypeImageSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = RoomTypeImage
-        fields = ["id", "image_url", "alt_text", "caption", "display_order", "is_primary", "is_active"]
-        read_only_fields = ["id"]
+        fields = ["id", "image", "image_url", "alt_text", "caption", "display_order", "is_primary", "is_active"]
+        read_only_fields = ["id", "image_url"]
 
+    def get_image_url(self, obj):
+        return _absolute(self, obj.image)
+
+
+class RoomImageSerializer(serializers.ModelSerializer):
+    image_url = serializers.SerializerMethodField()
+    class Meta:
+        model = RoomImage
+        fields = ["id", "image", "image_url", "alt_text", "caption", "display_order", "is_primary", "is_active"]
+        read_only_fields = ["id", "image_url"]
     def get_image_url(self, obj):
         return _absolute(self, obj.image)
 
@@ -101,11 +111,15 @@ class RoomTypeAdminSerializer(serializers.ModelSerializer):
 class RoomSerializer(serializers.ModelSerializer):
     room_type_name = serializers.CharField(source="room_type.name", read_only=True)
     room_type_slug = serializers.CharField(source="room_type.slug", read_only=True)
+    images = serializers.SerializerMethodField()
+
+    def get_images(self, obj):
+        return RoomImageSerializer(obj.images.filter(is_active=True), many=True, context=self.context).data
 
     class Meta:
         model = Room
         fields = [
             "id", "room_number", "room_type", "room_type_name", "room_type_slug", "floor",
-            "status", "housekeeping_status", "notes", "is_active", "created_at", "updated_at",
+            "status", "housekeeping_status", "notes", "is_active", "images", "created_at", "updated_at",
         ]
         read_only_fields = ["id", "created_at", "updated_at"]

@@ -145,13 +145,21 @@ class PasswordResetConfirmSerializer(serializers.Serializer):
 # ---------------------------------------------------------------------------
 class AdminUserListSerializer(serializers.ModelSerializer):
     full_name = serializers.CharField(read_only=True)
+    profile_image_url = serializers.SerializerMethodField()
     bookings_count = serializers.SerializerMethodField()
+
+    def get_profile_image_url(self, obj):
+        if not obj.profile_image:
+            return None
+        request = self.context.get("request")
+        url = obj.profile_image.url
+        return request.build_absolute_uri(url) if request else url
 
     class Meta:
         model = User
         fields = [
             "id", "email", "first_name", "last_name", "full_name", "phone", "role",
-            "is_active", "email_verified", "bookings_count", "date_joined", "last_login",
+            "profile_image_url", "is_active", "email_verified", "bookings_count", "date_joined", "last_login",
         ]
 
     def get_bookings_count(self, obj):
@@ -165,7 +173,7 @@ class AdminUserCreateSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ["email", "first_name", "last_name", "phone", "role", "password", "is_active"]
+        fields = ["email", "first_name", "last_name", "phone", "role", "password", "is_active", "profile_image"]
 
     def validate_email(self, value):
         email = User.objects.normalize_email(value)
@@ -187,7 +195,7 @@ class AdminUserCreateSerializer(serializers.ModelSerializer):
 class AdminUserUpdateSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
-        fields = ["first_name", "last_name", "phone", "role", "is_active", "email_verified"]
+        fields = ["first_name", "last_name", "phone", "role", "is_active", "email_verified", "profile_image"]
 
     def validate(self, attrs):
         request = self.context["request"]

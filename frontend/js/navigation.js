@@ -86,6 +86,7 @@
 
   /* Dashboard sidebar mobile drawer + active on desktop. */
   function initDashboardNav() {
+    prefetchLinks();
     // Dashboard pages also need hotel info (e.g. the timezone that drives
     // date defaults on availability/check-in pages).
     if (window.JONE && window.JONE.hotel) window.JONE.hotel.init();
@@ -143,7 +144,24 @@
     window.HOTEL = settings;
   }
 
+  function prefetchLinks() {
+    const seen = new Set();
+    document.addEventListener("pointerenter", (event) => {
+      const link = event.target.closest("a[href]");
+      if (!link || link.target === "_blank" || link.hasAttribute("download")) return;
+      const url = new URL(link.href, location.href);
+      if (url.origin !== location.origin || seen.has(url.href)) return;
+      seen.add(url.href);
+      const hint = document.createElement("link");
+      hint.rel = "prefetch";
+      hint.as = "document";
+      hint.href = url.href;
+      document.head.appendChild(hint);
+    }, { passive: true });
+  }
+
   function init() {
+    prefetchLinks();
     initPublicHeader();
     markActive(document);
     initYear();

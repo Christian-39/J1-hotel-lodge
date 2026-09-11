@@ -6,7 +6,7 @@ included for roles allowed to see them.
 """
 from datetime import timedelta
 
-from django.db.models import Count, F, Q, Sum
+from django.db.models import Count, F, Q, Sum, Prefetch
 from django.utils import timezone
 
 from apps.bookings.models import Booking, BookingRoom
@@ -52,6 +52,16 @@ def build_dashboard(user):
         no_shows=Count("id", filter=Q(status=Booking.Status.NO_SHOW, check_in=today)),
     )
 
+    operational_bookings = bookings.select_related("guest", "room_type").prefetch_related(
+        Prefetch("room_assignments", queryset=BookingRoom.objects.select_related("room"), to_attr="_assignments")
+    )
+    upcoming_arrivals = operational_bookings.filter(
+        status=Booking.Status.CONFIRMED, check_in__gte=today
+    ).order_by("check_in", "created_at")[:7]
+    in_house_bookings = operational_bookings.filter(
+        status=Booking.Status.CHECKED_IN
+    ).order_by("check_out", "checked_in_at")[:7]
+
     recent_bookings = (
         bookings.select_related("guest", "room_type")
         .only("booking_reference", "status", "payment_status", "check_in", "check_out",
@@ -81,6 +91,20 @@ def build_dashboard(user):
             "confirmed_upcoming": booking_stats["confirmed"],
             "cancelled_today": booking_stats["cancelled_today"],
         },
+        "upcoming_arrivals": [
+            {"booking_reference": b.booking_reference, "guest_name": b.guest.full_name,
+             "room_type_name": b.room_type.name, "check_in": b.check_in.isoformat(),
+             "check_out": b.check_out.isoformat(), "status": b.status,
+             "room_numbers": [a.room.room_number for a in getattr(b, "_assignments", [])]}
+            for b in upcoming_arrivals
+        ],
+        "in_house_guests": [
+            {"booking_reference": b.booking_reference, "guest_name": b.guest.full_name,
+             "room_type_name": b.room_type.name, "check_out": b.check_out.isoformat(),
+             "status": b.status, "checked_in_at": b.checked_in_at.isoformat() if b.checked_in_at else None,
+             "room_numbers": [a.room.room_number for a in getattr(b, "_assignments", [])]}
+            for b in in_house_bookings
+        ],
         "recent_bookings": [
             {
                 "booking_reference": b.booking_reference,

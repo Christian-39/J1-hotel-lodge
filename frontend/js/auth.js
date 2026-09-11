@@ -215,7 +215,7 @@
         const params = new URLSearchParams(location.search);
         let next = params.get("next");
         if (!next || /login/i.test(next)) next = null;   // never bounce back to the login page
-        if (!next) next = isStaffRole(session && session.user && session.user.role) ? "/dashboard/" : "index.html";
+        if (!next) next = isStaffRole(session && session.user && session.user.role) ? "dashboard/index.html" : "index.html";
         location.href = next;
       } catch (err) {
         JONE.releaseGuard(btn);

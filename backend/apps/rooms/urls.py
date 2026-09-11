@@ -27,5 +27,6 @@ admin_room_types_urlpatterns = _room_type_router.urls + [
 admin_rooms_urlpatterns = _room_router.urls
 admin_amenities_urlpatterns = _amenity_router.urls
 admin_room_images_urlpatterns = [
-    path("<int:pk>/", views_admin.RoomTypeImageDetailView.as_view(), name="room-image-detail"),
+    path("room/<int:room_id>/", views_admin.RoomImageUploadView.as_view(), name="room-image-upload"),
+    path("<int:pk>/", views_admin.RoomImageDetailView.as_view(), name="room-image-detail"),
 ]

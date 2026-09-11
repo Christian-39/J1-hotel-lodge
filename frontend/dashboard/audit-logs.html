@@ -91,7 +91,7 @@
 
   function render(list){
     tbody.innerHTML=list.map(function(e){
-      return '<tr><td class="caption">'+JONE.formatDateTime(time(e))+'</td><td>'+JONE.esc(user(e))+'</td><td><span class="badge">'+JONE.esc(action(e).replace(/_/g," "))+'</span></td><td class="hide-sm">'+JONE.esc(detail(e))+'</td><td class="hide-sm caption">'+JONE.esc(ip(e))+'</td></tr>';
+      return '<tr><td class="caption">'+JONE.formatDateTime(time(e))+'</td><td>'+JONE.esc(user(e))+'</td><td><span class="badge">'+JONE.esc(action(e).replace(/_/g," "))+'</span></td><td class="hide-sm"><a href="audit-log-details.html?id='+encodeURIComponent(e.id)+'">'+JONE.esc(detail(e)||'View details')+'</a></td><td class="hide-sm caption">'+JONE.esc(ip(e))+'</td></tr>';
     }).join("") || '<tr><td colspan="5"><div class="empty-state"><span data-icon="fileText"></span><h3>No audit entries yet</h3></div></td></tr>';
     JONE.icons.inject(tbody);
   }

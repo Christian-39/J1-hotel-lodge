@@ -170,7 +170,7 @@
       var sr = await window.API.list("stats");
       dash = (sr && sr.data) || null;
       applyStats(dash);
-      renderArrivals((dash && dash.recent_bookings) || []);
+      renderArrivals((dash && dash.upcoming_arrivals) || []);
     }catch(_){
       applyStats(null);
       if(tbody) DATA.error(tbody,"Dashboard couldn't be loaded","Please try again in a moment.",4);

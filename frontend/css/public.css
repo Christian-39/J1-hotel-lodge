@@ -129,7 +129,7 @@ html[data-theme="dark"] .theme-toggle .icon-moon { opacity: 0; }
   position: fixed;
   top: 0; right: 0;
   z-index: 1000;
-  width: min(88vw, 360px);
+  width: min(78vw, 300px);
   height: 100vh;
   background: var(--color-surface);
   border-left: 1px solid var(--color-border);
@@ -197,7 +197,7 @@ html[data-theme="dark"] .theme-toggle .icon-moon { opacity: 0; }
 .hero-media::after {
   content: "";
   position: absolute; inset: 0;
-  background: linear-gradient(180deg, rgba(15,13,14,0.32) 0%, rgba(15,13,14,0.18) 40%, rgba(15,13,14,0.78) 100%);
+  background: linear-gradient(180deg, rgba(15,13,14,0.48) 0%, rgba(15,13,14,0.34) 42%, rgba(15,13,14,0.84) 100%);
 }
 /* Carousel controls */
 .hero-arrow {
@@ -244,6 +244,8 @@ html[data-theme="dark"] .theme-toggle .icon-moon { opacity: 0; }
   padding: clamp(2.5rem, 8vh, 5rem) 0 clamp(3rem, 10vh, 6rem);
   width: 100%;
 }
+.hero-content > * { text-shadow: 0 2px 12px rgba(0,0,0,0.42); }
+.hero-actions, .hero-actions * { text-shadow: none; }
 .hero-kicker {
   display: inline-flex; align-items: center; gap: 0.6rem;
   font-size: var(--fs-sm);
@@ -273,7 +275,9 @@ html[data-theme="dark"] .theme-toggle .icon-moon { opacity: 0; }
 .search-panel {
   position: relative;
   z-index: 3;
-  margin-top: calc(-1 * clamp(2.5rem, 6vw, 4.5rem));
+  /* Keep the booking form below hero actions; the previous negative offset
+     could cover the buttons on desktop when the copy wrapped to two lines. */
+  margin-top: clamp(1rem, 3vw, 2.5rem);
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);

@@ -185,8 +185,29 @@ const JONE = (() => {
     btn.classList.remove("is-loading");
   }
 
+  function setupDateConstraints(root) {
+    const scope = root || document;
+    const today = hotelTodayISO(0);
+    scope.querySelectorAll('input[type="date"]').forEach((input) => {
+      const name = String(input.name || input.id || '').toLowerCase();
+      if (name.includes('check_in') || name.includes('checkin') || name === 'in' || name.endsWith('-in')) {
+        input.min = today;
+        const updateCheckout = () => {
+          const checkout = scope.querySelector('#' + (input.id === 'hp-in' ? 'hp-out' : input.id === 'b-checkin' ? 'b-checkout' : input.id === 'r-in' ? 'r-out' : ''));
+          if (checkout) { checkout.min = input.value ? new Date(new Date(input.value + 'T00:00:00').getTime() + 86400000).toISOString().slice(0, 10) : todayISO(1); if (checkout.value && checkout.value < checkout.min) checkout.value = ''; }
+        };
+        input.addEventListener('change', updateCheckout);
+        updateCheckout();
+      }
+    });
+    scope.querySelectorAll('input[type="date"][name*="check_out"], input[type="date"][id*="checkout"], input[type="date"][id$="-out"]').forEach((checkout) => {
+      if (!checkout.min) checkout.min = todayISO(1);
+    });
+  }
+  setupDateConstraints();
+
   return {
-    formatNaira, formatDate, formatDateTime, parseISO, todayISO, hotelTodayISO, nightsBetween,
+    formatNaira, formatDate, formatDateTime, parseISO, hotelTodayISO, todayISO, nightsBetween, setupDateConstraints,
     $, $$, el, esc, debounce, throttle, storage, bindData, paginate, initials,
     scrollTop, guardSubmit, releaseGuard
   };

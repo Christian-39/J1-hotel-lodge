@@ -71,7 +71,7 @@
           <div class="flex-between"><span class="muted">Status</span><span data-bd-status>--</span></div>
         </div>
         <div style="display:flex;gap:0.75rem;flex-wrap:wrap;margin-top:1rem;">
-          <a class="btn btn-sm btn-outline" href="receipts.html"><span data-icon="receipt" data-size="16"></span> Receipt</a>
+          <a class="btn btn-sm btn-outline" href="receipt-details.html" data-receipt-link><span data-icon="receipt" data-size="16"></span> Receipt</a>
           <button class="btn btn-sm btn-outline" id="print-booking" type="button"><span data-icon="printer" data-size="16"></span> Print</button>
         </div>
       </div>
@@ -116,6 +116,7 @@
 (function(){
   var params=new URLSearchParams(location.search);
   var ref=params.get("ref");
+  var receiptLink=document.querySelector("[data-receipt-link]"); if(receiptLink&&ref) receiptLink.href="receipt-details.html?ref="+encodeURIComponent(ref);
   var book=null;
 
   /* Verified: GET /api/admin/bookings/{id|ref}/ returns the full detail

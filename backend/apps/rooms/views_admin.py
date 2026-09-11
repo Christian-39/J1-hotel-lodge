@@ -12,7 +12,7 @@ from apps.core.permissions import IsStaffReadOnlyManagerWrite
 from apps.core.responses import success_response
 
 from .models import Amenity, Room, RoomType, RoomTypeImage
-from .serializers import AmenitySerializer, RoomSerializer, RoomTypeAdminSerializer, RoomTypeImageSerializer
+from .serializers import AmenitySerializer, RoomSerializer, RoomTypeAdminSerializer, RoomTypeImageSerializer, RoomImageSerializer
 
 logger = logging.getLogger("apps")
 
@@ -132,3 +132,32 @@ class RoomAdminViewSet(_AuditedModelViewSet):
         instance.save(update_fields=["is_active", "updated_at"])
         log_action(actor=self.request.user, action="ROOM_DEACTIVATED", instance=instance,
                    request=self.request)
+
+@extend_schema(tags=["Admin · Rooms"])
+class RoomImageUploadView(generics.CreateAPIView):
+    serializer_class = RoomImageSerializer
+    permission_classes = [IsStaffReadOnlyManagerWrite]
+    parser_classes = [MultiPartParser, FormParser]
+
+    def create(self, request, room_id=None, *args, **kwargs):
+        room = Room.objects.filter(pk=room_id).first()
+        if room is None:
+            from rest_framework.exceptions import NotFound
+            raise NotFound()
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        image = serializer.save(room=room)
+        log_action(actor=request.user, action="ROOM_IMAGE_ADDED", instance=room,
+                   metadata={"image_id": image.pk}, request=request)
+        return success_response(self.get_serializer(image).data, message="Room image uploaded.",
+                                status=status.HTTP_201_CREATED)
+
+
+@extend_schema(tags=["Admin · Rooms"])
+class RoomImageDetailView(generics.RetrieveUpdateDestroyAPIView):
+    serializer_class = RoomImageSerializer
+    permission_classes = [IsStaffReadOnlyManagerWrite]
+    parser_classes = [MultiPartParser, FormParser]
+
+    def get_queryset(self):
+        return RoomImage.objects.select_related("room")

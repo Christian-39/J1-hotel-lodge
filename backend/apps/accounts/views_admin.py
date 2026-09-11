@@ -5,6 +5,7 @@ from django.db.models import Count, Q
 from drf_spectacular.utils import extend_schema
 from rest_framework import filters, generics, status
 from rest_framework.response import Response
+from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 
 from apps.audit.services import log_action
 from apps.core.permissions import IsAdminRole
@@ -23,6 +24,7 @@ logger = logging.getLogger("apps")
 
 class AdminUserQuerysetMixin:
     permission_classes = [IsAdminRole]
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
 
     def get_queryset(self):
         qs = User.objects.all().annotate(bookings_count=Count("guest_profile__bookings", distinct=True))

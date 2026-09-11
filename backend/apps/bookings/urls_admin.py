@@ -13,6 +13,7 @@ bookings_urlpatterns = [
     path("<str:lookup>/check-out/", views_admin.AdminBookingCheckOutView.as_view(), name="booking-check-out"),
     path("<str:lookup>/no-show/", views_admin.AdminBookingNoShowView.as_view(), name="booking-no-show"),
     path("<str:lookup>/assign-room/", views_admin.AdminBookingAssignRoomView.as_view(), name="booking-assign-room"),
+    path("<str:lookup>/send-receipt/", views_admin.AdminBookingSendReceiptView.as_view(), name="booking-send-receipt"),
 ]
 
 guests_urlpatterns = [
