@@ -81,7 +81,8 @@ def foot(extra_scripts=""):
         '<script src="../js/dashboard.js"></script>\n'
         '<script>\n'
         '  JONE.ui.initChrome();\n'
-        '  JONE.nav.initDashboardNav();\n'
+        # boot() handles sidebar rendering, the mobile drawer toggle (setupSidebar),
+        # and nav init — do NOT duplicate initDashboardNav here.
         '  JONE.dashboard.boot("receptionist");\n'
         '  document.querySelector("[data-logout]") && document.querySelector("[data-logout]").addEventListener("click", function(){ window.Auth.logout(); });\n'
         + extra_scripts + '\n'
