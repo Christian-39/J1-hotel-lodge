@@ -11,6 +11,7 @@
 <link rel="apple-touch-icon" href="favicon/apple-touch-icon.png">
 <link rel="stylesheet" href="css/main.css">
 <script>(function(){var t;try{t=JSON.parse(localStorage.getItem("jone.theme"))}catch(e){}if(t!=="dark"&&t!=="light"){t=(window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches)?"dark":"light"}document.documentElement.setAttribute("data-theme",t);})();</script>
+
 </head>
 <body>
 <a class="skip-link" href="#main">Skip to content</a>
@@ -49,80 +50,78 @@
 
 <main id="main">
   <div class="container booking-shell">
-    <!-- STEPPER -->
-    <ol class="stepper" aria-label="Booking progress">
-      <li class="step is-active"><span class="step-num">1</span> Stay</li>
-      <li class="step-sep"></li>
-      <li class="step"><span class="step-num">2</span> Room</li>
-      <li class="step-sep"></li>
-      <li class="step"><span class="step-num">3</span> Guest</li>
-      <li class="step-sep"></li>
-      <li class="step"><span class="step-num">4</span> Review</li>
-      <li class="step-sep"></li>
-      <li class="step"><span class="step-num">5</span> Payment</li>
-      <li class="step-sep"></li>
-      <li class="step"><span class="step-num">6</span> Confirmation</li>
-    </ol>
-    <p class="step-mobile">Step 1 of 6 — Choose your stay</p>
+    <!-- STEPPER (rendered by js/booking-stepper.js) -->
+    <nav id="booking-stepper" aria-label="Booking progress"></nav>
 
     <div class="booking-layout">
       <div>
         <!-- STEP 1: dates + guests -->
-        <form id="booking-step1" class="card card-pad" novalidate>
-          <h2 style="font-size:var(--fs-xl);margin-bottom:1.5rem;">Choose your stay</h2>
-          <div class="form-grid fg-4">
-            <div class="field">
-              <label class="field-label" for="b-checkin">Check-in</label>
-              <input class="input" type="date" id="b-checkin" name="check_in" required>
+        <section id="booking-step1" class="bk-panel is-current">
+          <form id="stay-form" class="card card-pad" novalidate>
+            <h2 style="font-size:var(--fs-xl);margin-bottom:0.35rem;">Your stay</h2>
+            <p class="muted" style="margin-bottom:1.5rem;font-size:var(--fs-sm);">Tell us your dates and party size to see what's available.</p>
+            <div class="form-grid fg-2" style="margin-bottom:1rem;">
+              <div class="field">
+                <label class="field-label" for="b-checkin">Check-in</label>
+                <input class="input" type="date" id="b-checkin" name="check_in" required>
+              </div>
+              <div class="field">
+                <label class="field-label" for="b-checkout">Check-out</label>
+                <input class="input" type="date" id="b-checkout" name="check_out" required>
+                <div class="field-error" data-date-error>Check-out must be after check-in.</div>
+              </div>
             </div>
-            <div class="field">
-              <label class="field-label" for="b-checkout">Check-out</label>
-              <input class="input" type="date" id="b-checkout" name="check_out" required>
+            <div class="form-grid fg-2">
+              <div class="field">
+                <label class="field-label" for="b-adults">Adults</label>
+                <select class="select" id="b-adults" name="adults">
+                  <option>1</option><option selected>2</option><option>3</option><option>4</option>
+                </select>
+              </div>
+              <div class="field">
+                <label class="field-label" for="b-children">Children</label>
+                <select class="select" id="b-children" name="children">
+                  <option selected>0</option><option>1</option><option>2</option><option>3</option>
+                </select>
+              </div>
             </div>
-            <div class="field">
-              <label class="field-label" for="b-adults">Adults</label>
-              <select class="select" id="b-adults" name="adults">
-                <option>1</option><option selected>2</option><option>3</option><option>4</option>
-              </select>
+            <div class="notice info" data-nights-note style="display:none;margin-bottom:1.5rem;">
+              <span data-icon="info" data-size="18"></span>
+              <span data-nights-text></span>
             </div>
-            <div class="field">
-              <label class="field-label" for="b-children">Children</label>
-              <select class="select" id="b-children" name="children">
-                <option selected>0</option><option>1</option><option>2</option><option>3</option>
-              </select>
+            <div class="field-error" data-form-error style="display:none;color:var(--color-danger);margin-bottom:1rem;"></div>
+            <div class="bk-actions">
+              <span></span>
+              <button class="btn btn-accent btn-lg bk-actions-primary" type="submit">Continue <span data-icon="arrowRight" data-size="16"></span></button>
             </div>
-          </div>
-          <div class="notice info" data-nights-note style="display:none;margin-bottom:1.5rem;">
-            <span data-icon="info" data-size="18"></span>
-            <span data-nights-text></span>
-          </div>
-          <div class="field-error" data-form-error style="display:none;color:var(--color-danger);margin-bottom:1rem;"></div>
-          <button class="btn" type="submit">Check Availability</button>
-        </form>
+          </form>
+        </section>
 
         <!-- STEP 2: room selection -->
-        <section id="booking-step2" class="card" style="display:none;">
-          <div class="card-pad">
-            <h2 style="font-size:var(--fs-xl);margin-bottom:1.25rem;">Available rooms</h2>
-            <div class="notice warning" style="margin-bottom:1.5rem;">
-              <span data-icon="alertTriangle" data-size="18"></span>
-              <span>Availability below comes from the hotel. If a room becomes unavailable, you'll be asked to choose again.</span>
-            </div>
+        <section id="booking-step2" class="bk-panel">
+          <div class="card card-pad">
+            <h2 style="font-size:var(--fs-xl);margin-bottom:0.35rem;">Available rooms</h2>
+            <p class="muted" style="margin-bottom:1.25rem;font-size:var(--fs-sm);">Choose the room that suits your stay. Prices are shown per night and in total for your dates.</p>
             <div id="room-results" aria-live="polite"></div>
-            <div id="booking-continue" style="margin-top:1.5rem;display:none;">
-              <button class="btn btn-accent btn-lg btn-block" id="continue-guest" type="button">Continue to guest details</button>
+            <div class="bk-actions" id="step2-actions">
+              <button class="btn btn-outline" id="back-to-stay" type="button"><span data-icon="arrowLeft" data-size="16"></span> Back</button>
+              <button class="btn btn-accent btn-lg bk-actions-primary" id="continue-guest" type="button" style="display:none;">Continue to guest details <span data-icon="arrowRight" data-size="16"></span></button>
             </div>
           </div>
         </section>
       </div>
 
       <!-- STICKY SUMMARY -->
-      <aside class="booking-summary no-print" aria-label="Booking summary">
+      <aside class="booking-summary no-print" aria-label="Booking summary" data-collapsed="true">
+        <button class="summary-toggle" type="button" aria-expanded="false" aria-controls="summary-body">
+          <span>Your stay <span class="summary-toggle-total" data-sum-total-mobile>—</span></span>
+          <span data-icon="chevronUp" data-size="18"></span>
+        </button>
         <div class="booking-summary-head">
           <h3>Your stay</h3>
           <div style="color:rgba(255,255,255,0.75);font-size:var(--fs-sm);" data-sum-hotel>J-ONE HOTEL &amp; LODGE</div>
         </div>
-        <div class="booking-summary-body">
+        <div class="booking-summary-body" id="summary-body">
           <div class="summary-row"><span class="label">Check-in</span><span class="value" data-sum-ci>--</span></div>
           <div class="summary-row"><span class="label">Check-out</span><span class="value" data-sum-co>--</span></div>
           <div class="summary-row"><span class="label">Nights</span><span class="value" data-sum-nights>--</span></div>
@@ -171,7 +170,7 @@
         <h5>Contact</h5>
         <span class="footer-line"><span data-icon="mapPin" data-size="16"></span><span data-contact-address>Plot 566 Mgbowo Street, off Ezike Street</span></span>
         <a class="footer-line" data-contact-whatsapp href="#"><span data-icon="phone" data-size="16"></span><span data-contact-phone>+234 803 211 2874</span></a>
-        <a class="footer-line" href="mailto:jonathanonu76@gmail.com"><span data-icon="mail" data-size="16"></span><span data-contact-email>jonathanonu76@gmail.com</span></a>
+        <a class="footer-line" href="/cdn-cgi/l/email-protection#9ef4f1f0ffeaf6fff0f1f0eba9a8def9f3fff7f2b0fdf1f3"><span data-icon="mail" data-size="16"></span><span data-contact-email><span class="__cf_email__" data-cfemail="177d787976637f7679787962202157707a767e7b3974787a">[email&#160;protected]</span></span></a>
         <a class="footer-line" data-google-maps href="https://www.google.com/maps" target="_blank" rel="noopener"><span data-icon="mapPin" data-size="16"></span>View on Google Maps</a>
       </div>
     </div>
@@ -211,7 +210,7 @@
   </div>
 </div>
 
-<script src="js/config.js"></script>
+<script data-cfasync="false" src="/cdn-cgi/scripts/5c5dd728/cloudflare-static/email-decode.min.js"></script><script src="js/config.js"></script>
 <script src="js/utils.js"></script>
 <script src="js/icons.js"></script>
 <script src="js/api.js"></script>
@@ -222,6 +221,7 @@
 <script src="js/navigation.js"></script>
 <script>JONE.ui.initChrome(); JONE.nav.init();</script>
 <script src="js/site.js"></script>
+<script src="js/booking-stepper.js"></script>
 <script>
 (function () {
   "use strict";
@@ -236,6 +236,11 @@
   var nightNote = document.querySelector("[data-nights-note]");
   var nightText = document.querySelector("[data-nights-text]");
   var errBox = document.querySelector("[data-form-error]");
+  var dateErr = document.querySelector("[data-date-error]");
+
+  var panel1 = document.getElementById("booking-step1");
+  var panel2 = document.getElementById("booking-step2");
+  var reduceMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
   // Prefill from query/draft
   ci.value = params.get("check_in") || draft.check_in || "";
@@ -243,95 +248,161 @@
   adults.value = params.get("adults") || draft.adults || 2;
   children.value = params.get("children") || draft.children || 0;
 
+  /* ---------------------------- Stepper ---------------------------------- */
+  var criteria = {
+    check_in: ci.value, check_out: co.value,
+    adults: adults.value, children: children.value,
+    offer: params.get("offer") || draft.offer_code || ""
+  };
+  var stepper = JONE.stepper.mount(document.getElementById("booking-stepper"), {
+    current: 1,
+    criteria: criteria,
+    onNavigate: function (step, index) {
+      // In-page back navigation between Stay (1) and Room (2).
+      if (index === 1) { switchPanel(2, 1); stepper.update(1); return true; }
+      if (index === 2) { switchPanel(1, 2); stepper.update(2); return true; }
+      return false;
+    }
+  });
+
+  function switchPanel(from, to) {
+    var a = from === 1 ? panel1 : panel2;
+    var b = to === 1 ? panel1 : panel2;
+    if (a === b) return;
+    a.classList.remove("is-current", "anim-in-forward", "anim-in-back");
+    b.classList.add("is-current");
+    if (!reduceMotion) {
+      b.classList.remove("anim-in-forward", "anim-in-back");
+      // reflow to restart the animation
+      void b.offsetWidth;
+      b.classList.add(to > from ? "anim-in-forward" : "anim-in-back");
+    }
+    b.scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "start" });
+  }
+
   function applyDateMin() {
     ci.min = JONE.hotelTodayISO(0);
     if (ci.value && ci.value < ci.min) { ci.value = ci.min; syncNote(); }
   }
   applyDateMin();
   document.addEventListener("jone:hotel", applyDateMin);
+
+  function guestsLabel() {
+    var a = Number(adults.value) || 0, c = Number(children.value) || 0;
+    return a + " adult" + (a === 1 ? "" : "s") + (c ? ", " + c + " child" + (c === 1 ? "" : "ren") : "");
+  }
+
   function syncNote() {
     var n = 0;
+    var coField = co.closest(".field");
     if (ci.value && co.value) {
       n = JONE.nightsBetween(ci.value, co.value);
-      if (n < 1) { nightNote.style.display = "flex"; nightText.textContent = "Check-out must be later than check-in."; return; }
+      if (n < 1) {
+        nightNote.style.display = "none";
+        if (coField) coField.classList.add("has-error");
+        return;
+      }
+      if (coField) coField.classList.remove("has-error");
       nightNote.style.display = "flex";
       nightText.textContent = n === 1 ? "1 night" : n + " nights";
       document.querySelector("[data-sum-ci]").textContent = JONE.formatDate(ci.value, "mid");
       document.querySelector("[data-sum-co]").textContent = JONE.formatDate(co.value, "mid");
       document.querySelector("[data-sum-nights]").textContent = n + (n === 1 ? " night" : " nights");
-      document.querySelector("[data-sum-guests]").textContent = (Number(adults.value) || 0) + " adult" + (Number(adults.value) === 1 ? "" : "s") + (Number(children.value) ? ", " + children.value + " child" + (Number(children.value) === 1 ? "" : "ren") : "");
+      document.querySelector("[data-sum-guests]").textContent = guestsLabel();
+    } else {
+      nightNote.style.display = "none";
+      if (coField) coField.classList.remove("has-error");
     }
+    criteria.check_in = ci.value; criteria.check_out = co.value;
+    criteria.adults = adults.value; criteria.children = children.value;
   }
   [ci, co, adults, children].forEach(function (el) { el.addEventListener("change", syncNote); });
   syncNote();
 
+  /* -------------------- Mobile collapsible summary ----------------------- */
+  (function () {
+    var aside = document.querySelector(".booking-summary");
+    var toggle = aside && aside.querySelector(".summary-toggle");
+    if (!toggle) return;
+    toggle.addEventListener("click", function () {
+      var collapsed = aside.getAttribute("data-collapsed") === "true";
+      aside.setAttribute("data-collapsed", collapsed ? "false" : "true");
+      toggle.setAttribute("aria-expanded", collapsed ? "true" : "false");
+    });
+  })();
+
+  /* -------------------------- Availability ------------------------------- */
   // Availability is ALWAYS answered by the backend (no local room list, no
   // fake fallback — an API failure shows an honest error state).
-  document.getElementById("booking-step1").addEventListener("submit", async function (e) {
+  document.getElementById("stay-form").addEventListener("submit", async function (e) {
     e.preventDefault();
     errBox.style.display = "none";
     var n = JONE.nightsBetween(ci.value, co.value);
-    if (!ci.value || !co.value) { errBox.textContent = "Please choose check-in and check-out dates."; errBox.style.display = "block"; return; }
-    if (n < 1) { errBox.textContent = "Check-out must be later than check-in."; errBox.style.display = "block"; return; }
-    var adults = Number(document.getElementById("b-adults").value) || 1;
-    var children = Number(document.getElementById("b-children").value) || 0;
+    if (!ci.value || !co.value) {
+      errBox.textContent = "Please choose your check-in and check-out dates.";
+      errBox.style.display = "block";
+      JONE.ui.toast("Please choose your check-in and check-out dates.", "warning");
+      return;
+    }
+    if (n < 1) {
+      errBox.textContent = "Check-out must be after check-in.";
+      errBox.style.display = "block";
+      var coField = co.closest(".field"); if (coField) coField.classList.add("has-error");
+      JONE.ui.toast("Check-out must be a later date than check-in.", "error");
+      return;
+    }
+    var adultsN = Number(adults.value) || 1;
+    var childrenN = Number(children.value) || 0;
     // Verified backend contract: guests (total) + rooms; the backend validates.
-    var payload = { check_in: ci.value, check_out: co.value, guests: adults + children, rooms: 1 };
+    var payload = { check_in: ci.value, check_out: co.value, guests: adultsN + childrenN, rooms: 1 };
 
-    var step1 = document.getElementById("booking-step1");
-    step1.style.opacity = "0.6";
-    step1.dataset.busy = "true";
-    var btn = step1.querySelector("button[type=submit]");
-    btn.textContent = "Checking...";
+    var btn = e.target.querySelector("button[type=submit]");
+    if (!JONE.guardSubmit(btn)) return;
+    var prevLabel = btn.innerHTML;
+    btn.innerHTML = 'Checking\u2026';
 
     // Persist draft (no payment secrets, no client-authoritative prices).
-    JONE.storage.set(S, { check_in: ci.value, check_out: co.value, adults: adults, children: children });
+    JONE.storage.set(S, { check_in: ci.value, check_out: co.value, adults: adultsN, children: childrenN, offer_code: criteria.offer || "" });
 
     try {
       var res = await window.API.checkAvailability(payload);
       var data = res.data || {};
       renderRooms(data.results || [], n);
     } catch (err) {
-      // Honest error state — never a fabricated room list.
       renderRoomsError(err);
     }
 
-    step1.style.opacity = "1";
-    step1.dataset.busy = "";
-    btn.textContent = "Check Availability";
+    JONE.releaseGuard(btn);
+    btn.innerHTML = prevLabel;
+    JONE.icons.inject(btn);
 
-    var st2 = document.getElementById("booking-step2");
-    st2.style.display = "block";
-    st2.scrollIntoView({ behavior: "smooth", block: "start" });
-    setStepper(2);
+    switchPanel(1, 2);
+    stepper.update(2);
   });
 
-  function setStepper(step) {
-    document.querySelector(".step-mobile").textContent = "Step " + step + " of 6 — " + ["Choose your stay","Select a room","Guest information","Review","Payment","Confirmation"][step-1];
-    var steps = document.querySelectorAll(".step");
-    steps.forEach(function (s, i) {
-      s.classList.toggle("is-active", i === step - 1);
-      s.classList.toggle("is-done", i < step - 1);
-    });
-  }
+  document.getElementById("back-to-stay").addEventListener("click", function () {
+    switchPanel(2, 1);
+    stepper.update(1);
+  });
 
   function renderRoomsError(err) {
     var holder = document.getElementById("room-results");
     var msg = (err && err.status === 0)
       ? "We couldn't reach the hotel's booking service. Please check your connection and try again."
       : ((err && err.message) || "We couldn't check availability just now. Please try again.");
-    holder.innerHTML = '<div class="empty-state"><span data-icon="wifi-off"></span><h3>Availability check failed</h3><p>' + JONE.esc(msg) + '</p></div>';
+    holder.innerHTML = '<div class="empty-state"><span data-icon="wifi"></span><h3>Availability check failed</h3><p>' + JONE.esc(msg) + '</p></div>';
     JONE.icons.inject(holder);
-    var cont = document.getElementById("booking-continue");
+    var cont = document.getElementById("continue-guest");
     if (cont) cont.style.display = "none";
+    JONE.ui.toast(msg, "error");
   }
 
   function renderRooms(results, nights) {
     var holder = document.getElementById("room-results");
+    var cont = document.getElementById("continue-guest");
     if (!results.length) {
       holder.innerHTML = '<div class="empty-state"><span data-icon="bed"></span><h3>No rooms available</h3><p>No rooms are currently available for your selected dates. Please choose different dates.</p></div>';
       JONE.icons.inject(holder);
-      var cont = document.getElementById("booking-continue");
       if (cont) cont.style.display = "none";
       return;
     }
@@ -346,22 +417,27 @@
         ? '<div class="media"><img src="' + JONE.esc(rt.primary_image_url) + '" alt="' + JONE.esc(rt.name || "Room") + '" loading="lazy"></div>'
         : '<div class="media"><div class="placeholder-placeholder"><span data-icon="bed" data-size="28"></span></div></div>';
       var name = rt.name || "Room";
-      var priceLabel = pricing ? JONE.formatNaira(pricing.price_per_night) : "—";
+      var desc = rt.short_description || rt.description || "";
+      if (desc && desc.length > 130) desc = desc.slice(0, 127).trim() + "\u2026";
+      var priceLabel = pricing ? JONE.formatNaira(pricing.price_per_night) : "\u2014";
       var totalLabel = pricing ? JONE.formatNaira(pricing.total) : (r.message || "Not available");
       var note = (!bookable && r.message)
-        ? '<p class="caption" style="color:var(--color-danger,#b3261e);margin:0.25rem 0 0;">' + JONE.esc(r.message) + '</p>'
+        ? '<p class="caption" style="color:var(--color-danger);margin:0.25rem 0 0;">' + JONE.esc(r.message) + '</p>'
         : (r.available_rooms != null && r.available_rooms <= 3 && bookable)
-          ? '<p class="caption" style="margin:0.25rem 0 0;">Only ' + r.available_rooms + ' left for these dates</p>'
+          ? '<p class="caption" style="color:var(--color-warning);margin:0.25rem 0 0;">Only ' + r.available_rooms + ' left for these dates</p>'
           : "";
       return '<label class="room-option' + (bookable ? '' : ' is-disabled') + '" data-room-opt' + (bookable ? '' : ' aria-disabled="true"') + '>' +
         img +
         '<div class="room-option-info">' +
           '<h4>' + JONE.esc(name) + '</h4>' +
-          '<div class="room-option-specs"><span><span data-icon="users"></span>' + JONE.esc(rt.max_guests || "—") + ' guests</span>' + (rt.room_size ? '<span><span data-icon="maximize"></span>' + JONE.esc(rt.room_size) + '</span>' : '') + (rt.bed_type ? '<span><span data-icon="bed"></span>' + JONE.esc(rt.bed_type) + '</span>' : '') + '</div>' +
+          (desc ? '<p class="room-option-desc">' + JONE.esc(desc) + '</p>' : '') +
+          '<div class="room-option-specs"><span><span data-icon="users"></span>' + JONE.esc(rt.max_guests || "\u2014") + ' guests</span>' + (rt.room_size ? '<span><span data-icon="maximize"></span>' + JONE.esc(rt.room_size) + '</span>' : '') + (rt.bed_type ? '<span><span data-icon="bed"></span>' + JONE.esc(rt.bed_type) + '</span>' : '') + '</div>' +
           note +
         '</div>' +
-        '<div class="room-option-price"><div class="price">' + priceLabel + '<small> / night</small></div><div class="caption">' + JONE.esc(totalLabel) + ' total</div></div>' +
-        '<input type="radio" name="room-choice" value="' + JONE.esc(rt.slug || rt.id || name) + '" data-name="' + JONE.esc(name) + '"' + (bookable ? '' : ' disabled') + ' style="position:absolute;opacity:0;">' +
+        '<div class="room-option-price"><div class="price">' + priceLabel + '<small> / night</small></div><div class="caption">' + JONE.esc(totalLabel) + ' total</div>' +
+          '<span class="room-option-select"><span class="sel-idle">Select</span><span class="sel-done"><span data-icon="check" data-size="14"></span> Selected</span></span>' +
+        '</div>' +
+        '<input type="radio" name="room-choice" value="' + JONE.esc(rt.slug || rt.id || name) + '" data-name="' + JONE.esc(name) + '"' + (bookable ? '' : ' disabled') + ' style="position:absolute;opacity:0;pointer-events:none;">' +
       '</label>';
     }).join("");
     JONE.icons.inject(holder);
@@ -370,12 +446,18 @@
       opt.addEventListener("click", function () {
         var radio = opt.querySelector("input");
         if (!radio || radio.disabled) return;
-        holder.querySelectorAll("[data-room-opt]").forEach(function (o) { o.classList.remove("is-selected"); o.querySelector("input").checked = false; });
+        holder.querySelectorAll("[data-room-opt]").forEach(function (o) { o.classList.remove("is-selected"); var ri = o.querySelector("input"); if (ri) ri.checked = false; });
         opt.classList.add("is-selected");
         radio.checked = true;
         selectRoom(opt);
       });
     });
+
+    // Re-apply a previously selected room (e.g. returning via Back).
+    if (draft.room_type) {
+      var prev = holder.querySelector('[data-room-opt] input[value="' + (window.CSS && CSS.escape ? CSS.escape(draft.room_type) : draft.room_type) + '"]');
+      if (prev && !prev.disabled) { prev.closest("[data-room-opt]").click(); }
+    }
   }
 
   var selRoom = null;
@@ -385,43 +467,51 @@
 
   function selectRoom(opt) {
     var radio = opt.querySelector("input");
-    var nights = JONE.nightsBetween(ci.value, co.value) || 1;
     var slug = radio.value;
-    var adults = Number(document.getElementById("b-adults").value) || 1;
-    var children = Number(document.getElementById("b-children").value) || 0;
+    var adultsN = Number(adults.value) || 1;
+    var childrenN = Number(children.value) || 0;
     selRoom = {
-      slug: slug,
-      name: radio.dataset.name,
-      check_in: ci.value,
-      check_out: co.value,
-      adults: adults,
-      children: children,
-      rooms: 1
+      slug: slug, name: radio.dataset.name,
+      check_in: ci.value, check_out: co.value,
+      adults: adultsN, children: childrenN, rooms: 1
     };
     document.querySelector("[data-sum-room]").textContent = radio.dataset.name;
     var pricing = roomPricing[slug];
     var totalEl = document.querySelector("[data-sum-total]");
-    if (totalEl) totalEl.textContent = pricing ? JONE.formatNaira(pricing.total) + " (estimate)" : "Confirmed at next step";
-    // Reveal the single persistent continue button (dedup-safe).
-    var cont = document.getElementById("booking-continue");
-    cont.style.display = "block";
-    var btnc = document.getElementById("continue-guest");
-    // Replace handler stack safely. No client-computed prices travel in the
-    // URL — the backend is the sole pricing authority.
-    btnc.onclick = function () {
+    var totalMobile = document.querySelector("[data-sum-total-mobile]");
+    var totalTxt = pricing ? JONE.formatNaira(pricing.total) + " (estimate)" : "Confirmed at next step";
+    if (totalEl) totalEl.textContent = totalTxt;
+    if (totalMobile) totalMobile.textContent = pricing ? JONE.formatNaira(pricing.total) : "";
+
+    // Persist the room choice so it survives a Back/refresh.
+    var d = JONE.storage.get(S, {}) || {};
+    d.room_type = selRoom.slug; d.room_name = selRoom.name;
+    JONE.storage.set(S, d);
+
+    var cont = document.getElementById("continue-guest");
+    cont.style.display = "inline-flex";
+    cont.onclick = function () {
       var q = new URLSearchParams({
         check_in: selRoom.check_in, check_out: selRoom.check_out,
         adults: selRoom.adults, children: selRoom.children,
         room: selRoom.slug, room_name: selRoom.name
       });
-      // Carry an offer code (e.g. from the Offers page) into the review step.
-      var offer = new URLSearchParams(location.search).get("offer");
+      var offer = new URLSearchParams(location.search).get("offer") || criteria.offer;
       if (offer) q.set("offer", offer);
       location.href = "booking-review.html?" + q.toString();
     };
-    btnc.focus({ preventScroll: true });
+    cont.focus({ preventScroll: true });
+  }
+
+  /* ------------------ Deep-link straight into room step ------------------ */
+  // Returning from later steps (e.g. stepper Back to "Room") re-runs the
+  // availability search automatically so the guest lands on the room list.
+  if (params.get("step") === "room" && ci.value && co.value && JONE.nightsBetween(ci.value, co.value) >= 1) {
+    document.getElementById("stay-form").requestSubmit
+      ? document.getElementById("stay-form").requestSubmit()
+      : document.getElementById("stay-form").dispatchEvent(new Event("submit", { cancelable: true }));
   }
 })();
 </script>
-</body>
+<script>(function(){function c(){var b=a.contentDocument||(a.contentWindow&&a.contentWindow.document);if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a39e01b16bc288a9',t:'MTc4OTIwNjYxMg=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
