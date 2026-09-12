@@ -10,6 +10,7 @@ from django.db.models import Count, F, Q, Sum, Prefetch
 from django.utils import timezone
 
 from apps.bookings.models import Booking, BookingRoom
+from apps.bookings.services import availability
 from apps.core.utils import hotel_today, money
 from apps.notifications.services import unread_count
 from apps.payments.models import Payment
@@ -36,7 +37,23 @@ def build_dashboard(user):
     total_rooms = room_stats["total"] or 0
     occupied_rooms = room_stats["occupied"] or 0
     unavailable_ops = (room_stats["maintenance"] or 0) + (room_stats["out_of_service"] or 0)
-    available_rooms = max(total_rooms - occupied_rooms - unavailable_ops, 0)
+
+    # "Available tonight" uses the SAME inventory truth as booking allocation:
+    # a room is available only if it is operationally usable AND has no active
+    # (confirmed / checked-in / live-pending) reservation overlapping tonight.
+    tomorrow = today + timedelta(days=1)
+    blocked_tonight = set(
+        BookingRoom.objects.filter(room__is_active=True)
+        .filter(availability.blocking_booking_q(now=now, prefix="booking"))
+        .filter(availability.overlap_q(today, tomorrow))
+        .values_list("room_id", flat=True)
+        .distinct()
+    )
+    operationally_free = set(
+        rooms_qs.exclude(status__in=availability.OPERATIONALLY_BLOCKED)
+        .values_list("id", flat=True)
+    )
+    available_rooms = len(operationally_free - blocked_tonight)
     occupancy_rate = round((occupied_rooms / total_rooms) * 100, 1) if total_rooms else 0.0
 
     # --- Booking pipeline stats ----------------------------------------------

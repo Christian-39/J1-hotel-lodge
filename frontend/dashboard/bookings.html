@@ -51,7 +51,7 @@
     <div class="field"><label class="field-label" for="bk-q">Search</label><input class="input" id="bk-q" data-filter="q" placeholder="Ref, guest, phone, email"></div>
     <div class="field"><label class="field-label" for="bk-status">Status</label><select class="select" id="bk-status" data-filter="status"><option value="">All</option><option>confirmed</option><option>pending</option><option>cancelled</option><option>checked_in</option><option>checked_out</option></select></div>
     <div class="field"><label class="field-label" for="bk-pay">Payment</label><select class="select" id="bk-pay" data-filter="payment_status"><option value="">All</option><option>paid</option><option>partial</option><option>unpaid</option></select></div>
-    <div class="field"><label class="field-label" for="bk-date">From</label><input class="input" type="date" id="bk-date" data-filter="from"></div>
+    <div class="field"><label class="field-label" for="bk-date">From</label><input class="input" type="date" id="bk-date" data-filter="from" data-allow-past></div>
     <div class="filter-actions"><button class="btn btn-sm" data-new-booking>New booking</button></div>
   </div>
   <div class="panel-body no-pad">
@@ -77,7 +77,6 @@
 <script src="../js/dashboard.js"></script>
 <script>
   JONE.ui.initChrome();
-  JONE.nav.initDashboardNav();
   JONE.dashboard.boot("receptionist");
   document.querySelector("[data-logout]") && document.querySelector("[data-logout]").addEventListener("click", function(){ window.Auth.logout(); });
 

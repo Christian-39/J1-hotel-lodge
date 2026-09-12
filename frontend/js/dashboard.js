@@ -56,8 +56,14 @@
       html += '<div class="dash-nav-group"><div class="dash-nav-label">' + JONE.esc(g.group).toUpperCase() + '</div>';
       items.forEach((it) => {
         let cls = "dash-nav-item";
-        if (current.endsWith("/" + it.href)) cls += " is-active";
-        html += '<a class="' + cls + '" href="' + it.href + '"><span data-icon="' + it.icon + '"></span>' + JONE.esc(it.label) + "</a>";
+        const active = current.endsWith("/" + it.href);
+        if (active) cls += " is-active";
+        const badge = it.view === "notifications"
+          ? '<span class="count notif-count" data-notif-badge hidden></span>' : "";
+        html += '<a class="' + cls + '" href="' + it.href + '"' +
+          (active ? ' aria-current="page"' : "") +
+          ' data-base-label="' + JONE.esc(it.label) + '">' +
+          '<span data-icon="' + it.icon + '"></span>' + JONE.esc(it.label) + badge + "</a>";
       });
       html += "</div>";
     });
@@ -81,10 +87,12 @@
   }
 
   /* ------------------------------- Sidebar toggle --------------------------
-     Mobile drawer: the CSS already provides .dash-sidebar.open and
-     .dash-sidebar-backdrop.open. Listeners are delegated on document so they
+     THE single dashboard drawer initialization path (spec §3). Idempotent:
+     calling it twice never attaches duplicate listeners, so the hamburger
+     can never double-toggle. Listeners are delegated on document so they
      survive the icon injector rewriting the toggle button's children, and the
      backdrop element is created here if the page shell didn't include one. */
+  let sidebarWired = false;
   function setupSidebar() {
     const sidebar = document.querySelector(".dash-sidebar");
     if (!sidebar) return;
@@ -93,35 +101,151 @@
     if (!backdrop) {
       backdrop = document.createElement("div");
       backdrop.className = "dash-sidebar-backdrop";
+      backdrop.setAttribute("aria-hidden", "true");
       document.body.appendChild(backdrop);
     }
+    const toggleBtn = () => document.querySelector(".dash-menu-toggle");
+    const t0 = toggleBtn();
+    if (t0) {
+      t0.setAttribute("aria-expanded", "false");
+      t0.setAttribute("aria-controls", "dash-sidebar");
+      if (!t0.getAttribute("aria-label")) t0.setAttribute("aria-label", "Open menu");
+    }
+    if (!sidebar.id) sidebar.id = "dash-sidebar";
 
-    function open() {
-      sidebar.classList.add("open");
-      backdrop.classList.add("open");
-      const t = document.querySelector(".dash-menu-toggle");
-      if (t) t.setAttribute("aria-label", "Close menu");
+    if (sidebarWired) return;   // never attach the document listeners twice
+    sidebarWired = true;
+
+    function setOpen(open) {
+      const bd = document.querySelector(".dash-sidebar-backdrop") || backdrop;
+      sidebar.classList.toggle("open", open);
+      bd.classList.toggle("open", open);
+      document.body.classList.toggle("drawer-open", open);
+      const t = toggleBtn();
+      if (t) {
+        t.setAttribute("aria-expanded", open ? "true" : "false");
+        t.setAttribute("aria-label", open ? "Close menu" : "Open menu");
+      }
+      if (open) {
+        const first = sidebar.querySelector("a, button");
+        if (first) { try { first.focus({ preventScroll: true }); } catch (_) { first.focus(); } }
+      } else if (t && document.activeElement && sidebar.contains(document.activeElement)) {
+        try { t.focus({ preventScroll: true }); } catch (_) { t.focus(); }
+      }
     }
-    function close() {
-      sidebar.classList.remove("open");
-      backdrop.classList.remove("open");
-      const t = document.querySelector(".dash-menu-toggle");
-      if (t) t.setAttribute("aria-label", "Open menu");
-    }
+    const isOpen = () => sidebar.classList.contains("open");
 
     document.addEventListener("click", (e) => {
       if (e.target.closest(".dash-menu-toggle")) {
-        sidebar.classList.contains("open") ? close() : open();
+        e.preventDefault();
+        setOpen(!isOpen());
         return;
       }
       // Tap backdrop or a nav link closes the drawer.
       if (e.target.closest(".dash-sidebar-backdrop") || e.target.closest(".dash-sidebar a")) {
-        close();
+        if (isOpen()) setOpen(false);
       }
     });
     document.addEventListener("keydown", (e) => {
-      if (e.key === "Escape") close();
+      if (e.key === "Escape" && isOpen()) setOpen(false);
     });
+  }
+
+  /* ---------------------- Unread notification badge -----------------------
+     One centralized refresh path (spec §21): a single request per page load
+     (plus explicit refreshes after read/mark-all actions), fanned out to
+     every badge target — sidebar item, bottom-nav item, topbar control. */
+  const notifBadge = (() => {
+    let lastCount = null;
+    let inflight = null;
+
+    function paint(count) {
+      lastCount = count;
+      const label = count > 99 ? "99+" : String(count);
+      document.querySelectorAll("[data-notif-badge]").forEach((el) => {
+        el.textContent = label;
+        el.hidden = !(count > 0);
+        const host = el.closest("a, button");
+        if (host) {
+          const base = host.getAttribute("data-base-label") || "Notifications";
+          host.setAttribute("aria-label", count > 0 ? base + " (" + count + " unread)" : base);
+        }
+      });
+    }
+
+    async function refresh(force) {
+      if (!window.Auth || !window.Auth.isAuthenticated()) return 0;
+      if (inflight && !force) return inflight;   // de-duplicate concurrent callers
+      inflight = (async () => {
+        try {
+          const res = await window.API.getUnreadCount();
+          const count = (res.data && Number(res.data.unread_count)) || 0;
+          paint(count);
+          return count;
+        } catch (_) {
+          return lastCount || 0;   // keep last honest value; no retry storm
+        } finally {
+          inflight = null;
+        }
+      })();
+      return inflight;
+    }
+
+    // Pages that already know the fresh value (notifications page) push it
+    // here instead of causing another request.
+    function set(count) { paint(Math.max(0, Number(count) || 0)); }
+
+    return { refresh, set, get: () => lastCount };
+  })();
+
+  /* -------------------------- Mobile bottom nav ---------------------------
+     Fixed bottom navigation for phones (spec §8). Settings is appended ONLY
+     for admins — role comes from the authenticated profile and the backend
+     enforces authorization regardless. */
+  const BOTTOM_NAV = [
+    { label: "Dashboard", href: "index.html", icon: "layout" },
+    { label: "Bookings", href: "bookings.html", icon: "calendar" },
+    { label: "Availability", href: "availability.html", icon: "grid" },
+    { label: "Notifications", href: "notifications.html", icon: "bell", badge: true },
+    { label: "Settings", href: "settings.html", icon: "settings", role: "admin" },
+  ];
+
+  /* Topbar bell with unread badge — same centralized badge fan-out. */
+  function renderTopbarBell() {
+    const right = document.querySelector(".dash-topbar-right");
+    if (!right || right.querySelector("[data-topbar-bell]")) return;
+    const a = document.createElement("a");
+    a.href = "notifications.html";
+    a.className = "btn-icon btn-ghost dash-topbar-bell";
+    a.setAttribute("data-topbar-bell", "");
+    a.setAttribute("data-base-label", "Notifications");
+    a.setAttribute("aria-label", "Notifications");
+    a.innerHTML = '<span data-icon="bell" data-size="19"></span><span class="notif-count" data-notif-badge hidden></span>';
+    right.insertBefore(a, right.firstChild);
+    JONE.icons.inject(a);
+  }
+
+  function renderBottomNav() {
+    if (document.querySelector(".dash-bottom-nav")) return;   // once per page
+    const page = (location.pathname.split("/").pop() || "index.html");
+    const items = BOTTOM_NAV.filter((it) =>
+      !it.role || (window.Auth && window.Auth.hasRole && window.Auth.hasRole(it.role))
+    );
+    const nav = document.createElement("nav");
+    nav.className = "dash-bottom-nav";
+    nav.setAttribute("aria-label", "Dashboard quick navigation");
+    nav.innerHTML = items.map((it) => {
+      const active = page === it.href;
+      return '<a class="dash-bottom-item' + (active ? " is-active" : "") + '" href="' + it.href + '"' +
+        (active ? ' aria-current="page"' : "") +
+        ' data-base-label="' + JONE.esc(it.label) + '" aria-label="' + JONE.esc(it.label) + '">' +
+        '<span class="dash-bottom-icon"><span data-icon="' + it.icon + '" data-size="22"></span>' +
+        (it.badge ? '<span class="notif-count" data-notif-badge hidden></span>' : "") +
+        '</span><span class="dash-bottom-label">' + JONE.esc(it.label) + "</span></a>";
+    }).join("");
+    document.body.appendChild(nav);
+    document.body.classList.add("has-bottom-nav");
+    JONE.icons.inject(nav);
   }
 
   /* ------------------------ Data-state renderers -------------------------- */
@@ -145,28 +269,35 @@
     apiBaseConfigured() {
       return !!(window.APP_CONFIG && window.APP_CONFIG.API_BASE_URL);
     },
+    // Real column count from the table's own header, so loading/empty/error
+    // rows always span the full width regardless of the table layout.
+    colCount(el) {
+      const table = el && el.closest ? el.closest("table") : null;
+      const headRow = table && table.querySelector("thead tr");
+      const n = headRow ? headRow.children.length : 0;
+      return n || 8;
+    },
     loading(el, kind = "table") {
       if (!el) return;
       const tbl = isTable(el);
-      const colspan = el.getAttribute ? (el.getAttribute("colspan") || 8) : 8;
       el.innerHTML = tbl
-        ? '<tr><td colspan="8">' + stateBody("loading", "", "", "Loading page") + '</td></tr>'
+        ? '<tr><td colspan="' + DATA.colCount(el) + '">' + stateBody("loading", "", "", "Loading page") + '</td></tr>'
         : stateBody("loading", "", "", "Loading page");
     },
-    empty(el, icon, title, msg, colspan = 8) {
+    empty(el, icon, title, msg, colspan) {
       if (!el) return;
       const tbl = isTable(el);
       el.innerHTML = tbl
-        ? '<tr><td colspan="' + colspan + '">' + stateBody("", icon, title, msg) + '</td></tr>'
+        ? '<tr><td colspan="' + (colspan || DATA.colCount(el)) + '">' + stateBody("", icon, title, msg) + '</td></tr>'
         : stateBody("", icon, title, msg);
       if (icon || title) JONE.icons.inject(el);
     },
-    error(el, title, msg, colspan = 8, showRetry = true) {
+    error(el, title, msg, colspan, showRetry = true) {
       if (!el) return;
       const retry = showRetry ? '<button class="btn btn-sm btn-outline" data-retry style="margin-top:0.75rem;">Try again</button>' : '';
       const tbl = isTable(el);
       el.innerHTML = tbl
-        ? '<tr><td colspan="' + colspan + '">' + stateBody("", "alertTriangle", title, msg, retry) + '</td></tr>'
+        ? '<tr><td colspan="' + (colspan || DATA.colCount(el)) + '">' + stateBody("", "alertTriangle", title, msg, retry) + '</td></tr>'
         : stateBody("", "alertTriangle", title, msg, retry);
       if (showRetry) {
         const btn = el.querySelector("[data-retry]");
@@ -219,13 +350,16 @@
      be enabled explicitly through window.APP_CONFIG.DEV_PREVIEW (default off)
      and never surfaces in a deployed build. */
   function boot(minRole) {
-    const devPreview = !!(window.APP_CONFIG && window.APP_CONFIG.DEV_PREVIEW);
     if (!window.Auth.guard(minRole)) return false;
     renderSidebar("[data-dash-nav]");
     renderUser("[data-dash-user]");
     setupSidebar();
+    renderTopbarBell();
+    renderBottomNav();
     window.JONE.nav && window.JONE.nav.initDashboardNav();
     if (window.JONE.nav) window.JONE.nav.markActive(document);
+    // One badge request per page load, fanned out to every badge target.
+    notifBadge.refresh();
     return true;
   }
 
@@ -481,5 +615,8 @@
   }
 
   window.JONE = window.JONE || {};
-  window.JONE.dashboard = { renderSidebar, renderUser, setupSidebar, statusPill, boot, topbar, NAV, badge, DATA, formModal };
+  window.JONE.dashboard = {
+    renderSidebar, renderUser, setupSidebar, renderTopbarBell, renderBottomNav,
+    notifBadge, statusPill, boot, topbar, NAV, badge, DATA, formModal
+  };
 })();

@@ -84,38 +84,22 @@
     });
   }
 
-  /* Dashboard sidebar mobile drawer + active on desktop. */
+  /* Dashboard page bootstrap helpers (prefetch + hotel info hydration).
+     IMPORTANT: the mobile sidebar drawer is owned EXCLUSIVELY by
+     JONE.dashboard.setupSidebar() (called from JONE.dashboard.boot()).
+     This function used to attach its own toggle listeners, which — combined
+     with boot() — attached duplicate handlers to the hamburger button and
+     made the drawer open and instantly close again. It is now idempotent and
+     contains NO drawer logic, so legacy pages that still call it explicitly
+     are harmless. */
+  let dashNavInitialized = false;
   function initDashboardNav() {
+    if (dashNavInitialized) return;
+    dashNavInitialized = true;
     prefetchLinks();
     // Dashboard pages also need hotel info (e.g. the timezone that drives
     // date defaults on availability/check-in pages).
     if (window.JONE && window.JONE.hotel) window.JONE.hotel.init();
-    const sidebar = document.querySelector(".dash-sidebar");
-    const toggle = document.querySelector(".dash-menu-toggle");
-    const backdrop = document.querySelector(".dash-sidebar-backdrop");
-    if (!sidebar) return;
-    if (!backdrop) {
-      const b = JONE.el("div", { class: "dash-sidebar-backdrop" });
-      document.body.appendChild(b);
-      const back = document.querySelector(".dash-sidebar-backdrop");
-      back && back.addEventListener("click", close);
-    } else {
-      backdrop.addEventListener("click", close);
-    }
-    function close() {
-      sidebar.classList.remove("open");
-      const b = document.querySelector(".dash-sidebar-backdrop");
-      if (b) b.classList.remove("open");
-      document.body.classList.remove("modal-open");
-    }
-    toggle && toggle.addEventListener("click", () => {
-      const open = !sidebar.classList.contains("open");
-      sidebar.classList.toggle("open", open);
-      const b = document.querySelector(".dash-sidebar-backdrop");
-      if (b) b.classList.toggle("open", open);
-      document.body.classList.toggle("modal-open", open);
-    });
-    sidebar.addEventListener("keydown", (e) => { if (e.key === "Escape") close(); });
   }
 
   /* Render the running year in any [data-year] element. */
@@ -144,10 +128,15 @@
     window.HOTEL = settings;
   }
 
+  let prefetchWired = false;
   function prefetchLinks() {
+    if (prefetchWired) return;   // one document-level listener, ever
+    prefetchWired = true;
     const seen = new Set();
-    document.addEventListener("pointerenter", (event) => {
-      const link = event.target.closest("a[href]");
+    // pointerover (not pointerenter) — pointerenter does not bubble, so a
+    // document-level delegated listener would never fire for links.
+    document.addEventListener("pointerover", (event) => {
+      const link = event.target.closest && event.target.closest("a[href]");
       if (!link || link.target === "_blank" || link.hasAttribute("download")) return;
       const url = new URL(link.href, location.href);
       if (url.origin !== location.origin || seen.has(url.href)) return;

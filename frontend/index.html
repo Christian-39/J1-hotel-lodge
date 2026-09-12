@@ -66,7 +66,7 @@
     <div class="container hero-content">
       <span class="hero-kicker">J-ONE HOTEL &amp; LODGE &middot; Enugu</span>
       <h1>Quiet comfort, close to everything.</h1>
-      <p class="hero-sub">A contemporary, private address on Mgbowo Street — restful rooms, attentive hospitality and direct online booking in minutes.</p>
+      <p class="hero-sub">A contemporary, private address on Mgbowo Street restful rooms, attentive hospitality and direct online booking in minutes.</p>
       <div class="hero-actions">
         <a class="btn btn-accent" href="booking.html">Book Your Stay</a>
         <a class="btn btn-outline" href="rooms.html">Explore Rooms</a>
@@ -117,7 +117,7 @@
         <div class="editorial-body">
           <span class="eyebrow">Welcome to J-ONE</span>
           <h2>A stay worth remembering</h2>
-          <p>Tucked on Mgbowo Street, off Ezike Street, J-ONE Hotel &amp; Lodge is a calm, considered place to rest. We focus on what matters most — a clean room, a comfortable bed, privacy and a warm welcome — without the noise.</p>
+          <p>Tucked on Mgbowo Street, off Ezike Street, J-ONE Hotel &amp; Lodge is a calm, considered place to rest. We focus on what matters most a clean room, a comfortable bed, privacy and a warm welcome without the noise.</p>
           <p>Whether you are here for a single night or a longer stay, our rooms are designed for ease, and our team is on hand to make your visit effortless.</p>
           <div class="feature-list" style="margin-top:2rem;">
             <div class="feature-row">
@@ -344,7 +344,7 @@
 (function () {
   "use strict";
 
-  /* Featured rooms — driven entirely by the backend. No fake fallback records. */
+  /* Featured rooms driven entirely by the backend. No fake fallback records. */
 
   function roomCard(r) {
     /* Verified /api/rooms/ item: { name, slug, short_description, base_price
@@ -384,18 +384,18 @@
       if (rooms.length) {
         holder.innerHTML = rooms.map(r => roomCard(r)).join("");
       } else {
-        // Backend connected but has no featured rooms — hide, never fake.
+        // Backend connected but has no featured rooms hide, never fake.
         if (section) section.style.display = "none";
       }
     } catch (err) {
-      // API unreachable/error — show an honest error state, never fake rooms.
+      // API unreachable/error show an honest error state, never fake rooms.
       holder.innerHTML = '<div class="empty-state"><span data-icon="alertTriangle" data-size="42"></span><h3>Rooms need a connection</h3><p>We couldn\'t load our featured rooms. Please refresh, or contact the hotel.</p></div>';
     } finally {
       if (holder) JONE.icons.inject(holder);
     }
   }
 
-  /* Home gallery — verified /api/gallery/ shape: { categories, items } */
+  /* Home gallery verified /api/gallery/ shape: { categories, items } */
   async function loadHomeGallery() {
     const holder = document.getElementById("home-gallery");
     if (!holder) return;

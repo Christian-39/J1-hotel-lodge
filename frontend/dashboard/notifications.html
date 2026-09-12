@@ -47,7 +47,7 @@
     <div class="dash-content">
 
 <section class="panel">
-  <div class="panel-head"><h2>Notifications</h2><div class="panel-actions"><button class="btn btn-sm btn-outline" data-notif-all>Mark all read</button></div></div>
+  <div class="panel-head"><h2>Notifications <span class="notif-count" data-notif-unread hidden style="margin-left:0.4rem;"></span></h2><div class="panel-actions"><button class="btn btn-sm btn-outline" data-notif-all type="button">Mark all read</button></div></div>
   <div class="notif-list" data-notif-list></div>
 </section>
     </div>
@@ -65,7 +65,6 @@
 <script src="../js/dashboard.js"></script>
 <script>
   JONE.ui.initChrome();
-  JONE.nav.initDashboardNav();
   JONE.dashboard.boot("receptionist");
   document.querySelector("[data-logout]") && document.querySelector("[data-logout]").addEventListener("click", function(){ window.Auth.logout(); });
 
@@ -80,33 +79,46 @@
   function icon(n){
     var t=String(n.type||"");
     if(t.indexOf("PAYMENT")===0) return "wallet";
-    if(t==="CHECK_IN"||t==="CHECK_OUT") return "logOut";
+    if(t==="CHECK_IN"||t==="CHECK_OUT"||t==="CHECKOUT_AUTO") return "logOut";
+    if(t==="CHECKOUT_DUE_SOON") return "clock";
     if(t.indexOf("BOOKING")===0) return "calendar";
     if(t==="ENQUIRY_NEW") return "inbox";
     return "bell";
   }
   function unread(n){ return n.is_read===false; }
 
-  function render(notifs, unreadCount){
+  function setUnread(count){
     var unreadEl=document.querySelector("[data-notif-unread]");
-    if(unreadEl) unreadEl.textContent = unreadCount!=null?unreadCount:notifs.filter(unread).length;
+    if(unreadEl){ unreadEl.textContent=count>99?"99+":String(count); unreadEl.hidden=!(count>0); }
+    // Push the fresh value to every badge (sidebar / bottom nav) — no extra request.
+    JONE.dashboard.notifBadge.set(count);
+  }
+
+  function render(notifs, unreadCount){
+    setUnread(unreadCount!=null?unreadCount:notifs.filter(unread).length);
     list.innerHTML=notifs.map(function(n){
-      return '<div class="notif-item'+(unread(n)?" unread":"")+'" data-notif-id="'+JONE.esc(n.id)+'"><span class="notif-icon"><span data-icon="'+icon(n)+'" data-size="18"></span></span><div class="notif-body"><p class="notif-title">'+JONE.esc(n.title||"")+'</p><p>'+JONE.esc(n.message||"")+'</p><div class="notif-meta">'+JONE.esc(n.created_at?JONE.formatDateTime(n.created_at):"")+'</div></div></div>';
+      return '<div class="notif-item'+(unread(n)?" unread":"")+'" data-notif-id="'+JONE.esc(n.id)+'" role="button" tabindex="0"><span class="notif-icon"><span data-icon="'+icon(n)+'" data-size="18"></span></span><div class="notif-body"><p class="notif-title">'+JONE.esc(n.title||"")+'</p><p>'+JONE.esc(n.message||"")+'</p><div class="notif-meta">'+JONE.esc(n.created_at?JONE.formatDateTime(n.created_at):"")+'</div></div></div>';
     }).join("") || '<div class="empty-state" style="margin:1.5rem;"><span data-icon="bell"></span><h3>You are all caught up</h3></div>';
     JONE.icons.inject(list);
   }
 
+  var loading=false;   // duplicate-request prevention
   async function load(){
+    if(loading) return;
+    loading=true;
     DATA.loading(list, "list");
     try{
       var res=await window.API.getNotifications({ page_size:50 });
       var d=(res&&res.data)||{};
       var notifs=d.notifications||[];
-      if(!notifs.length){ DATA.empty(list,"bell","You are all caught up","No notifications right now.",1); 
-        var unreadEl=document.querySelector("[data-notif-unread]"); if(unreadEl) unreadEl.textContent=d.unread_count||0;
-        return; }
+      if(!notifs.length){
+        DATA.empty(list,"bell","You are all caught up","No notifications right now.",1);
+        setUnread(d.unread_count||0);
+        return;
+      }
       render(notifs, d.unread_count);
     }catch(err){ DATA.error(list,"Notifications couldn't be loaded",(err&&err.message)||"Please try again in a moment.",1); }
+    finally{ loading=false; }
   }
   load();
 
@@ -115,26 +127,29 @@
   if(markAll) markAll.addEventListener("click", async function(){
     if(!JONE.guardSubmit(markAll)) return;
     try{
-      var res=await window.API.markAllNotificationsRead();
+      await window.API.markAllNotificationsRead();
+      setUnread(0);
       JONE.ui.toast("All notifications marked as read.","success");
-      load();
+      await load();
     }catch(err){
-      JONE.releaseGuard(markAll);
       JONE.ui.toast(err.message||"Couldn't update notifications.","error");
-    }
+    }finally{ JONE.releaseGuard(markAll); }
   });
 
-  // Click an unread item -> mark that one read (backend-confirmed).
-  list.addEventListener("click", async function(e){
-    var item=e.target.closest("[data-notif-id]");
+  // Activate an unread item -> mark that one read (backend-confirmed).
+  async function markOne(item){
     if(!item||!item.classList.contains("unread")) return;
     var id=item.getAttribute("data-notif-id");
     try{
-      await window.API.markNotificationRead(id);
+      var res=await window.API.markNotificationRead(id);
       item.classList.remove("unread");
-      var unreadEl=document.querySelector("[data-notif-unread]");
-      if(unreadEl){ var v=Number(unreadEl.textContent||0); if(v>0) unreadEl.textContent=v-1; }
+      var count=res&&res.data&&res.data.unread_count;
+      if(count!=null) setUnread(Number(count));
     }catch(_){ /* keep unread; next load refreshes honestly */ }
+  }
+  list.addEventListener("click", function(e){ markOne(e.target.closest("[data-notif-id]")); });
+  list.addEventListener("keydown", function(e){
+    if(e.key==="Enter"||e.key===" "){ var it=e.target.closest("[data-notif-id]"); if(it){ e.preventDefault(); markOne(it); } }
   });
 })();
 

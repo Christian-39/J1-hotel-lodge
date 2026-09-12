@@ -121,15 +121,13 @@
 <script src="../js/dashboard.js"></script>
 <script>
   JONE.ui.initChrome();
-  JONE.nav.initDashboardNav();
-  JONE.dashboard.boot("manager");
+  JONE.dashboard.boot("admin");
   document.querySelector("[data-logout]") && document.querySelector("[data-logout]").addEventListener("click", function(){ window.Auth.logout(); });
 
 (function(){
   "use strict";
-  /* Verified contract:
-     GET  /api/admin/settings/   (MANAGER+) -> HotelSettingsAdminSerializer fields
-     PATCH /api/admin/settings/  (ADMIN)    -> same fields, read_only: updated_at */
+  /* Contract: GET/PATCH /api/admin/settings/ are ADMIN-only. The boot("admin")
+     guard above is UX-only; the backend enforces authorization regardless. */
 
   var EP = window.APP_CONFIG.API_ENDPOINTS.settings;   // "/api/admin/settings/"
   var current = null;
@@ -146,9 +144,9 @@
     "cancellation_fee_percent"];
 
   function role(){
-    // auth.js stores the profile under APP_CONFIG.STORAGE.AUTH ("jone.auth").
-    try{ var u = JSON.parse(localStorage.getItem("jone.auth") || "null"); return u && u.role; }
-    catch(_){ return null; }
+    // Single source of truth for the signed-in profile: auth.js state.
+    var u = window.Auth && window.Auth.state && window.Auth.state.user;
+    return (u && u.role) || null;
   }
 
   function fill(){
@@ -172,7 +170,9 @@
       var res = await window.API.get(EP);
       current = res.data;
       fill();
-      isAdmin = role() === "ADMIN";
+      // Auth normalizes roles to lowercase; the old UPPERCASE comparison
+      // silently disabled the form even for real admins.
+      isAdmin = String(role() || "").toLowerCase() === "admin";
       if(!isAdmin){
         $("st-form").querySelectorAll("input, textarea").forEach(function(el){ el.disabled = true; });
         $("st-save").style.display = "none";

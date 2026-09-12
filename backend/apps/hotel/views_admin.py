@@ -19,7 +19,8 @@ logger = logging.getLogger("apps")
 
 @extend_schema(tags=["Admin · Settings"])
 class HotelSettingsAdminView(generics.RetrieveUpdateAPIView):
-    """GET for managers+; PATCH restricted to ADMIN via permissions hook."""
+    """Hotel settings are ADMIN-only — read AND write. Non-admin staff never
+    see protected business rules; public hotel facts come from /api/hotel/."""
 
     serializer_class = HotelSettingsAdminSerializer
     http_method_names = ["get", "patch", "put", "head", "options"]
@@ -30,7 +31,7 @@ class HotelSettingsAdminView(generics.RetrieveUpdateAPIView):
     def get_permissions(self):
         from apps.core.permissions import IsAdminRole
 
-        return [IsAdminRole() if self.request.method in ("PATCH", "PUT") else IsManagerOrAdmin()]
+        return [IsAdminRole()]
 
     def retrieve(self, request, *args, **kwargs):
         return success_response(self.get_serializer(self.get_object()).data)

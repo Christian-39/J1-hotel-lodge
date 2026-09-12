@@ -1,3 +1,4 @@
+from django.conf import settings as django_settings
 from rest_framework import serializers
 
 from .models import Facility, HotelPolicy, HotelSettings
@@ -6,15 +7,24 @@ from .models import Facility, HotelPolicy, HotelSettings
 class HotelPublicSerializer(serializers.ModelSerializer):
     """Everything the public website needs to render hotel information."""
 
+    # The hotel operates in the server's configured timezone (Africa/Lagos).
+    # The frontend uses this to compute "today"/date constraints correctly
+    # for visitors in other timezones — it must come from the backend, not
+    # from the browser clock.
+    timezone = serializers.SerializerMethodField()
+
     class Meta:
         model = HotelSettings
         fields = [
             "hotel_name", "tagline", "description", "address", "city", "state",
             "country", "phone", "email", "google_maps_url", "social_links",
             "check_in_time", "check_out_time", "currency", "min_stay_nights",
-            "max_stay_nights",
+            "max_stay_nights", "timezone",
         ]
         read_only_fields = fields
+
+    def get_timezone(self, obj):
+        return django_settings.TIME_ZONE
 
 
 class HotelPolicySerializer(serializers.ModelSerializer):

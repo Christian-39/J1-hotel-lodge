@@ -32,8 +32,12 @@ from .pricing import calculate_quote
 
 logger = logging.getLogger("apps")
 
-GUEST_BOOKING_LINK = "/my-booking.html"
-STAFF_BOOKING_LINK = "/dashboard/booking-detail.html"
+GUEST_BOOKING_LINK = "/my-bookings.html"
+STAFF_BOOKING_LINK = "/dashboard/booking-details.html"
+
+# Staff are warned this many minutes before a checked-in guest's scheduled
+# checkout time (spec: 30-minute checkout warning).
+CHECKOUT_WARNING_MINUTES = 30
 
 
 # ---------------------------------------------------------------------------
@@ -581,8 +585,22 @@ def check_in_booking(booking: Booking, *, staff_user, request=None):
     return booking
 
 
-@transaction.atomic
-def check_out_booking(booking: Booking, *, staff_user, allow_balance_due=False, request=None):
+def _release_rooms_for_checkout(booking):
+    """Release every assigned room back to inventory and flag housekeeping."""
+    assignments = list(booking.room_assignments.select_related("room").select_for_update())
+    for assignment in assignments:
+        room = assignment.room
+        room.status = Room.Status.AVAILABLE
+        room.housekeeping_status = Room.HousekeepingStatus.DIRTY
+        room.save(update_fields=["status", "housekeeping_status", "updated_at"])
+    return assignments
+
+
+def _perform_checkout(booking: Booking, *, actor=None, automatic=False,
+                      allow_balance_due=False, request=None):
+    """Single authoritative checkout routine shared by the manual staff action
+    and the automatic (scheduled) checkout task. Financial records are never
+    touched — an outstanding balance is preserved on the booking."""
     if booking.status == Booking.Status.CHECKED_OUT:
         return booking  # idempotent retry
     if booking.status != Booking.Status.CHECKED_IN:
@@ -592,33 +610,148 @@ def check_out_booking(booking: Booking, *, staff_user, allow_balance_due=False, 
             f"Outstanding balance of {booking.currency} {booking.amount_due} must be settled before checkout."
         )
 
-    assignments = list(booking.room_assignments.select_related("room").select_for_update())
-    for assignment in assignments:
-        room = assignment.room
-        room.status = Room.Status.AVAILABLE
-        room.housekeeping_status = Room.HousekeepingStatus.DIRTY
-        room.save(update_fields=["status", "housekeeping_status", "updated_at"])
+    assignments = _release_rooms_for_checkout(booking)
 
     booking.status = Booking.Status.CHECKED_OUT
     booking.checked_out_at = timezone.now()
     booking.save(update_fields=["status", "checked_out_at", "updated_at"])
 
+    action = "AUTO_CHECK_OUT" if automatic else "CHECK_OUT"
+    summary = (
+        f"Guest automatically checked out: {booking.booking_reference}"
+        if automatic else f"Guest checked out: {booking.booking_reference}"
+    )
     log_action(
-        actor=staff_user, action="CHECK_OUT", instance=booking,
+        actor=actor, action=action, instance=booking,
         metadata={"reference": booking.booking_reference,
                   "rooms": [a.room.room_number for a in assignments],
-                  "balance_outstanding": str(booking.amount_due)},
+                  "balance_outstanding": str(booking.amount_due),
+                  "automatic": automatic},
         request=request,
-        summary=f"Guest checked out: {booking.booking_reference}",
+        summary=summary,
     )
-    notify_staff(
-        type="CHECK_OUT",
-        title=f"Checked out: {booking.booking_reference}",
-        message=f"{booking.guest.full_name} checked out ({booking.room_type.name}).",
-        link=staff_booking_link(booking),
+    rooms_label = ", ".join(a.room.room_number for a in assignments) or booking.room_type.name
+    if automatic:
+        balance_note = (
+            f" Outstanding balance: {booking.currency} {booking.amount_due}."
+            if booking.amount_due > 0 else ""
+        )
+        notify_staff(
+            type="CHECKOUT_AUTO",
+            title=f"Auto checkout: {booking.booking_reference}",
+            message=(
+                f"{booking.guest.full_name} (room {rooms_label}) was automatically "
+                f"checked out at {timezone.localtime(booking.checked_out_at):%H:%M}."
+                + balance_note
+            ),
+            link=staff_booking_link(booking),
+        )
+    else:
+        notify_staff(
+            type="CHECK_OUT",
+            title=f"Checked out: {booking.booking_reference}",
+            message=f"{booking.guest.full_name} checked out (room {rooms_label}).",
+            link=staff_booking_link(booking),
+        )
+    logger.info(
+        "Check-out%s: %s by %s", " (auto)" if automatic else "",
+        booking.booking_reference, actor.id if actor else "system",
     )
-    logger.info("Check-out: %s by staff %s", booking.booking_reference, staff_user.id)
     return booking
+
+
+@transaction.atomic
+def check_out_booking(booking: Booking, *, staff_user, allow_balance_due=False, request=None):
+    return _perform_checkout(
+        booking, actor=staff_user, automatic=False,
+        allow_balance_due=allow_balance_due, request=request,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Automatic checkout + 30-minute warning (Celery; hotel timezone aware)
+# ---------------------------------------------------------------------------
+def _scheduled_checkout_datetime(booking, settings_obj):
+    """checkout date + configured checkout time in the hotel's timezone."""
+    return combine_hotel_datetime(booking.check_out, settings_obj.check_out_time)
+
+
+def auto_checkout_due_bookings(now=None):
+    """Check out every in-house booking whose scheduled checkout time has
+    passed. Idempotent and safe against concurrent workers: each booking is
+    re-locked and re-checked inside its own transaction. Balances are
+    preserved (allow_balance_due=True) — no financial record is altered."""
+    now = now or timezone.now()
+    settings_obj = HotelSettings.get_settings()
+    candidate_ids = list(
+        Booking.objects.filter(
+            status=Booking.Status.CHECKED_IN,
+            check_out__lte=timezone.localdate(now),
+        ).values_list("pk", flat=True)
+    )
+    processed = 0
+    for pk in candidate_ids:
+        with transaction.atomic():
+            booking = (
+                Booking.objects.select_for_update()
+                .select_related("guest", "room_type")
+                .get(pk=pk)
+            )
+            if booking.status != Booking.Status.CHECKED_IN:
+                continue  # another worker already handled it
+            if now < _scheduled_checkout_datetime(booking, settings_obj):
+                continue  # not due yet — never check out early
+            _perform_checkout(booking, actor=None, automatic=True, allow_balance_due=True)
+            processed += 1
+    return processed
+
+
+def send_checkout_due_soon_notifications(now=None, warning_minutes=CHECKOUT_WARNING_MINUTES):
+    """Notify staff once per stay, ~30 minutes before scheduled checkout.
+
+    Deduplication: a CHECKOUT_DUE_SOON notification whose link targets this
+    booking and that was created after check-in means the warning was already
+    sent — frequent Celery runs never re-notify the same stay."""
+    from apps.notifications.models import Notification
+
+    now = now or timezone.now()
+    settings_obj = HotelSettings.get_settings()
+    window_end = now + timedelta(minutes=warning_minutes)
+    sent = 0
+    candidates = (
+        Booking.objects.filter(
+            status=Booking.Status.CHECKED_IN,
+            check_out__lte=timezone.localdate(window_end),
+        )
+        .select_related("guest", "room_type")
+        .prefetch_related("room_assignments__room")
+    )
+    for booking in candidates:
+        due_at = _scheduled_checkout_datetime(booking, settings_obj)
+        if not (now <= due_at <= window_end):
+            continue  # not inside the warning window (past-due handled by auto checkout)
+        link = staff_booking_link(booking)
+        already = Notification.objects.filter(
+            type="CHECKOUT_DUE_SOON", link=link,
+            created_at__gte=booking.checked_in_at or booking.created_at,
+        ).exists()
+        if already:
+            continue
+        rooms_label = ", ".join(
+            a.room.room_number for a in booking.room_assignments.all()
+        ) or booking.room_type.name
+        notify_staff(
+            type="CHECKOUT_DUE_SOON",
+            title=f"Checkout due soon: {booking.booking_reference}",
+            message=(
+                f"{booking.guest.full_name} (room {rooms_label}) is scheduled to check out "
+                f"at {timezone.localtime(due_at):%H:%M} today. Prepare for checkout, "
+                f"contact the guest, or extend the stay."
+            ),
+            link=link,
+        )
+        sent += 1
+    return sent
 
 
 @transaction.atomic
@@ -669,10 +802,16 @@ def confirm_manual_booking(booking: Booking, *, staff_user, request=None):
 
 @transaction.atomic
 def assign_room(assignment: BookingRoom, *, new_room: Room, staff_user, request=None):
-    """Re-point one assignment at a different physical room (validated)."""
+    """Re-point one assignment at a different physical room (validated).
+
+    Serializes on the room-type row (same lock as create_booking) so two staff
+    members assigning the same room at nearly the same time cannot both pass
+    the overlap re-check below."""
     booking = assignment.booking
     if new_room.room_type_id != booking.room_type_id:
         raise BookingStateError("The room must match the booking's room type.")
+    RoomType.objects.select_for_update().get(pk=booking.room_type_id)
+    new_room.refresh_from_db()
     if not new_room.is_active or new_room.status in availability.OPERATIONALLY_BLOCKED:
         raise RoomUnavailableError(f"Room {new_room.room_number} is not in service.")
     conflicts = availability.blocked_room_ids(
@@ -735,6 +874,25 @@ def modify_booking(booking: Booking, *, staff_user, data: dict, request=None):
         current_room_ids = list(
             booking.room_assignments.values_list("room_id", flat=True)
         )
+        dates_changed = (new_check_in, new_check_out) != (booking.check_in, booking.check_out)
+        if dates_changed and current_room_ids:
+            # Kept rooms must be free of OTHER bookings for the NEW dates.
+            conflicts = set(
+                availability.blocked_room_ids(
+                    room_type_id=booking.room_type_id,
+                    check_in=new_check_in,
+                    check_out=new_check_out,
+                    exclude_booking_id=booking.pk,
+                )
+            )
+            clashing = conflicts & set(current_room_ids)
+            if clashing:
+                numbers = ", ".join(
+                    Room.objects.filter(pk__in=clashing).values_list("room_number", flat=True)
+                )
+                raise RoomUnavailableError(
+                    f"Room(s) {numbers} are already reserved by another booking for the new dates."
+                )
         if new_rooms <= len(current_room_ids):
             keep_ids = current_room_ids[:new_rooms]
             # Freed rooms (when shrinking) must still be free of OTHER bookings.

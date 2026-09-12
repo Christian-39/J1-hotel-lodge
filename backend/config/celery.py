@@ -21,4 +21,15 @@ app.conf.beat_schedule = {
         "task": "apps.bookings.tasks.expire_pending_bookings",
         "schedule": crontab(minute="*/5"),
     },
+    # Automatic checkout at the hotel's configured checkout time (idempotent,
+    # row-locked; never checks out early). Runs every 5 minutes.
+    "auto-checkout-due-bookings": {
+        "task": "apps.bookings.tasks.auto_checkout_due_bookings",
+        "schedule": crontab(minute="*/5"),
+    },
+    # 30-minute checkout warning to staff (deduplicated per stay).
+    "checkout-due-soon-warnings": {
+        "task": "apps.bookings.tasks.checkout_due_soon_warnings",
+        "schedule": crontab(minute="*/5"),
+    },
 }

@@ -50,8 +50,8 @@
   <div class="filter-bar">
     <label class="field-label" style="align-self:center;">Period:</label>
     <div class="field"><select class="select" id="rp-range"><option value="7">Last 7 days</option><option value="30" selected>Last 30 days</option><option value="90">Last 90 days</option><option value="365">Last 12 months</option><option value="custom">Custom</option></select></div>
-    <div class="field"><label class="field-label" for="rp-from">From</label><input class="input" type="date" id="rp-from"></div>
-    <div class="field"><label class="field-label" for="rp-to">To</label><input class="input" type="date" id="rp-to"></div>
+    <div class="field"><label class="field-label" for="rp-from">From</label><input class="input" type="date" id="rp-from" data-allow-past></div>
+    <div class="field"><label class="field-label" for="rp-to">To</label><input class="input" type="date" id="rp-to" data-allow-past></div>
     <div class="field"><button class="btn btn-sm" id="rp-apply" type="button">Apply</button></div>
   </div>
   <div class="panel-body">
@@ -99,7 +99,6 @@
 <script src="../js/dashboard.js"></script>
 <script>
   JONE.ui.initChrome();
-  JONE.nav.initDashboardNav();
   JONE.dashboard.boot("manager");
   document.querySelector("[data-logout]") && document.querySelector("[data-logout]").addEventListener("click", function(){ window.Auth.logout(); });
 

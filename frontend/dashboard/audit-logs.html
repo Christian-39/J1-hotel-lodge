@@ -47,10 +47,10 @@
     <div class="dash-content">
 
 <section class="panel">
-  <div class="panel-head"><h2>Audit log</h2><div class="panel-actions"><select class="select" id="al-filter" style="min-width:180px;font-size:var(--fs-sm);padding:0.5em 0.8em;"><option value="">All actions</option><option>booking_created</option><option>payment_recorded</option><option>check_in</option><option>check_out</option><option>booking_cancelled</option></select></div></div>
+  <div class="panel-head"><h2>Audit log</h2><div class="panel-actions"><label class="sr-only" for="al-filter">Filter by action</label><select class="select" id="al-filter" style="min-width:180px;font-size:var(--fs-sm);padding:0.5em 0.8em;"><option value="">All actions</option><option value="BOOKING_CREATED">Booking created</option><option value="BOOKING_CONFIRMED">Booking confirmed</option><option value="BOOKING_MODIFIED">Booking modified</option><option value="BOOKING_CANCELLED">Booking cancelled</option><option value="BOOKING_EXPIRED">Booking expired</option><option value="NO_SHOW">No-show</option><option value="CHECK_IN">Check-in</option><option value="CHECK_OUT">Check-out</option><option value="AUTO_CHECK_OUT">Automatic check-out</option><option value="ROOM_ASSIGNED">Room assigned</option><option value="PAYMENT_INITIALIZED">Payment initialized</option><option value="PAYMENT_RECORDED">Payment recorded</option><option value="PAYMENT_VERIFIED">Payment verified</option><option value="PAYMENT_REFUNDED">Payment refunded</option><option value="SETTINGS_CHANGED">Settings changed</option><option value="USER_CREATED">User created</option><option value="USER_UPDATED">User updated</option><option value="USER_ROLE_CHANGED">User role changed</option></select></div></div>
   <div class="panel-body no-pad">
     <div class="table-wrap"><table class="table">
-      <thead><tr><th>Time</th><th>User</th><th>Action</th><th class="hide-sm">Detail</th><th class="hide-sm">IP</th></tr></thead>
+      <thead><tr><th>Time</th><th>User</th><th>Action</th><th class="hide-sm">Detail</th><th class="hide-sm">IP</th><th><span class="sr-only">Open</span></th></tr></thead>
       <tbody data-tbody="audit"></tbody>
     </table></div>
   </div>
@@ -70,50 +70,51 @@
 <script src="../js/dashboard.js"></script>
 <script>
   JONE.ui.initChrome();
-  JONE.nav.initDashboardNav();
   JONE.dashboard.boot("admin");
   document.querySelector("[data-logout]") && document.querySelector("[data-logout]").addEventListener("click", function(){ window.Auth.logout(); });
 
 (function(){
   var DATA=JONE.dashboard.DATA;
   var tbody=document.querySelector("[data-tbody=audit]");
-  var logs=[];
 
   /* Verified /api/admin/audit-logs/ row: { id, actor_email, actor_name,
      action, object_type, object_id, summary, changes, metadata,
      ip_address, created_at } — filters: action, object_type, actor,
-     date_from, date_to. */
-  function time(e){ return e.created_at || null; }
+     date_from, date_to (server-side). */
   function user(e){ return e.actor_name || e.actor_email || "System"; }
-  function action(e){ return e.action || ""; }
-  function detail(e){ return e.summary || ""; }
-  function ip(e){ return e.ip_address || ""; }
 
   function render(list){
     tbody.innerHTML=list.map(function(e){
-      return '<tr><td class="caption">'+JONE.formatDateTime(time(e))+'</td><td>'+JONE.esc(user(e))+'</td><td><span class="badge">'+JONE.esc(action(e).replace(/_/g," "))+'</span></td><td class="hide-sm"><a href="audit-log-details.html?id='+encodeURIComponent(e.id)+'">'+JONE.esc(detail(e)||'View details')+'</a></td><td class="hide-sm caption">'+JONE.esc(ip(e))+'</td></tr>';
-    }).join("") || '<tr><td colspan="5"><div class="empty-state"><span data-icon="fileText"></span><h3>No audit entries yet</h3></div></td></tr>';
+      var href='audit-log-details.html?id='+encodeURIComponent(e.id);
+      return '<tr>'+
+        '<td class="caption">'+JONE.formatDateTime(e.created_at)+'</td>'+
+        '<td>'+JONE.esc(user(e))+'</td>'+
+        '<td><span class="badge">'+JONE.esc(String(e.action||"").replace(/_/g," "))+'</span></td>'+
+        '<td class="hide-sm"><a href="'+href+'">'+JONE.esc(e.summary||'View details')+'</a></td>'+
+        '<td class="hide-sm caption">'+JONE.esc(e.ip_address||"")+'</td>'+
+        // Always-visible action so the detail can be opened on phones too.
+        '<td><a class="btn btn-sm btn-outline" href="'+href+'" aria-label="View audit event '+JONE.esc(e.id)+'"><span data-icon="eye" data-size="14"></span><span class="hide-sm"> View</span></a></td>'+
+      '</tr>';
+    }).join("");
     JONE.icons.inject(tbody);
   }
 
   async function load(){
     DATA.loading(tbody);
     try{
-      var res=await window.API.list("auditLogs");
-      var list=window.API.normalizeList?window.API.normalizeList(res.data).items:((res.data&&res.data.results)||res.data||[]);
-      logs=list||[];
-      if(!logs.length){ DATA.empty(tbody,"fileText","No audit entries yet","Actions performed by staff will be recorded here.",5); return; }
-      render(logs);
-    }catch(err){ DATA.error(tbody,"Audit log couldn't be loaded","Please try again in a moment.",5); }
+      var params={ page_size:50 };
+      var al=document.getElementById("al-filter");
+      if(al&&al.value) params.action=al.value;
+      var res=await window.API.list("auditLogs",params);
+      var list=window.API.normalizeList(res.data,res.pagination).items||[];
+      if(!list.length){ DATA.empty(tbody,"fileText","No audit entries yet","Actions performed by staff will be recorded here.",6); return; }
+      render(list);
+    }catch(err){ DATA.error(tbody,"Audit log couldn't be loaded",(err&&err.message)||"Please try again in a moment.",6); }
   }
   load();
 
   var al=document.getElementById("al-filter");
-  if(al) al.addEventListener("change",function(e){
-    var f=e.target.value.toLowerCase().replace(/_/g," ");
-    var list=logs.filter(function(x){ return !f || (action(x)+" "+user(x)+" "+detail(x)).toLowerCase().indexOf(f)>-1; });
-    render(list);
-  });
+  if(al) al.addEventListener("change",load);
 })();
 
 </script>

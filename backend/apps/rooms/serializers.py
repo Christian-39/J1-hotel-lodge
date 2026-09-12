@@ -112,14 +112,43 @@ class RoomSerializer(serializers.ModelSerializer):
     room_type_name = serializers.CharField(source="room_type.name", read_only=True)
     room_type_slug = serializers.CharField(source="room_type.slug", read_only=True)
     images = serializers.SerializerMethodField()
+    effective_status = serializers.SerializerMethodField()
 
     def get_images(self, obj):
-        return RoomImageSerializer(obj.images.filter(is_active=True), many=True, context=self.context).data
+        # Prefer the prefetched active-images cache set by the admin viewset;
+        # fall back to a filtered query for other callers.
+        cached = getattr(obj, "_active_images", None)
+        qs = cached if cached is not None else obj.images.filter(is_active=True)
+        return RoomImageSerializer(qs, many=True, context=self.context).data
+
+    def get_effective_status(self, obj) -> str:
+        """Reservation-aware status for tonight (spec §12).
+
+        Operational blocks (maintenance / out-of-service) win; otherwise a
+        checked-in stay ⇒ OCCUPIED, an active reservation covering tonight ⇒
+        RESERVED, else AVAILABLE. Uses the annotations computed by the admin
+        viewset from the authoritative availability engine; falls back to the
+        raw operational status when annotations are absent.
+        """
+        if obj.status in (Room.Status.MAINTENANCE, Room.Status.OUT_OF_SERVICE):
+            return obj.status
+        if not obj.is_active:
+            return Room.Status.OUT_OF_SERVICE
+        occupied = getattr(obj, "_occupied_tonight", None)
+        reserved = getattr(obj, "_reserved_tonight", None)
+        if occupied is None and reserved is None:
+            return obj.status
+        if occupied:
+            return Room.Status.OCCUPIED
+        if reserved:
+            return Room.Status.RESERVED
+        return Room.Status.AVAILABLE
 
     class Meta:
         model = Room
         fields = [
             "id", "room_number", "room_type", "room_type_name", "room_type_slug", "floor",
-            "status", "housekeeping_status", "notes", "is_active", "images", "created_at", "updated_at",
+            "status", "effective_status", "housekeeping_status", "notes", "is_active",
+            "images", "created_at", "updated_at",
         ]
         read_only_fields = ["id", "created_at", "updated_at"]

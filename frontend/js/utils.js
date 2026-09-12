@@ -36,7 +36,14 @@ const JONE = (() => {
 
   function formatDateTime(str) {
     if (!str) return "--";
-    const d = parseISO(str);
+    // Full ISO datetimes must keep their time component (parseISO reads the
+    // date only, which silently rendered every timestamp as midnight).
+    let d = null;
+    if (typeof str === "string" && str.indexOf("T") !== -1) {
+      d = new Date(str);                      // Safari parses ISO 8601 w/ offset
+      if (Number.isNaN(d.getTime())) d = null;
+    }
+    if (!d) d = parseISO(str);
     if (!d) return "--";
     return new Intl.DateTimeFormat("en-GB", {
       day: "2-digit", month: "short", year: "numeric",
@@ -185,26 +192,57 @@ const JONE = (() => {
     btn.classList.remove("is-loading");
   }
 
+  /* Generic check-in / check-out date constraints.
+     Recognizes ANY start/end date pair by naming convention instead of a
+     hardcoded id map (the old version missed av-from/av-to on the staff
+     availability page, letting past dates through to the API):
+       start:  *check_in*, *checkin*, *-in, *-from, *_from
+       end:    *check_out*, *checkout*, *-out, *-to, *_to
+     Pairs are matched by shared prefix (hp-in/hp-out, av-from/av-to,
+     b-checkin/b-checkout, r-in/r-out, ...). Constraints re-apply when the
+     hotel timezone arrives so "today" is always hotel-local. */
+  function dateKey(input) { return String(input.name || input.id || "").toLowerCase(); }
+  function startPrefix(k) {
+    let m = k.match(/^(.*?)(?:[-_]?check[-_]?in|[-_]in|[-_]from)$/);
+    return m ? m[1] : null;
+  }
+  function endPrefix(k) {
+    let m = k.match(/^(.*?)(?:[-_]?check[-_]?out|[-_]out|[-_]to)$/);
+    return m ? m[1] : null;
+  }
   function setupDateConstraints(root) {
     const scope = root || document;
     const today = hotelTodayISO(0);
-    scope.querySelectorAll('input[type="date"]').forEach((input) => {
-      const name = String(input.name || input.id || '').toLowerCase();
-      if (name.includes('check_in') || name.includes('checkin') || name === 'in' || name.endsWith('-in')) {
-        input.min = today;
-        const updateCheckout = () => {
-          const checkout = scope.querySelector('#' + (input.id === 'hp-in' ? 'hp-out' : input.id === 'b-checkin' ? 'b-checkout' : input.id === 'r-in' ? 'r-out' : ''));
-          if (checkout) { checkout.min = input.value ? new Date(new Date(input.value + 'T00:00:00').getTime() + 86400000).toISOString().slice(0, 10) : todayISO(1); if (checkout.value && checkout.value < checkout.min) checkout.value = ''; }
-        };
-        input.addEventListener('change', updateCheckout);
-        updateCheckout();
-      }
+    // Inputs marked data-allow-past (e.g. report date ranges) are exempt.
+    const inputs = Array.prototype.slice.call(scope.querySelectorAll('input[type="date"]'))
+      .filter((i) => !i.hasAttribute("data-allow-past"));
+    const ends = {};
+    inputs.forEach((input) => {
+      const p = endPrefix(dateKey(input));
+      if (p != null) { ends[p] = input; if (!input.min) input.min = hotelTodayISO(1); }
     });
-    scope.querySelectorAll('input[type="date"][name*="check_out"], input[type="date"][id*="checkout"], input[type="date"][id$="-out"]').forEach((checkout) => {
-      if (!checkout.min) checkout.min = todayISO(1);
+    inputs.forEach((input) => {
+      const p = startPrefix(dateKey(input));
+      if (p == null) return;
+      input.min = today;
+      const checkout = ends[p] || null;
+      const updateCheckout = () => {
+        if (!checkout) return;
+        checkout.min = input.value
+          ? new Date(new Date(input.value + "T00:00:00").getTime() + 86400000).toISOString().slice(0, 10)
+          : hotelTodayISO(1);
+        if (checkout.value && checkout.value < checkout.min) checkout.value = "";
+      };
+      if (input.dataset.jonePaired !== "1") {
+        input.dataset.jonePaired = "1";
+        input.addEventListener("change", updateCheckout);
+      }
+      updateCheckout();
     });
   }
   setupDateConstraints();
+  // Re-apply once the authoritative hotel timezone is known.
+  document.addEventListener("jone:hotel", () => setupDateConstraints());
 
   return {
     formatNaira, formatDate, formatDateTime, parseISO, hotelTodayISO, todayISO, nightsBetween, setupDateConstraints,

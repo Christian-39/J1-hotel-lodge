@@ -2,10 +2,16 @@
    Staff dashboard — operational, dense, fast.
    ========================================================================== */
 
+/* Application shell: the viewport never scrolls as a whole. The sidebar is
+   static, the topbar is sticky inside the main column, and ONLY the main
+   column scrolls. 100vh fallback first for older Safari, then 100dvh so the
+   iOS dynamic toolbar cannot hide content. */
 .dash {
-  min-height: 100vh;
+  height: 100vh;
+  height: 100dvh;
   display: grid;
-  grid-template-columns: 264px 1fr;
+  grid-template-columns: 264px minmax(0, 1fr);
+  overflow: hidden;
   background: var(--color-background);
 }
 
@@ -14,8 +20,9 @@
   background: var(--brand-charcoal);
   color: #D6D5D3;
   display: flex; flex-direction: column;
-  position: sticky; top: 0;
-  height: 100vh;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;               /* only the nav list inside scrolls */
   border-right: 1px solid rgba(255,255,255,0.06);
 }
 .dash-sidebar-brand {
@@ -62,7 +69,16 @@
 .dash-user-role { font-size: 0.7rem; color: #9AA3AF; text-transform: uppercase; letter-spacing: var(--tracking-wide); }
 
 /* ------------------------------- Main area ------------------------------- */
-.dash-main { min-width: 0; display: flex; flex-direction: column; }
+.dash-main {
+  min-width: 0;
+  min-height: 0;
+  display: flex; flex-direction: column;
+  height: 100%;
+  overflow-y: auto;               /* THE scroll container for page content */
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
 
 .dash-topbar {
   display: flex; align-items: center; justify-content: space-between;
@@ -71,6 +87,7 @@
   border-bottom: 1px solid var(--color-border);
   background: var(--color-surface);
   position: sticky; top: 0; z-index: 800;
+  flex-shrink: 0;
 }
 .dash-topbar-left { display: flex; align-items: center; gap: var(--sp-3); }
 .dash-title { min-width: 0; }
@@ -87,16 +104,30 @@
 .dash-topbar-right .theme-toggle { width: 38px; height: 38px; }
 
 .dash-menu-toggle { display: none; }
-.dash-content { padding: 1.5rem; display: grid; gap: 1.5rem; }
+.dash-content {
+  padding: 1.5rem;
+  display: grid; gap: 1.5rem;
+  align-content: start;
+  min-width: 0;
+  flex: 1 0 auto;
+}
+.dash-content > * { min-width: 0; }
+
+/* Lock background scroll while the mobile drawer is open without the
+   position:fixed body hack (which breaks scroll restoration on iOS —
+   the shell itself doesn't scroll, only .dash-main does). */
+body.drawer-open .dash-main { overflow: hidden; }
 
 @media (max-width: 1024px) {
-  .dash { grid-template-columns: 1fr; }
+  .dash { grid-template-columns: minmax(0, 1fr); }
   .dash-sidebar {
-    position: fixed; left: 0; top: 0; z-index: 1000;
-    width: min(78vw, 248px);
+    position: fixed; left: 0; top: 0; bottom: 0; z-index: 1000;
+    height: 100%;
+    width: min(78vw, 264px);
     transform: translateX(-100%);
     transition: transform var(--speed-3) var(--ease);
     box-shadow: var(--shadow-lg);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
   }
   .dash-sidebar.open { transform: translateX(0); }
   .dash-menu-toggle { display: inline-flex; }
@@ -106,6 +137,54 @@
     opacity: 0; pointer-events: none; transition: opacity var(--speed-3);
   }
   .dash-sidebar-backdrop.open { opacity: 1; pointer-events: auto; }
+}
+
+/* --------------------------- Mobile bottom nav --------------------------- */
+.dash-bottom-nav {
+  display: none;
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 900;
+  background: var(--color-surface);
+  border-top: 1px solid var(--color-border);
+  padding: 0.3rem 0.25rem calc(0.3rem + env(safe-area-inset-bottom, 0px));
+}
+.dash-bottom-item {
+  flex: 1 1 0; min-width: 0;
+  display: flex; flex-direction: column; align-items: center; gap: 0.15rem;
+  padding: 0.3rem 0.2rem;
+  min-height: 48px;                 /* touch-friendly target */
+  color: var(--color-text-muted);
+  font-size: 0.62rem; font-weight: 600;
+  letter-spacing: 0.02em;
+  border-radius: var(--radius-sm);
+  text-align: center;
+}
+.dash-bottom-item.is-active { color: var(--color-accent); }
+.dash-bottom-icon { position: relative; display: inline-flex; }
+.dash-bottom-icon svg { width: 22px; height: 22px; }
+.dash-bottom-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+
+/* Unread notification badge (sidebar + bottom nav + topbar). */
+.notif-count {
+  background: var(--color-danger);
+  color: #fff;
+  font-size: 0.62rem; font-weight: 700; line-height: 1;
+  min-width: 16px; height: 16px;
+  padding: 0 4px;
+  border-radius: var(--radius-pill);
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.notif-count[hidden] { display: none; }
+.dash-nav-item .notif-count { margin-left: auto; }
+.dash-bottom-icon .notif-count { position: absolute; top: -5px; right: -9px; }
+.dash-topbar-bell { position: relative; }
+.dash-topbar-bell .notif-count { position: absolute; top: 2px; right: 0; }
+
+@media (max-width: 1024px) {
+  .dash-bottom-nav { display: flex; }
+  /* Content must never hide behind the fixed bottom nav. */
+  body.has-bottom-nav .dash-content {
+    padding-bottom: calc(4.5rem + env(safe-area-inset-bottom, 0px));
+  }
 }
 
 /* -------------------------------- KPI grid ------------------------------- */
@@ -230,6 +309,22 @@
 .activity-body p { margin: 0; }
 .activity-time { font-size: var(--fs-xs); color: var(--color-text-faint); margin-top: 0.2rem; }
 
+/* ------------------------------ Audit detail ----------------------------- */
+/* Long values/JSON must wrap on phones — never widen the page. */
+.audit-value { overflow-wrap: anywhere; word-break: break-word; font-size: var(--fs-sm); }
+.audit-json {
+  background: var(--color-surface-alt);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 0.75rem 0.9rem;
+  font-size: var(--fs-xs);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  max-width: 100%;
+  margin: 0;
+}
+
 /* --------------------------- Notification item --------------------------- */
 .notif-item {
   display: flex; gap: 0.9rem; padding: 1rem 1.25rem;
@@ -239,7 +334,9 @@
 .notif-item.unread { background: var(--color-surface-alt); }
 .notif-item.unread .notif-title { font-weight: 700; }
 .notif-icon { width: 38px; height: 38px; flex-shrink: 0; border-radius: 50%; background: var(--color-surface-deep); display: flex; align-items: center; justify-content: center; color: var(--color-text-muted); }
-.notif-body p { margin: 0 0 0.25rem; font-size: var(--fs-sm); }
+.notif-item { cursor: pointer; }
+.notif-body { min-width: 0; }
+.notif-body p { margin: 0 0 0.25rem; font-size: var(--fs-sm); overflow-wrap: anywhere; word-break: break-word; }
 .notif-meta { font-size: var(--fs-xs); color: var(--color-text-faint); }
 
 /* ------------------------- Dashboard responsive tables -------------------- */
@@ -287,4 +384,13 @@
   .quick-actions { grid-template-columns: 1fr; }
   .dash-sidebar { width: min(78vw, 248px); }
   .dash-topbar-right .theme-toggle { width: 34px; height: 34px; }
+}
+
+/* Printing (receipts): the app shell's fixed-height scroll container would
+   clip everything after page one — let the document flow normally on paper. */
+@media print {
+  .dash { display: block; height: auto; overflow: visible; }
+  .dash-main { height: auto; overflow: visible; }
+  .dash-sidebar, .dash-topbar, .dash-bottom-nav, .dash-sidebar-backdrop { display: none !important; }
+  body.has-bottom-nav .dash-content { padding-bottom: 0; }
 }

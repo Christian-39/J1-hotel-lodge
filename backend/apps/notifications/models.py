@@ -14,6 +14,8 @@ class Notification(models.Model):
         PAYMENT_DISPUTED = "PAYMENT_DISPUTED", "Payment disputed"
         CHECK_IN = "CHECK_IN", "Guest checked in"
         CHECK_OUT = "CHECK_OUT", "Guest checked out"
+        CHECKOUT_DUE_SOON = "CHECKOUT_DUE_SOON", "Checkout due soon"
+        CHECKOUT_AUTO = "CHECKOUT_AUTO", "Automatic checkout"
         ENQUIRY_NEW = "ENQUIRY_NEW", "New enquiry"
         SYSTEM = "SYSTEM", "System"
 

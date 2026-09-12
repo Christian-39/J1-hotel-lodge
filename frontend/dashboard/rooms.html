@@ -56,7 +56,7 @@
   <div class="panel-head"><h2>Room types</h2><div class="panel-actions"><a class="btn btn-sm btn-outline" href="room-details.html">Manage types</a></div></div>
   <div class="panel-body no-pad">
     <div class="table-wrap"><table class="table">
-      <thead><tr><th>Type</th><th>Rate / night</th><th class="hide-sm">Capacity</th><th>Available</th><th>Occupied</th></tr></thead>
+      <thead><tr><th>Type</th><th class="hide-sm">Rate / night</th><th class="hide-sm">Capacity</th><th class="num">Rooms</th><th class="num">Available</th><th class="num">Occupied</th></tr></thead>
       <tbody data-tbody="roomtypes"></tbody>
     </table></div>
   </div>
@@ -76,37 +76,46 @@
 <script src="../js/dashboard.js"></script>
 <script>
   JONE.ui.initChrome();
-  JONE.nav.initDashboardNav();
   JONE.dashboard.boot("receptionist");
   document.querySelector("[data-logout]") && document.querySelector("[data-logout]").addEventListener("click", function(){ window.Auth.logout(); });
 
 (function(){
   var rooms=[];
   var board=document.querySelector("[data-room-board]");
-  var roomTypes=[];   // real room types from the backend (for the select)
+  var roomTypes=[];        // real room types from the backend (for the select)
+  var roomTypeRecords=[];  // full room-type rows (rate/capacity for the summary)
 
   /* Verified /api/admin/rooms/ row:
      { id, room_number, room_type (id), room_type_name, floor, status,
-       housekeeping_status: CLEAN|DIRTY|CLEANING, notes, is_active }.
+       effective_status, housekeeping_status: CLEAN|DIRTY|CLEANING, notes,
+       is_active, images[{id,image_url,alt_text,is_primary,...}] }.
+     effective_status is the reservation-aware truth computed by the backend
+     availability engine (confirmed/checked-in bookings covering tonight) —
+     the board displays it so a booked room can never look free here.
      CRUD: POST /api/admin/rooms/ · PATCH/DELETE /{id}/ (DELETE = deactivate).
+     Images: POST /api/admin/rooms/{id}/images/ (multipart) ·
+             PATCH/DELETE /api/admin/rooms/images/{image_id}/.
      Writes need MANAGER/ADMIN — the backend enforces; errors surface honestly. */
   var STATUS = ["AVAILABLE","RESERVED","OCCUPIED","MAINTENANCE","OUT_OF_SERVICE"];
   var HK = ["CLEAN","DIRTY","CLEANING"];
 
   function no(r){ return r.room_number || r.id || "Room"; }
   function type(r){ return r.room_type_name || ""; }
+  function effStatus(r){ return String(r.effective_status || r.status || "").toUpperCase(); }
 
   function render(){
     var pel=document.getElementById("rm-filter");
     var f=pel?pel.value:"";
-    var list=rooms.filter(function(r){return !f||String(r.status||"").toUpperCase()===f;});
+    var list=rooms.filter(function(r){return !f||effStatus(r)===f;});
     board.innerHTML=list.map(function(r){
       var hk=r.housekeeping_status?" <span class=\"caption\">("+String(r.housekeeping_status).toLowerCase()+")</span>":"";
-      var acts='<div style="display:flex;gap:0.35rem;margin-top:0.6rem;">'+
+      var imgCount=(r.images||[]).length;
+      var acts='<div style="display:flex;gap:0.35rem;margin-top:0.6rem;flex-wrap:wrap;">'+
         '<button class="btn btn-sm btn-outline" data-room-edit="'+r.id+'" type="button"><span data-icon="edit" data-size="13"></span> Edit</button>'+
-        '<button class="btn btn-sm btn-outline" data-room-del="'+r.id+'" type="button"><span data-icon="trash" data-size="13"></span></button></div>';
+        '<button class="btn btn-sm btn-outline" data-room-imgs="'+r.id+'" type="button" aria-label="Manage images for room '+JONE.esc(no(r))+'"><span data-icon="image" data-size="13"></span> '+imgCount+'</button>'+
+        '<button class="btn btn-sm btn-outline" data-room-del="'+r.id+'" type="button" aria-label="Deactivate room '+JONE.esc(no(r))+'"><span data-icon="trash" data-size="13"></span></button></div>';
       var inactive = r.is_active===false ? ' <span class="badge" style="margin-left:0.4rem;">Inactive</span>' : '';
-      return '<div class="room-tile"'+(r.is_active===false?' style="opacity:0.6;"':'')+'><div class="room-no">'+JONE.esc(no(r))+inactive+'</div><div class="room-type">'+JONE.esc(type(r))+'</div><div style="margin-top:0.5rem;">'+JONE.dashboard.statusPill(r.status||"available")+hk+'</div>'+acts+'</div>';
+      return '<div class="room-tile"'+(r.is_active===false?' style="opacity:0.6;"':'')+'><div class="room-no">'+JONE.esc(no(r))+inactive+'</div><div class="room-type">'+JONE.esc(type(r))+(r.floor!=null?' · Floor '+JONE.esc(r.floor):'')+'</div><div style="margin-top:0.5rem;">'+JONE.dashboard.statusPill(effStatus(r)||"available")+hk+'</div>'+acts+'</div>';
     }).join("") || '<div class="empty-state" style="grid-column:1/-1;border:0;"><h3>No rooms match</h3></div>';
     JONE.icons.inject(board);
   }
@@ -114,39 +123,53 @@
   function renderTypes(){
     var tb=document.querySelector("[data-tbody=roomtypes]");
     if(!tb) return;
-    // Room-type summary derived from the real room records (never synthesized).
+    // Room-type summary derived from the real room records using the
+    // reservation-aware effective status (never the raw operational flag),
+    // joined with the room-type catalog for rate and capacity.
+    var meta={};
+    roomTypeRecords.forEach(function(t){ meta[t.name]=t; });
     var byType={};
     rooms.forEach(function(r){
+      if(r.is_active===false) return;
       var t=type(r)||"Unclassified";
       byType[t]=byType[t]||{name:t, count:0, available:0, occupied:0};
       byType[t].count++;
-      var s=String(r.status||"").toUpperCase();
+      var s=effStatus(r);
       if(s==="OCCUPIED") byType[t].occupied++;
       else if(s==="AVAILABLE") byType[t].available++;
     });
     var rows=Object.keys(byType).map(function(t){
-      return '<tr><td>'+JONE.esc(t)+'</td><td class="num">'+byType[t].count+'</td><td class="hide-sm num">'+byType[t].available+' available</td><td class="hide-sm num">'+byType[t].occupied+' occupied</td></tr>';
+      var m=meta[t]||{};
+      var rate=m.base_price!=null?JONE.formatNaira(m.base_price):"\u2014";
+      var cap=m.max_guests!=null?m.max_guests+" guests":"\u2014";
+      return '<tr><td>'+JONE.esc(t)+'</td><td class="hide-sm">'+JONE.esc(rate)+'</td><td class="hide-sm">'+JONE.esc(cap)+'</td><td class="num">'+byType[t].count+'</td><td class="num">'+byType[t].available+'</td><td class="num">'+byType[t].occupied+'</td></tr>';
     }).join("");
-    tb.innerHTML=rows || '<tr><td colspan="4"><div class="empty-state"><h3>No room data</h3></div></td></tr>';
+    tb.innerHTML=rows || '<tr><td colspan="6"><div class="empty-state"><h3>No room data</h3></div></td></tr>';
   }
 
   async function loadRoomTypes(){
     try{
       var res=await window.API.list("roomTypes",{ page_size:100 });
       var list=window.API.normalizeList(res.data, res.pagination).items;
-      roomTypes=(list||[]).filter(function(t){ return t.is_active!==false; }).map(function(t){
+      roomTypeRecords=(list||[]).filter(function(t){ return t.is_active!==false; });
+      roomTypes=roomTypeRecords.map(function(t){
         return { value:String(t.id), label:t.name };
       });
-    }catch(_){ roomTypes=[]; }
+    }catch(_){ roomTypes=[]; roomTypeRecords=[]; }
   }
 
   async function load(){
     board.innerHTML='<div class="loading-block" style="grid-column:1/-1;"><div class="spinner" role="status"></div><p class="muted">Loading rooms&hellip;</p></div>';
     try{
-      var res=await window.API.list("rooms",{ page_size:100 });
+      // Rooms + room-type catalog in parallel (one pass, no request storm).
+      var pair=await Promise.all([
+        window.API.list("rooms",{ page_size:100 }),
+        loadRoomTypes()
+      ]);
+      var res=pair[0];
       var list=window.API.normalizeList(res.data, res.pagination).items;
       rooms=list||[];
-      if(!rooms.length){ board.innerHTML='<div class="empty-state" style="grid-column:1/-1;border:0;"><h3>No rooms configured</h3><p>Add your first room to begin.</p></div>'; return; }
+      if(!rooms.length){ board.innerHTML='<div class="empty-state" style="grid-column:1/-1;border:0;"><h3>No rooms configured</h3><p>Add your first room to begin.</p></div>'; renderTypes(); return; }
       render(); renderTypes();
     }catch(err){
       board.innerHTML='<div class="empty-state" style="grid-column:1/-1;border:0;"><span data-icon="alertTriangle" data-size="34"></span><h3>Rooms couldn\'t be loaded</h3><p>'+((err&&err.message)||"Please try again in a moment.")+'</p></div>';
@@ -181,6 +204,88 @@
     if (out) load();
   }
 
+  /* ------------------------- Room image manager ---------------------------
+     Physical-room photos (RoomImage), distinct from room-TYPE marketing
+     images which are managed on room-details.html. Multipart POST with the
+     browser-set boundary (api.js never forces a Content-Type on FormData). */
+  var ROOMS_EP = window.APP_CONFIG.API_ENDPOINTS.rooms;          // "/api/admin/rooms/"
+  function openImagesModal(room){
+    var overlay=document.createElement("div");
+    overlay.className="modal open";
+    overlay.innerHTML='<div class="modal-backdrop" data-img-close></div>'+
+      '<div class="modal-panel" role="dialog" aria-modal="true" aria-label="Images for room '+JONE.esc(room.room_number)+'">'+
+      '<div class="modal-head"><h3>Room '+JONE.esc(room.room_number)+' images</h3><button class="btn-icon btn-ghost modal-close" data-img-close type="button" aria-label="Close"><span data-icon="x" data-size="18"></span></button></div>'+
+      '<div class="modal-body">'+
+        '<div data-img-grid style="display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:0.6rem;"></div>'+
+        '<form data-img-form style="margin-top:1rem;display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center;">'+
+          '<input class="input" type="file" name="image" accept="image/jpeg,image/png,image/webp" required style="flex:1;min-width:200px;">'+
+          '<button class="btn btn-sm" type="submit">Upload</button>'+
+        '</form>'+
+        '<p class="caption" style="margin-top:0.4rem;">JPEG/PNG/WebP. The starred image is shown first.</p>'+
+      '</div></div>';
+    document.body.appendChild(overlay);
+    document.body.classList.add("modal-open");
+    JONE.icons.inject(overlay);
+    var grid=overlay.querySelector("[data-img-grid]");
+
+    function close(){ overlay.remove(); document.body.classList.remove("modal-open"); document.removeEventListener("keydown",onKey); load(); }
+    function onKey(e){ if(e.key==="Escape") close(); }
+    document.addEventListener("keydown",onKey);
+    overlay.addEventListener("click",function(e){ if(e.target.closest("[data-img-close]")) close(); });
+
+    function paint(images){
+      grid.innerHTML=(images||[]).map(function(im){
+        return '<figure style="margin:0;position:relative;border:1px solid var(--color-border);border-radius:var(--radius-sm);overflow:hidden;">'+
+          '<img src="'+JONE.esc(im.image_url||im.image||"")+'" alt="'+JONE.esc(im.alt_text||("Room "+room.room_number))+'" style="width:100%;height:80px;object-fit:cover;display:block;">'+
+          '<div style="display:flex;gap:0.25rem;padding:0.3rem;justify-content:center;">'+
+            '<button class="btn-icon" type="button" data-img-primary="'+im.id+'" aria-label="'+(im.is_primary?"Primary image":"Make primary")+'" '+(im.is_primary?'style="color:var(--color-accent);"':'')+'><span data-icon="star" data-size="15"></span></button>'+
+            '<button class="btn-icon" type="button" data-img-del="'+im.id+'" aria-label="Remove image"><span data-icon="trash" data-size="15"></span></button>'+
+          '</div></figure>';
+      }).join("")||'<p class="muted" style="grid-column:1/-1;">No images yet.</p>';
+      JONE.icons.inject(grid);
+    }
+    async function refresh(){
+      try{
+        var res=await window.API.getOne("rooms",room.id);
+        paint((res.data&&res.data.images)||[]);
+      }catch(err){ grid.innerHTML='<p class="muted" style="grid-column:1/-1;">'+JONE.esc((err&&err.message)||"Images couldn\u2019t be loaded.")+'</p>'; }
+    }
+    paint(room.images||[]);
+
+    grid.addEventListener("click",async function(e){
+      var star=e.target.closest("[data-img-primary]");
+      if(star){
+        try{ await window.API.patch(ROOMS_EP+"images/"+encodeURIComponent(star.getAttribute("data-img-primary"))+"/", { is_primary:true }); refresh(); }
+        catch(err){ JONE.ui.toast(err.message||"Couldn't update the image.","error"); }
+        return;
+      }
+      var delBtn=e.target.closest("[data-img-del]");
+      if(delBtn){
+        var ok=await JONE.ui.confirm({title:"Remove this image?",confirmText:"Remove",danger:true});
+        if(!ok) return;
+        try{ await window.API.del(ROOMS_EP+"images/"+encodeURIComponent(delBtn.getAttribute("data-img-del"))+"/"); refresh(); }
+        catch(err){ JONE.ui.toast(err.message||"Couldn't remove the image.","error"); }
+      }
+    });
+
+    overlay.querySelector("[data-img-form]").addEventListener("submit",async function(e){
+      e.preventDefault();
+      var form=e.target, input=form.querySelector("input[type=file]");
+      if(!input.files||!input.files.length) return;
+      var btn=form.querySelector("button[type=submit]");
+      if(!JONE.guardSubmit(btn)) return;
+      try{
+        var fd=new FormData();
+        fd.append("image", input.files[0]);
+        await window.API.post(ROOMS_EP+encodeURIComponent(room.id)+"/images/", fd);
+        form.reset();
+        JONE.ui.toast("Image uploaded.","success");
+        refresh();
+      }catch(err){ JONE.ui.toast(err.message||"Upload failed.","error"); }
+      finally{ JONE.releaseGuard(btn); }
+    });
+  }
+
   document.addEventListener("click", function(e){
     var add=e.target.closest("[data-room-add]");
     if(add){ openRoomModal(null); return; }
@@ -188,6 +293,12 @@
     if(edit){
       var r=rooms.filter(function(x){ return String(x.id)===edit.getAttribute("data-room-edit"); })[0];
       if(r) openRoomModal(r);
+      return;
+    }
+    var imgs=e.target.closest("[data-room-imgs]");
+    if(imgs){
+      var ri=rooms.filter(function(x){ return String(x.id)===imgs.getAttribute("data-room-imgs"); })[0];
+      if(ri) openImagesModal(ri);
       return;
     }
     var del=e.target.closest("[data-room-del]");

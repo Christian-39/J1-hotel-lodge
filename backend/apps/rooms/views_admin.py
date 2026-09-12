@@ -1,7 +1,9 @@
 """Staff management for amenities, room types, images and physical rooms."""
 import logging
+from datetime import timedelta
 
-from django.db.models import Count, Q
+from django.db.models import Count, Exists, OuterRef, Prefetch, Q
+from django.utils import timezone
 from drf_spectacular.utils import extend_schema
 from rest_framework import generics, status, viewsets
 from rest_framework.parsers import FormParser, MultiPartParser
@@ -11,7 +13,7 @@ from apps.audit.services import log_action
 from apps.core.permissions import IsStaffReadOnlyManagerWrite
 from apps.core.responses import success_response
 
-from .models import Amenity, Room, RoomType, RoomTypeImage
+from .models import Amenity, Room, RoomImage, RoomType, RoomTypeImage
 from .serializers import AmenitySerializer, RoomSerializer, RoomTypeAdminSerializer, RoomTypeImageSerializer, RoomImageSerializer
 
 logger = logging.getLogger("apps")
@@ -112,7 +114,28 @@ class RoomAdminViewSet(_AuditedModelViewSet):
     serializer_class = RoomSerializer
 
     def get_queryset(self):
-        qs = Room.objects.select_related("room_type").order_by("room_number")
+        from apps.bookings.models import Booking, BookingRoom
+        from apps.bookings.services import availability
+
+        now = timezone.now()
+        today = timezone.localdate(now)
+        tomorrow = today + timedelta(days=1)
+        tonight = (
+            BookingRoom.objects.filter(room=OuterRef("pk"))
+            .filter(availability.blocking_booking_q(now=now, prefix="booking"))
+            .filter(availability.overlap_q(today, tomorrow))
+        )
+        qs = (
+            Room.objects.select_related("room_type")
+            .prefetch_related(
+                Prefetch("images", queryset=RoomImage.objects.filter(is_active=True), to_attr="_active_images")
+            )
+            .annotate(
+                _reserved_tonight=Exists(tonight),
+                _occupied_tonight=Exists(tonight.filter(booking__status=Booking.Status.CHECKED_IN)),
+            )
+            .order_by("room_number")
+        )
         params = self.request.query_params
         if status_param := params.get("status"):
             qs = qs.filter(status=status_param.upper())
@@ -161,3 +184,15 @@ class RoomImageDetailView(generics.RetrieveUpdateDestroyAPIView):
 
     def get_queryset(self):
         return RoomImage.objects.select_related("room")
+
+    def perform_update(self, serializer):
+        instance = serializer.save()
+        log_action(actor=self.request.user, action="ROOM_IMAGE_UPDATED", instance=instance.room,
+                   metadata={"image_id": instance.pk}, request=self.request)
+
+    def perform_destroy(self, instance):
+        room = instance.room
+        image_id = instance.pk
+        instance.delete()
+        log_action(actor=self.request.user, action="ROOM_IMAGE_REMOVED", instance=room,
+                   metadata={"image_id": image_id}, request=self.request)
