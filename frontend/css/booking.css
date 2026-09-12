@@ -4,159 +4,64 @@
 
 .booking-shell { padding: clamp(2rem, 5vw, 4rem) 0 var(--section-gap); }
 
-/* Stepper */
-.stepper {
+/* ==========================================================================
+   Stepper (reusable component — see js/booking-stepper.js)
+   Desktop: polished horizontal progress with number/checkmark, label,
+   connector lines and three states. Mobile: compact "step X of N" + bar.
+   ========================================================================== */
+.bk-stepper-shell { margin-bottom: clamp(1.75rem, 5vw, 3.25rem); }
+
+.bk-stepper {
   display: flex; align-items: center; justify-content: center;
-  gap: var(--sp-3);
-  margin-bottom: clamp(2rem, 5vw, 3.5rem);
+  gap: 0; width: 100%;
 }
-.step {
-  display: flex; align-items: center; gap: 0.6rem;
+.bk-step { display: flex; }
+.bk-step-btn {
+  display: inline-flex; flex-direction: column; align-items: center; gap: 0.55rem;
+  padding: 0.25rem 0.35rem;
+  border-radius: var(--radius-sm);
+  color: var(--color-text-faint);
+  transition: color var(--speed-2) var(--ease);
+}
+.bk-step-btn:disabled { cursor: default; }
+.bk-step.is-done .bk-step-btn:not(:disabled) { cursor: pointer; }
+.bk-step.is-done .bk-step-btn:not(:disabled):hover { color: var(--color-heading); }
+.bk-step.is-done .bk-step-btn:not(:disabled):hover .bk-step-marker {
+  border-color: var(--color-success);
+  box-shadow: var(--shadow-focus);
+}
+
+.bk-step-marker {
+  position: relative;
+  width: 40px; height: 40px; flex-shrink: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 50%;
+  border: 1.5px solid var(--color-border-strong);
+  background: var(--color-surface);
+  font-weight: 600; font-size: var(--fs-sm);
+  transition: background var(--speed-2) var(--ease), border-color var(--speed-2) var(--ease),
+    color var(--speed-2) var(--ease), box-shadow var(--speed-2) var(--ease), transform var(--speed-2) var(--ease);
+}
+.bk-step-num, .bk-step-check {
+  position: absolute; inset: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  transition: opacity var(--speed-2) var(--ease), transform var(--speed-2) var(--ease);
+}
+.bk-step-check { opacity: 0; transform: scale(0.5); }
+.bk-step-check svg { width: 18px; height: 18px; }
+
+.bk-step-label {
   font-size: var(--fs-xs);
   letter-spacing: var(--tracking-wide);
   text-transform: uppercase;
-  color: var(--color-text-faint);
   white-space: nowrap;
-}
-.step-num {
-  width: 28px; height: 28px; flex-shrink: 0;
-  display: inline-flex; align-items: center; justify-content: center;
-  border-radius: 50%;
-  border: 1px solid var(--color-border-strong);
-  font-weight: 600;
-  font-size: var(--fs-xs);
-}
-.step.is-active { color: var(--color-text); }
-.step.is-active .step-num { background: var(--color-primary); color: var(--color-primary-ink); border-color: var(--color-primary); }
-.step.is-done { color: var(--color-success); }
-.step.is-done .step-num { border-color: var(--color-success); color: var(--color-success); }
-.step-sep { flex: 0 0 28px; height: 1px; background: var(--color-border-strong); }
-.step-mobile { display: none; text-align: center; color: var(--color-text-muted); margin-bottom: var(--sp-5); font-size: var(--fs-sm); }
-
-@media (max-width: 880px) {
-  .stepper { display: none; }
-  .step-mobile { display: block; }
-}
-
-/* Booking layout: content + sticky summary */
-.booking-layout {
-  display: grid;
-  grid-template-columns: 1fr 380px;
-  gap: clamp(2rem, 4vw, 3.5rem);
-  align-items: start;
-}
-@media (max-width: 980px) { .booking-layout { grid-template-columns: 1fr; } }
-
-.booking-summary {
-  position: sticky;
-  top: calc(var(--header-h) + 16px);
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  overflow: hidden;
-}
-.booking-summary-head {
-  padding: var(--sp-5);
-  background: var(--brand-charcoal);
-  color: #fff;
-}
-.booking-summary-head h3 { color: #fff; font-size: var(--fs-lg); }
-.booking-summary-body { padding: var(--sp-5); display: grid; gap: var(--sp-4); }
-.summary-row {
-  display: flex; justify-content: space-between; gap: var(--sp-4);
-  font-size: var(--fs-sm);
-  padding-bottom: var(--sp-3);
-  border-bottom: 1px solid var(--color-border);
-}
-.summary-row:last-child { border-bottom: 0; padding-bottom: 0; }
-.summary-row .label { color: var(--color-text-muted); }
-.summary-row .value { text-align: right; font-weight: 500; }
-.summary-row.total { font-size: var(--fs-md); font-weight: 600; color: var(--color-heading); }
-.summary-row.total .value { font-weight: 600; letter-spacing: -0.01em; font-size: var(--fs-xl); }
-
-/* Available room option rows */
-.room-option {
-  display: grid;
-  grid-template-columns: 150px 1fr auto;
-  gap: var(--sp-4);
-  padding: var(--sp-4);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius);
-  transition: border-color var(--speed-2), box-shadow var(--speed-2);
-  cursor: pointer;
-  background: var(--color-surface);
-}
-.room-option:hover { border-color: var(--color-primary); }
-.room-option.is-disabled,
-.room-option.is-disabled:hover { opacity: 0.55; cursor: not-allowed; border-color: var(--color-border); }
-.room-option.is-selected { border-color: var(--color-primary); box-shadow: var(--shadow-focus); }
-.room-option.is-selected,
-.room-option.is-selected h4,
-.room-option.is-selected .price { color: var(--color-text); }
-.room-option .media { aspect-ratio: 4 / 3; border-radius: var(--radius-sm); }
-.room-option-info { display: flex; flex-direction: column; gap: 0.4rem; color: var(--color-text); }
-.room-option-info h4 { letter-spacing: 0; color: var(--color-heading); }
-.room-option-price .price { color: var(--color-text); }
-.room-option-specs { color: var(--color-text-muted); font-size: var(--fs-sm); display: flex; flex-wrap: wrap; gap: 0.75rem; }
-.room-option-specs span { display: inline-flex; align-items: center; gap: 0.35em; }
-.room-option-specs svg { width: 14px; height: 14px; opacity: 0.7; }
-.room-option-price { text-align: right; }
-@media (max-width: 560px) {
-  .room-option { grid-template-columns: 1fr; }
-  .room-option-price { text-align: left; }
-}
-
-/* Booking review card */
-.review-card { padding: var(--sp-6); }
-.review-section { padding-bottom: var(--sp-5); margin-bottom: var(--sp-5); border-bottom: 1px solid var(--color-border); }
-.review-section:last-of-type { border-bottom: 0; margin-bottom: 0; }
-.review-section h4 {
-  letter-spacing: var(--tracking-wider); text-transform: uppercase;
-  font-size: var(--fs-xs); color: var(--color-text-muted);
-  margin-bottom: var(--sp-4);
-}
-
-/* Availability result states */
-.availability-badge { display: inline-flex; align-items: center; gap: 0.4em; }
-
-/* Confirmation */
-.confirm-hero { text-align: center; padding: clamp(2rem, 5vw, 4rem) 0; }
-.confirm-icon-circle {
-  width: 90px; height: 90px; margin: 0 auto var(--sp-5);
-  border-radius: 50%;
-  display: flex; align-items: center; justify-content: center;
-  color: #fff;
-  background: var(--color-success);
-  box-shadow: var(--shadow-md);
-}
-.confirm-hero h1 { font-size: clamp(2rem, 5vw, 3rem); }
-.confirm-hero p { color: var(--color-text-muted); max-width: 52ch; margin: var(--sp-4) auto 0; line-height: 1.6; }
-.confirm-reference {
-  display: inline-block;
-  margin-top: var(--sp-5);
-  padding: 0.6em 1.2em;
-  border: 1px dashed var(--color-border-strong);
-  border-radius: var(--radius);
-  font-family: var(--font-mono);
-  letter-spacing: 0.08em;
   font-weight: 500;
-  font-size: var(--fs-sm);
-  color: var(--color-heading);
 }
-.confirm-actions { display: flex; gap: var(--sp-3); justify-content: center; flex-wrap: wrap; margin-top: var(--sp-6); }
 
-/* Receipt */
-.receipt-sheet {
-  max-width: 640px; margin: 0 auto;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  padding: clamp(1.5rem, 4vw, 2.5rem);
-}
-.receipt-brand { text-align: center; margin-bottom: var(--sp-5); }
-.receipt-brand svg { margin: 0 auto var(--sp-3); height: 40px; }
-.receipt-table { font-size: var(--fs-sm); }
-.receipt-table td { padding: 0.55rem 0; border-bottom: 1px dashed var(--color-border); vertical-align: top; }
-.receipt-table td:last-child { text-align: right; font-weight: 500; }
-.receipt-table tr.total td { font-weight: 700; font-size: var(--fs-md); color: var(--color-heading); border-bottom: 0; }
-.receipt-foot { text-align: center; color: var(--color-text-muted); font-size: var(--fs-sm); margin-top: var(--sp-5); }
+/* Upcoming (default) — muted, low emphasis */
+.bk-step.is-upcoming .bk-step-marker { background: var(--color-surface); color: var(--color-text-faint); }
+
+/* Active — strong emphasis, primary marker, subtle elevation */
+.bk-step.is-active .bk-step-btn { color: var(--color-heading); }
+.bk-step.is-active .bk-step-marker {
+  background: var(--color-primary);
