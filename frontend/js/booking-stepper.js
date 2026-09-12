@@ -65,3 +65,101 @@
     // Persistent scaffold (built once); state is toggled via classes so the
     // DOM is never rebuilt on step changes.
     el.classList.add("bk-stepper-shell");
+    el.setAttribute("aria-label", "Booking progress");
+
+    var desktop = document.createElement("ol");
+    desktop.className = "bk-stepper";
+    desktop.setAttribute("role", "list");
+
+    var nodes = [];
+    STEPS.forEach(function (step, i) {
+      if (i > 0) {
+        var line = document.createElement("li");
+        line.className = "bk-stepline";
+        line.setAttribute("aria-hidden", "true");
+        desktop.appendChild(line);
+        nodes.push({ line: line });
+      }
+      var li = document.createElement("li");
+      li.className = "bk-step";
+      var btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "bk-step-btn";
+      btn.innerHTML =
+        '<span class="bk-step-marker"><span class="bk-step-num">' + (i + 1) + '</span>' +
+        '<span class="bk-step-check" aria-hidden="true">' + checkSvg() + '</span></span>' +
+        '<span class="bk-step-label">' + step.label + '</span>';
+      li.appendChild(btn);
+      desktop.appendChild(li);
+      var rec = nodes[nodes.length - 1] || {};
+      // attach the step record after its (optional) preceding line
+      nodes.push({ li: li, btn: btn, step: step, index: i + 1 });
+      btn.addEventListener("click", function () { navigate(step, i + 1); });
+    });
+
+    // Compact mobile progress
+    var mobile = document.createElement("div");
+    mobile.className = "bk-progress";
+    mobile.innerHTML =
+      '<div class="bk-progress-top">' +
+        '<span class="bk-progress-count"></span>' +
+        '<span class="bk-progress-dots" aria-hidden="true"></span>' +
+      '</div>' +
+      '<div class="bk-progress-track"><span class="bk-progress-fill"></span></div>' +
+      '<div class="bk-progress-title"></div>';
+
+    el.appendChild(desktop);
+    el.appendChild(mobile);
+
+    function stepRecords() {
+      return nodes.filter(function (n) { return n.btn; });
+    }
+
+    function navigate(step, index) {
+      if (index >= current) return;                 // never jump forward / to self
+      if (onNavigate && onNavigate(step, index)) return;
+      window.location.href = backUrl(step, criteria);
+    }
+
+    function render() {
+      stepRecords().forEach(function (rec) {
+        var i = rec.index;
+        var done = i < current;
+        var active = i === current;
+        rec.li.classList.toggle("is-done", done);
+        rec.li.classList.toggle("is-active", active);
+        rec.li.classList.toggle("is-upcoming", i > current);
+        rec.btn.disabled = i >= current;            // upcoming + current are non-nav
+        if (active) rec.btn.setAttribute("aria-current", "step");
+        else rec.btn.removeAttribute("aria-current");
+        var sr = done ? " (completed)" : active ? " (current step)" : " (upcoming)";
+        rec.btn.setAttribute("aria-label", "Step " + i + ": " + rec.step.label + sr);
+      });
+      // connector lines: done when the step AFTER them is reached
+      nodes.filter(function (n) { return n.line; }).forEach(function (n, idx) {
+        n.line.classList.toggle("is-done", (idx + 1) < current);
+      });
+
+      var meta = STEPS[current - 1];
+      mobile.querySelector(".bk-progress-count").textContent = "Step " + current + " of " + STEPS.length;
+      mobile.querySelector(".bk-progress-title").textContent = meta.title;
+      mobile.querySelector(".bk-progress-fill").style.width = ((current - 1) / (STEPS.length - 1) * 100) + "%";
+      var dots = STEPS.map(function (s, i) {
+        var n = i + 1;
+        return n < current ? "\u2713" : n === current ? "\u25CF" : "\u25CB";
+      }).join(" ");
+      mobile.querySelector(".bk-progress-dots").textContent = dots;
+    }
+
+    render();
+
+    return {
+      update: function (n) { current = Math.min(Math.max(1, n || 1), STEPS.length); render(); },
+      get current() { return current; },
+      steps: STEPS
+    };
+  }
+
+  window.JONE = window.JONE || {};
+  window.JONE.stepper = { mount: mount, STEPS: STEPS };
+})();

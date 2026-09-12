@@ -65,3 +65,91 @@
 <script src="js/icons.js"></script>
 <script src="js/api.js"></script>
 <script src="js/theme.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/auth.js"></script>
+<script src="js/hotel-data.js"></script>
+<script src="js/navigation.js"></script>
+<script>
+JONE.ui.initChrome();
+(function () {
+  "use strict";
+
+  var params = new URLSearchParams(location.search);
+  var reference = (params.get("reference") || params.get("trxref") || "").trim();
+
+  var elLoading = document.getElementById("verify-loading");
+  var elSuccess = document.getElementById("verify-success");
+  var elFailed  = document.getElementById("verify-failed");
+
+  function show(el) {
+    [elLoading, elSuccess, elFailed].forEach(function (n) { n.style.display = "none"; });
+    if (el) el.style.display = "block";
+  }
+
+  function setTxt(id, v) { var n = document.getElementById(id); if (n) n.textContent = (v == null || v === "") ? "—" : String(v); }
+
+  if (!reference) {
+    elLoading.querySelector("p").textContent = "No payment reference was supplied. If you just paid, please check your booking from the confirmation email or contact the hotel.";
+    return;
+  }
+
+  // The verify endpoint requires the booking owner to be signed in.
+  if (!window.Auth.isAuthenticated()) {
+    location.replace("/login.html?next=" + encodeURIComponent(location.pathname + location.search));
+    return;
+  }
+
+  async function verify() {
+    show(elLoading);
+    try {
+      var res = await window.API.verifyPayment(reference);
+      var d = (res && res.data) || {};
+      var paymentStatus = String(d.payment_status || "").toUpperCase();
+      if (paymentStatus === "PAID" || paymentStatus === "PARTIALLY_PAID") {
+        // Backend confirmed — only now show success.
+        setTxt("s-payref", d.payment_reference || reference);
+        setTxt("s-bookref", d.booking_reference);
+        setTxt("s-amount", JONE.formatNaira ? JONE.formatNaira(d.amount_paid_this_transaction != null ? d.amount_paid_this_transaction : d.booking_amount_paid) : (d.amount_paid_this_transaction || ""));
+        setTxt("s-status", (paymentStatus || "").replace(/_/g, " ").toLowerCase());
+        var line = document.getElementById("success-line");
+        if (line) line.textContent = (d.booking_status === "CONFIRMED") ? "Your booking is confirmed. We look forward to hosting you." : "Payment received. Your booking is being confirmed.";
+        var view = document.getElementById("s-view-booking");
+        if (view && d.booking_reference) view.href = "booking-confirmation.html?ref=" + encodeURIComponent(d.booking_reference);
+        show(elSuccess);
+        // Backend-confirmed — the ONLY place a success toast is allowed.
+        if (window.JONE && JONE.ui && JONE.ui.toast) {
+          JONE.ui.toast("Your booking has been confirmed.", "success", {
+            title: "Payment successful", assertive: true, duration: 6000
+          });
+        }
+      } else if (paymentStatus === "FAILED") {
+        setTxt("f-ref", reference);
+        var t = document.getElementById("f-title"); if (t) t.textContent = "This payment failed";
+        var l = document.getElementById("f-line"); if (l) l.textContent = "The transaction was not completed. No amount was debited — you can safely try again.";
+        show(elFailed);
+      } else {
+        // PENDING / unknown — honest "still processing", retry available.
+        setTxt("f-ref", reference);
+        var t2 = document.getElementById("f-title"); if (t2) t2.textContent = "Payment still processing";
+        var l2 = document.getElementById("f-line"); if (l2) l2.textContent = "Your payment hasn't been confirmed yet. It can take a few moments — use \u201CCheck again\u201D shortly. If you were debited, nothing is lost: the booking updates automatically once the provider confirms.";
+        show(elFailed);
+      }
+    } catch (err) {
+      setTxt("f-ref", reference);
+      var msg = (err && err.status === 404)
+        ? "We couldn't find this payment reference. Please check the link or contact the hotel."
+        : (err && err.status === 0)
+          ? "We can't reach the payment service right now. Please try again in a moment."
+          : ((err && err.message) || "We couldn't confirm this payment yet.");
+      var l3 = document.getElementById("f-line"); if (l3) l3.textContent = msg;
+      show(elFailed);
+    }
+  }
+
+  var retry = document.getElementById("f-retry");
+  if (retry) retry.addEventListener("click", verify);
+  verify();
+})();
+</script>
+</body>
+</html>
