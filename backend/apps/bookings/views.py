@@ -80,6 +80,7 @@ class AvailabilityView(APIView):
             guests=guests,
             rooms=rooms,
             room_type_value=params.get("room_type") or None,
+            request=request,   # absolute image URLs for the separately hosted frontend
         )
         return success_response(
             {

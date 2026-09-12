@@ -100,6 +100,14 @@
   var HK = ["CLEAN","DIRTY","CLEANING"];
 
   function no(r){ return r.room_number || r.id || "Room"; }
+  /* The room's OWN primary photo (never the inherited room-type cover) — the
+     form edits this room's image, so the preview must reflect only that. */
+  function roomOwnImage(r){
+    var imgs=(r&&r.images||[]).filter(function(i){ return i.is_active!==false; });
+    if(!imgs.length) return "";
+    var primary=imgs.filter(function(i){ return i.is_primary; })[0] || imgs[0];
+    return primary.image_url || primary.image || "";
+  }
   function type(r){ return r.room_type_name || ""; }
   function effStatus(r){ return String(r.effective_status || r.status || "").toUpperCase(); }
 
@@ -147,15 +155,46 @@
     tb.innerHTML=rows || '<tr><td colspan="6"><div class="empty-state"><h3>No room data</h3></div></td></tr>';
   }
 
-  async function loadRoomTypes(){
-    try{
-      var res=await window.API.list("roomTypes",{ page_size:100 });
-      var list=window.API.normalizeList(res.data, res.pagination).items;
-      roomTypeRecords=(list||[]).filter(function(t){ return t.is_active!==false; });
+  /* ---------------------------- Room types -------------------------------
+     Single source of truth = GET /api/admin/room-types/. The catalog is
+     fetched once per page load and reused by the board summary AND the room
+     form, so opening the dialog does not repeat the request. loadRoomTypes()
+     de-duplicates concurrent callers via an in-flight promise and is only
+     re-fetched when explicitly invalidated (after a room type may have
+     changed), so a newly created type always shows up. */
+  var roomTypesPromise=null;
+  var roomTypesError=null;
+
+  function fetchRoomTypes(){
+    return window.API.list("roomTypes",{ page_size:100 }).then(function(res){
+      var list=window.API.normalizeList(res.data, res.pagination).items || [];
+      roomTypeRecords=list.filter(function(t){ return t.is_active!==false; });
       roomTypes=roomTypeRecords.map(function(t){
-        return { value:String(t.id), label:t.name };
+        // Label carries the information staff need to choose correctly:
+        // name + nightly rate + capacity. Value is the backend's room type ID.
+        var bits=[t.name];
+        if(t.base_price!=null) bits.push(JONE.formatNaira(t.base_price)+"/night");
+        if(t.max_guests!=null) bits.push("sleeps "+t.max_guests);
+        return { value:String(t.id), label:bits.join(" \u00B7 ") };
       });
-    }catch(_){ roomTypes=[]; roomTypeRecords=[]; }
+      roomTypesError=null;
+      return roomTypes;
+    }).catch(function(err){
+      roomTypes=[]; roomTypeRecords=[];
+      roomTypesError=err;
+      throw err;
+    });
+  }
+
+  function loadRoomTypes(force){
+    if(force) roomTypesPromise=null;
+    if(!roomTypesPromise){
+      roomTypesPromise=fetchRoomTypes().catch(function(err){
+        roomTypesPromise=null;      // allow a retry after a failure
+        throw err;
+      });
+    }
+    return roomTypesPromise;
   }
 
   async function load(){
@@ -164,7 +203,7 @@
       // Rooms + room-type catalog in parallel (one pass, no request storm).
       var pair=await Promise.all([
         window.API.list("rooms",{ page_size:100 }),
-        loadRoomTypes()
+        loadRoomTypes(true).catch(function(){ return null; })   // board still renders
       ]);
       var res=pair[0];
       var list=window.API.normalizeList(res.data, res.pagination).items;
@@ -177,8 +216,25 @@
     }
   }
 
+  function roomTypeOptions(room){
+    /* Options always come from the backend catalog. When editing, the room's
+       CURRENT type is guaranteed to be present even if it has since been
+       deactivated, so the dialog never silently reassigns the room. */
+    var opts=roomTypes.slice();
+    if(room && room.room_type!=null){
+      var current=String(room.room_type);
+      var known=opts.some(function(o){ return o.value===current; });
+      if(!known){
+        var bits=[room.room_type_name||"Current type"];
+        if(room.room_type_base_price!=null) bits.push(JONE.formatNaira(room.room_type_base_price)+"/night");
+        opts.unshift({ value:current, label:bits.join(" \u00B7 ")+" (inactive)" });
+      }
+    }
+    return opts;
+  }
+
   function roomFields(room){
-    var typeOpts=roomTypes.length?roomTypes:[{value:room&&room.room_type?String(room.room_type):"",label:room?(room.room_type_name||"Current type"):""}];
+    var typeOpts=roomTypeOptions(room);
     return [
       { name:"room_number", label:"Room number", required:true, value:room?room.room_number:"" },
       { name:"room_type", label:"Room type", type:"select", options:typeOpts, required:true, value:room?String(room.room_type||""):"" },
@@ -186,19 +242,41 @@
       { name:"status", label:"Status", type:"select", options:STATUS.map(function(s){return {value:s,label:s.replace(/_/g," ").toLowerCase()};}), value:room?String(room.status||"AVAILABLE"):"AVAILABLE" },
       { name:"housekeeping_status", label:"Housekeeping", type:"select", options:[{value:"",label:"—"}].concat(HK.map(function(s){return {value:s,label:s.toLowerCase()};})), value:room?String(room.housekeeping_status||""):"" },
       { name:"notes", label:"Notes", type:"textarea", rows:2, value:room?(room.notes||""):"" },
+      { name:"image", label:"Room photo (optional)", type:"imagefile", maxMB:5,
+        currentUrl:room?roomOwnImage(room):"",
+        help:"A photo of this specific room. When empty, the room type's cover image is used." },
       { name:"is_active", label:"Active", type:"checkbox", value:room?room.is_active:true }
     ];
   }
 
   async function openRoomModal(room){
-    await loadRoomTypes();
+    /* Room types are needed before the dialog can render its selector. They
+       are normally already cached from the page load, so this resolves
+       immediately and issues no extra request. */
+    try{
+      await loadRoomTypes();
+    }catch(err){
+      JONE.ui.toast((err&&err.message)||"Room types couldn't be loaded. Please try again.","error");
+      return;
+    }
+    if(!roomTypes.length){
+      JONE.ui.toast("No active room types yet. Create a room type first.","warning");
+      return;
+    }
     var out = await JONE.dashboard.formModal({
       title: room ? "Edit room " + room.room_number : "Add room",
       submitText: room ? "Save room" : "Create room",
       fields: roomFields(room),
-      onSubmit: function(values){
-        if (room) return window.API.update("rooms", room.id, values).then(function(){ JONE.ui.toast("Room updated.","success"); });
-        return window.API.create("rooms", values).then(function(){ JONE.ui.toast("Room created.","success"); });
+      multipart: true,
+      onSubmit: function(values, fd){
+        /* Multipart so an optional room photo rides along with the fields.
+           Checkboxes are sent explicitly (HTML omits unchecked boxes) and the
+           room_type value is the backend room-type ID from the select. */
+        if(!fd.has("is_active")) fd.append("is_active", values.is_active ? "true" : "false");
+        if(values.floor==="" && fd.has("floor")) fd.delete("floor");
+        if(values.housekeeping_status==="" && fd.has("housekeeping_status")) fd.delete("housekeeping_status");
+        if (room) return window.API.update("rooms", room.id, fd).then(function(){ JONE.ui.toast("Room updated.","success"); });
+        return window.API.create("rooms", fd).then(function(){ JONE.ui.toast("Room created.","success"); });
       }
     });
     if (out) load();

@@ -6,6 +6,8 @@ from django.utils.http import urlsafe_base64_decode
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
+from apps.core.storage import absolute_media_url
+
 from .models import User
 
 
@@ -24,11 +26,7 @@ class UserSerializer(serializers.ModelSerializer):
         read_only_fields = fields  # role changes only happen via admin endpoints
 
     def get_profile_image_url(self, obj):
-        if obj.profile_image:
-            request = self.context.get("request")
-            url = obj.profile_image.url
-            return request.build_absolute_uri(url) if request else url
-        return None
+        return absolute_media_url(obj.profile_image, self.context.get("request"))
 
 
 class ProfileUpdateSerializer(serializers.ModelSerializer):
@@ -149,11 +147,7 @@ class AdminUserListSerializer(serializers.ModelSerializer):
     bookings_count = serializers.SerializerMethodField()
 
     def get_profile_image_url(self, obj):
-        if not obj.profile_image:
-            return None
-        request = self.context.get("request")
-        url = obj.profile_image.url
-        return request.build_absolute_uri(url) if request else url
+        return absolute_media_url(obj.profile_image, self.context.get("request"))
 
     class Meta:
         model = User

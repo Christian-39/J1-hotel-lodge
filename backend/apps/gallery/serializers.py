@@ -1,5 +1,7 @@
 from rest_framework import serializers
 
+from apps.core.storage import absolute_media_url
+
 from .models import GalleryItem
 
 
@@ -15,11 +17,7 @@ class GalleryItemSerializer(serializers.ModelSerializer):
         read_only_fields = ["id", "created_at"]
 
     def get_image_url(self, obj):
-        if obj.image:
-            request = self.context.get("request")
-            url = obj.image.url
-            return request.build_absolute_uri(url) if request else url
-        return None
+        return absolute_media_url(obj.image, self.context.get("request"))
 
 
 class GalleryItemAdminSerializer(GalleryItemSerializer):

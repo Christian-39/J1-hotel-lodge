@@ -23,8 +23,11 @@ mysqlclient>=2.2
 # --- Media / files ---------------------------------------------------------
 Pillow>=10.0                         # ImageField support + upload validation
 # Backblaze B2 is S3-compatible; django-storages provides the storage backend.
-# Only imported when B2 credentials are configured (production).
-django-storages[s3]>=1.14
+# The [s3] extra pulls in boto3/botocore. django-storages 1.14.4+ is required
+# for the Django 4.2+ STORAGES setting and the AWS_S3_CLIENT_CONFIG option used
+# to disable the boto3>=1.36 checksum headers that Backblaze B2 rejects.
+django-storages[s3]>=1.14.4
+boto3>=1.36                          # S3-compatible client (explicit: settings import botocore)
 
 # --- Integrations ----------------------------------------------------------
 requests>=2.31                       # HTTP client for Paystack API calls

@@ -1,16 +1,13 @@
 from rest_framework import serializers
 
+from apps.core.storage import absolute_media_url
 from apps.rooms.models import RoomType
 
 from .models import Offer
 
 
 def _abs(serializer, image_field):
-    if not image_field:
-        return None
-    request = serializer.context.get("request")
-    url = image_field.url
-    return request.build_absolute_uri(url) if request else url
+    return absolute_media_url(image_field, serializer.context.get("request"))
 
 
 class OfferPublicSerializer(serializers.ModelSerializer):

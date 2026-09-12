@@ -3,6 +3,7 @@
 "Rooms" on the public site are bookable ROOM TYPES. Physical room numbers are
 an internal/staff concept and are never exposed publicly.
 """
+from django.db.models import Prefetch
 from drf_spectacular.utils import extend_schema
 from rest_framework import generics
 from rest_framework.exceptions import NotFound
@@ -11,14 +12,19 @@ from rest_framework.permissions import AllowAny
 from apps.core.responses import success_response
 from apps.offers.services import offers_for_room_type
 
-from .models import RoomType
+from .models import RoomType, RoomTypeImage
 from .serializers import RoomTypeDetailSerializer, RoomTypeListSerializer
 
 
 def _catalog_queryset():
+    # Only active images are ever shown publicly; prefetching the filtered set
+    # lets the serializers reuse one cache instead of querying per room type.
     return (
         RoomType.objects.filter(is_active=True)
-        .prefetch_related("amenities", "images")
+        .prefetch_related(
+            "amenities",
+            Prefetch("images", queryset=RoomTypeImage.objects.filter(is_active=True).order_by("display_order", "id")),
+        )
         .order_by("display_order", "name")
     )
 

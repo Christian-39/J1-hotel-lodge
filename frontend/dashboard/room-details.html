@@ -58,11 +58,11 @@
       <table class="table">
         <thead>
           <tr>
-            <th>Type</th><th class="num">Rate / night</th><th class="num">Sleeps</th><th class="hide-sm">Beds</th><th class="hide-sm num">Rooms</th><th>Images</th><th class="hide-sm">Featured</th><th>Status</th><th class="num">Actions</th>
+            <th>Cover</th><th>Type</th><th class="num">Rate / night</th><th class="num">Sleeps</th><th class="hide-sm">Beds</th><th class="hide-sm num">Rooms</th><th>Images</th><th class="hide-sm">Featured</th><th>Status</th><th class="num">Actions</th>
           </tr>
         </thead>
         <tbody data-tbody="roomtypes">
-          <tr><td colspan="9"><div class="loading-block"><div class="spinner" role="status"></div><p class="muted">Loading room types&hellip;</p></div></td></tr>
+          <tr><td colspan="10"><div class="loading-block"><div class="spinner" role="status"></div><p class="muted">Loading room types&hellip;</p></div></td></tr>
         </tbody>
       </table>
     </div>
@@ -126,6 +126,18 @@
   var amenities = [];
   var money = JONE.formatNaira;
 
+  /* Cover image for a room type. The API returns primary_image_url (absolute —
+     Backblaze B2/CDN in production); fall back to the primary entry of the
+     images gallery for older payloads. Never build URLs by hand here. */
+  function coverUrl(t){
+    if(!t) return "";
+    if(t.primary_image_url) return t.primary_image_url;
+    var imgs = (t.images||[]).filter(function(i){ return i.is_active!==false; });
+    if(!imgs.length) return "";
+    var primary = imgs.filter(function(i){ return i.is_primary; })[0] || imgs[0];
+    return primary.image_url || "";
+  }
+
   function typeRow(t){
     var beds = (t.bed_count||1) + " \u00D7 " + JONE.esc(t.bed_type||"bed");
     var imgs = (t.images||[]).filter(function(i){ return i.is_active!==false; }).length;
@@ -135,7 +147,12 @@
       '<button class="btn btn-sm btn-outline" data-rt-edit="' + t.id + '" type="button" title="Edit"><span data-icon="edit" data-size="13"></span> <span class="hide-sm">Edit</span></button>' +
       '<button class="btn btn-sm btn-outline" data-rt-del="' + t.id + '" type="button" title="Deactivate"><span data-icon="trash" data-size="13"></span></button>' +
       '</div>';
+    var cover = coverUrl(t);
+    var coverCell = cover
+      ? '<img class="rt-thumb" src="' + JONE.esc(cover) + '" alt="" loading="lazy">'
+      : '<span class="rt-thumb-empty" title="No image"><span data-icon="image" data-size="15"></span></span>';
     return '<tr' + (t.is_active===false ? ' style="opacity:0.55;"' : '') + '>' +
+      '<td>' + coverCell + '</td>' +
       '<td><strong>' + JONE.esc(t.name) + '</strong>' + (t.short_description ? '<div class="caption">' + JONE.esc(t.short_description) + '</div>' : '') + '</td>' +
       '<td class="num">' + money(t.base_price) + '</td>' +
       '<td class="num">' + JONE.esc(t.max_guests||"\u2014") + '</td>' +
@@ -162,7 +179,7 @@
   function render(){
     var tb = document.querySelector('[data-tbody=roomtypes]');
     tb.innerHTML = types.length ? types.map(typeRow).join("") :
-      '<tr><td colspan="9"><div class="empty-state"><h3>No room types yet</h3><p>Create your first room type to publish the catalog.</p></div></td></tr>';
+      '<tr><td colspan="10"><div class="empty-state"><h3>No room types yet</h3><p>Create your first room type to publish the catalog.</p></div></td></tr>';
     var ab = document.querySelector('[data-tbody=amenities]');
     ab.innerHTML = amenities.length ? amenities.map(amenityRow).join("") :
       '<tr><td colspan="4"><div class="empty-state"><h3>No amenities</h3><p>Add Wi-Fi, air conditioning, TV&hellip; as needed.</p></div></td></tr>';
@@ -180,7 +197,7 @@
       var res = await window.API.list("roomTypes", { page_size: 100 });
       types = window.API.normalizeList(res.data, res.pagination).items;
       render();
-    }catch(err){ errRow(tb, err, 9); }
+    }catch(err){ errRow(tb, err, 10); }
   }
   async function loadAmenities(){
     var ab = document.querySelector('[data-tbody=amenities]');
@@ -209,6 +226,9 @@
       { name:"children_allowed", label:"Children allowed", type:"checkbox", value:t?t.children_allowed:true },
       { name:"extra_guest_allowed", label:"Extra guests allowed", type:"checkbox", value:t?!!t.extra_guest_allowed:false },
       { name:"extra_guest_fee", label:"Extra guest fee (\u20A6)", type:"number", step:"0.01", value:t?t.extra_guest_fee:"" },
+      { name:"image", label:t&&coverUrl(t)?"Cover image":"Cover image (optional)", type:"imagefile",
+        currentUrl:coverUrl(t), removeName:"remove_image", maxMB:5,
+        help:"Shown on the public rooms list, room detail page and booking flow." },
       { name:"amenity_ids", label:"Amenities", type:"checks", options:amOpts, value:t?(t.amenity_ids||[]) : [] },
       { name:"display_order", label:"Display order", type:"number", value:t?(t.display_order||0):0 },
       { name:"is_featured", label:"Featured on homepage", type:"checkbox", value:t?!!t.is_featured:false },
@@ -223,13 +243,24 @@
       submitText: t ? "Save changes" : "Create room type",
       wide: true,
       fields: typeFields(t),
-      onSubmit: function(v){
-        // Numeric / boolean coercion — the backend validates regardless.
+      multipart: true,
+      onSubmit: function(v, fd){
+        /* The form always submits multipart/form-data so the cover image
+           travels with the rest of the fields in ONE request. api.js passes a
+           FormData body through untouched (no JSON.stringify, no manual
+           Content-Type) so the browser sets the multipart boundary itself, and
+           the Authorization header is still applied. */
         ["base_price","max_guests","bed_count","extra_guest_fee","display_order"].forEach(function(k){
-          if(v[k]==="") delete v[k];
+          if(v[k]==="" && fd.has(k)) fd.delete(k);
         });
-        if(t) return window.API.update("roomTypes", t.id, v).then(function(){ JONE.ui.toast("Room type saved.","success"); });
-        return window.API.create("roomTypes", v).then(function(){ JONE.ui.toast("Room type created.","success"); });
+        // Unchecked checkboxes must still be sent explicitly (HTML omits them).
+        ["children_allowed","extra_guest_allowed","is_featured","is_active"].forEach(function(k){
+          if(!fd.has(k)) fd.append(k, v[k] ? "true" : "false");
+        });
+        // A room type with no amenities selected must clear them server-side.
+        if(!fd.has("amenity_ids")) fd.append("amenity_ids", "");
+        if(t) return window.API.update("roomTypes", t.id, fd).then(function(){ JONE.ui.toast("Room type saved.","success"); });
+        return window.API.create("roomTypes", fd).then(function(){ JONE.ui.toast("Room type created.","success"); });
       }
     });
     if(out) loadTypes();

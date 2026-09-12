@@ -41,7 +41,11 @@ services:
       - key: BACKBLAZE_BUCKET_NAME
         sync: false
       - key: BACKBLAZE_ENDPOINT
-        sync: false
+        sync: false          # e.g. https://s3.us-west-004.backblazeb2.com
+      - key: BACKBLAZE_REGION
+        sync: false          # optional; parsed from the endpoint when omitted
+      - key: MEDIA_CUSTOM_DOMAIN
+        sync: false          # optional B2 friendly-URL / CDN host
       - key: EMAIL_HOST
         sync: false
       - key: EMAIL_HOST_USER

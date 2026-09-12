@@ -363,12 +363,239 @@
     return true;
   }
 
+  /* ------------------------- Image upload field ----------------------------
+     Premium drop-zone used by any dashboard form that uploads a picture
+     (field type "imagefile"). Shows the CURRENT image when editing, previews a
+     newly chosen file immediately, validates type/size client-side for fast
+     feedback (the backend stays authoritative) and supports removing the
+     existing image where the API allows it.
+
+     Contract with formModal():
+       - the chosen File is appended to FormData under the field's own name
+       - when the user removes an existing image, `removeName` is appended as
+         "true" (the backend field that deletes it, e.g. remove_image)
+       - choosing a new file always supersedes a pending removal, so an old
+         image can never be submitted by accident. */
+  const IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
+  const IMAGE_EXT_LABEL = "JPG, PNG or WebP";
+
+  function formatBytes(bytes) {
+    if (!bytes && bytes !== 0) return "";
+    if (bytes < 1024) return bytes + " B";
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(0) + " KB";
+    return (bytes / (1024 * 1024)).toFixed(1) + " MB";
+  }
+
+  function buildImageField(f, currentUrl) {
+    const maxMB = f.maxMB || 5;
+    const wrap = document.createElement("div");
+    wrap.className = "field img-field";
+    wrap.dataset.fmField = f.name;
+
+    const label = document.createElement("label");
+    label.className = "field-label";
+    label.setAttribute("for", "fm-" + f.name);
+    label.textContent = f.label + (f.required ? " *" : "");
+    wrap.appendChild(label);
+
+    const zone = document.createElement("div");
+    zone.className = "img-drop";
+
+    const input = document.createElement("input");
+    input.type = "file";
+    input.id = "fm-" + f.name;
+    input.name = f.name;
+    input.accept = f.accept || IMAGE_TYPES.join(",");
+    input.className = "img-drop-input";
+    if (f.required && !currentUrl) input.required = true;
+
+    const preview = document.createElement("div");
+    preview.className = "img-drop-preview";
+    const thumb = document.createElement("img");
+    thumb.alt = "";
+    thumb.loading = "lazy";
+    const meta = document.createElement("div");
+    meta.className = "img-drop-meta";
+    const metaName = document.createElement("div");
+    metaName.className = "img-drop-name";
+    const metaInfo = document.createElement("div");
+    metaInfo.className = "caption img-drop-info";
+    meta.appendChild(metaName);
+    meta.appendChild(metaInfo);
+    const actions = document.createElement("div");
+    actions.className = "img-drop-actions";
+    const changeBtn = document.createElement("button");
+    changeBtn.type = "button";
+    changeBtn.className = "btn btn-sm btn-outline";
+    changeBtn.textContent = "Change";
+    const removeBtn = document.createElement("button");
+    removeBtn.type = "button";
+    removeBtn.className = "btn btn-sm btn-outline";
+    removeBtn.textContent = "Remove";
+    actions.appendChild(changeBtn);
+    if (f.removeName) actions.appendChild(removeBtn);
+    preview.appendChild(thumb);
+    preview.appendChild(meta);
+    preview.appendChild(actions);
+
+    const empty = document.createElement("div");
+    empty.className = "img-drop-empty";
+    empty.innerHTML =
+      '<span class="img-drop-icon" data-icon="image" data-size="22"></span>' +
+      '<div class="img-drop-cta"><strong>Select an image</strong>' +
+      '<span class="caption">' + IMAGE_EXT_LABEL + " &middot; up to " + maxMB + " MB</span></div>";
+
+    const err = document.createElement("div");
+    err.className = "field-error";
+
+    zone.appendChild(input);
+    zone.appendChild(empty);
+    zone.appendChild(preview);
+    wrap.appendChild(zone);
+    if (f.help) {
+      const help = document.createElement("div");
+      help.className = "hint";
+      help.textContent = f.help;
+      wrap.appendChild(help);
+    }
+    wrap.appendChild(err);
+
+    // state: "empty" | "current" (server image) | "selected" (new file) | "removed"
+    const state = { mode: currentUrl ? "current" : "empty", file: null, objectUrl: null };
+
+    function releaseObjectUrl() {
+      if (state.objectUrl) { URL.revokeObjectURL(state.objectUrl); state.objectUrl = null; }
+    }
+    function paint() {
+      const showPreview = state.mode === "current" || state.mode === "selected";
+      zone.classList.toggle("has-image", showPreview);
+      preview.style.display = showPreview ? "" : "none";
+      empty.style.display = showPreview ? "none" : "";
+      removeBtn.textContent = state.mode === "selected" && currentUrl ? "Undo" : "Remove";
+      if (state.mode === "current") {
+        thumb.src = currentUrl;
+        metaName.textContent = "Current image";
+        metaInfo.textContent = "Select a new file to replace it.";
+      } else if (state.mode === "selected" && state.file) {
+        thumb.src = state.objectUrl;
+        metaName.textContent = state.file.name;
+        metaInfo.textContent = formatBytes(state.file.size) + " · ready to upload";
+      } else if (state.mode === "removed") {
+        empty.querySelector(".img-drop-cta strong").textContent = "Image will be removed";
+      }
+    }
+    function fail(message) {
+      err.textContent = message;
+      err.style.display = "block";
+      wrap.classList.add("has-error");
+    }
+    function clearError() {
+      err.textContent = "";
+      err.style.display = "none";
+      wrap.classList.remove("has-error");
+    }
+
+    function reject(message) {
+      input.value = "";
+      releaseObjectUrl();
+      state.file = null;
+      state.mode = currentUrl ? "current" : "empty";
+      paint();
+      fail(message);
+    }
+
+    function accept(file) {
+      clearError();
+      if (!file) return;
+      // The browser derives file.type from the extension, so these checks are
+      // only a fast first pass — the real decode test follows, and the backend
+      // validates independently either way.
+      if (IMAGE_TYPES.indexOf(file.type) === -1) {
+        return reject("Unsupported format. Use " + IMAGE_EXT_LABEL + ".");
+      }
+      if (!file.size) {
+        return reject("That file is empty.");
+      }
+      if (file.size > maxMB * 1024 * 1024) {
+        return reject("That image is " + formatBytes(file.size) + ". The maximum is " + maxMB + " MB.");
+      }
+      releaseObjectUrl();
+      state.file = file;
+      state.objectUrl = URL.createObjectURL(file);
+      state.mode = "selected";
+      paint();
+
+      // Confirm the bytes really are a decodable image (catches a renamed or
+      // truncated file before it is ever uploaded).
+      const probe = new Image();
+      const token = state.objectUrl;
+      probe.onload = () => {
+        if (state.objectUrl !== token) return;      // superseded by a newer pick
+        metaInfo.textContent =
+          formatBytes(file.size) + " · " + probe.naturalWidth + "×" + probe.naturalHeight + " · ready to upload";
+      };
+      probe.onerror = () => {
+        if (state.objectUrl !== token) return;
+        reject("That file isn't a readable image. Please choose a valid " + IMAGE_EXT_LABEL + " file.");
+      };
+      probe.src = state.objectUrl;
+    }
+
+    input.addEventListener("change", () => accept(input.files && input.files[0]));
+    changeBtn.addEventListener("click", () => input.click());
+    removeBtn.addEventListener("click", () => {
+      clearError();
+      if (state.mode === "selected") {
+        // Undo the pending selection — restore the server image if there is one.
+        releaseObjectUrl();
+        state.file = null;
+        input.value = "";
+        state.mode = currentUrl ? "current" : "empty";
+      } else {
+        state.mode = currentUrl ? "removed" : "empty";
+      }
+      paint();
+    });
+    ["dragenter", "dragover"].forEach((evt) =>
+      zone.addEventListener(evt, (e) => { e.preventDefault(); zone.classList.add("is-dragging"); }));
+    ["dragleave", "drop"].forEach((evt) =>
+      zone.addEventListener(evt, (e) => { e.preventDefault(); zone.classList.remove("is-dragging"); }));
+    zone.addEventListener("drop", (e) => {
+      const file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+      if (file) {
+        try { input.files = e.dataTransfer.files; } catch (_) {}
+        accept(file);
+      }
+    });
+
+    paint();
+    return {
+      wrap,
+      /* Append this field's contribution to the outgoing FormData. */
+      appendTo(formData) {
+        if (state.mode === "selected" && state.file) {
+          formData.append(f.name, state.file, state.file.name);
+        } else if (state.mode === "removed" && f.removeName) {
+          formData.append(f.removeName, "true");
+        }
+      },
+      hasFile: () => state.mode === "selected",
+      isRequiredMissing: () => !!f.required && state.mode !== "selected" && state.mode !== "current",
+      showError: fail,
+      dispose: releaseObjectUrl
+    };
+  }
+
   /* --------------------------- Modal form builder --------------------------
      Shared create/edit dialog for dashboard CRUD pages.
      opts: {
        title, submitText,
-       fields: [{ name, label, type: text|number|date|select|checkbox|textarea|file,
-                  options:[{value,label}], value, required, placeholder, help, step, accept }],
+       fields: [{ name, label, type: text|number|date|select|checkbox|textarea|file|imagefile,
+                  options:[{value,label}], value, required, placeholder, help, step, accept,
+                  // imagefile only:
+                  currentUrl,      // existing image shown as "current" when editing
+                  removeName,      // backend flag appended as "true" on removal
+                  maxMB }],        // client-side size guard (backend is authoritative)
        values: {name: value},           // prefill (edit mode)
        multipart: bool,                 // include file inputs -> FormData
        onSubmit(values, formData) -> Promise   // throw to keep the dialog open
@@ -402,7 +629,17 @@
       errBox.className = "field-error";
       errBox.style.cssText = "display:none;margin-bottom:0.75rem;font-weight:500;";
 
+      // Image drop-zones are tracked so their files can be added to FormData.
+      const imageFields = {};
+
       (opts.fields || []).forEach((f) => {
+        if (f.type === "imagefile") {
+          const current = f.currentUrl || (opts.values ? opts.values[f.name + "_url"] : null) || null;
+          const built = buildImageField(f, current);
+          imageFields[f.name] = built;
+          form.appendChild(built.wrap);
+          return;
+        }
         const wrap = document.createElement("div");
         wrap.className = "field";
         wrap.dataset.fmField = f.name;
@@ -530,6 +767,8 @@
 
       function close(result) {
         document.removeEventListener("keydown", onKey);
+        // Release any preview object URLs held by image drop-zones.
+        Object.keys(imageFields).forEach((k) => imageFields[k].dispose());
         backdrop.classList.remove("open");
         setTimeout(() => {
           backdrop.remove();
@@ -555,10 +794,27 @@
         });
         if (!form.checkValidity()) { form.reportValidity(); JONE.releaseGuard(submit); return; }
 
+        // Required image fields are validated here (a drop-zone has no native
+        // constraint once an existing image is already present).
+        let imageMissing = false;
+        Object.keys(imageFields).forEach((key) => {
+          if (imageFields[key].isRequiredMissing()) {
+            imageFields[key].showError("Please select an image.");
+            imageMissing = true;
+          }
+        });
+        if (imageMissing) { JONE.releaseGuard(submit); return; }
+
         const values = {};
         let formData = null;
-        if (opts.multipart) formData = new FormData();
+        // A picked image forces multipart regardless of the caller's default.
+        const hasImagePayload = Object.keys(imageFields).length > 0;
+        if (opts.multipart || hasImagePayload) formData = new FormData();
         (opts.fields || []).forEach((f) => {
+          if (f.type === "imagefile") {
+            if (formData) imageFields[f.name].appendTo(formData);
+            return;
+          }
           if (f.type === "checks") {
             const checked = Array.from(form.querySelectorAll('[data-fm-check="' + f.name + '"]:checked')).map((c) => c.value);
             values[f.name] = checked.map(Number);

@@ -4,9 +4,11 @@ Base settings for the J-ONE HOTEL & LODGE backend.
 Everything environment-specific (secrets, hosts, databases, vendors) comes
 from environment variables via python-decouple. See .env.example.
 """
+import logging
 from datetime import timedelta
 from pathlib import Path
 
+from botocore.config import Config as BotocoreConfig
 from decouple import Csv, config
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -185,12 +187,44 @@ USE_TZ = True
 # ---------------------------------------------------------------------------
 # Static & media files
 # ---------------------------------------------------------------------------
+
 STATIC_URL = "/static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
-MEDIA_URL = "/media/"
-MEDIA_ROOT = BASE_DIR / "media"
+STATICFILES_DIRS = [
+    BASE_DIR / "static",
+]
 
-DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+# ============================================
+# BACKBLAZE B2 / S3 COMPATIBLE STORAGE
+# ============================================
+
+# Use S3Boto3Storage directly — same as your Gadgets Store
+STORAGES = {
+    "default": {
+        "BACKEND": "storages.backends.s3boto3.S3Boto3Storage",
+    },
+    "staticfiles": {
+        "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",
+    },
+}
+
+# B2 Credentials (from Railway env vars)
+AWS_ACCESS_KEY_ID = config("BACKBLAZE_KEY_ID")
+AWS_SECRET_ACCESS_KEY = config("BACKBLAZE_APPLICATION_KEY")
+AWS_STORAGE_BUCKET_NAME = config("BACKBLAZE_BUCKET_NAME")
+AWS_S3_REGION_NAME = config("BACKBLAZE_REGION", default="us-east-005")
+AWS_S3_ENDPOINT_URL = config("BACKBLAZE_ENDPOINT", default="https://s3.us-east-005.backblazeb2.com")
+
+# CRITICAL B2 Settings
+AWS_S3_ADDRESSING_STYLE = "virtual"
+AWS_S3_SIGNATURE_VERSION = "s3v4"
+AWS_QUERYSTRING_AUTH = False
+AWS_DEFAULT_ACL = "public-read"
+AWS_S3_FILE_OVERWRITE = True
+
+# Media URL
+MEDIA_URL = f"https://{AWS_STORAGE_BUCKET_NAME}.s3.{AWS_S3_REGION_NAME}.backblazeb2.com/"
 
 # ---------------------------------------------------------------------------
 # CORS (development allows everything; production must list exact origins)

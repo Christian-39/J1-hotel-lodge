@@ -16,6 +16,8 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import exception_handler as drf_exception_handler
 
+from apps.core.storage import StorageUploadError
+
 logger = logging.getLogger("apps")
 
 
@@ -31,6 +33,11 @@ def jone_exception_handler(exc, context):
         exc = drf_exceptions.NotFound()
     elif isinstance(exc, DjangoPermissionDenied):
         exc = drf_exceptions.PermissionDenied()
+    elif isinstance(exc, StorageUploadError):
+        # The media backend (e.g. Backblaze B2) refused the write. The cause is
+        # already logged by apps.core.storage; the client gets an honest, safe
+        # failure instead of a false "saved" response.
+        return _envelope("STORAGE_UPLOAD_FAILED", str(exc), None, status.HTTP_502_BAD_GATEWAY)
 
     response = drf_exception_handler(exc, context)
 

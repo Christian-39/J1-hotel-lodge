@@ -386,6 +386,98 @@ body.drawer-open .dash-main { overflow: hidden; }
   .dash-topbar-right .theme-toggle { width: 34px; height: 34px; }
 }
 
+/* ==========================================================================
+   Image upload drop-zone (JONE.dashboard.formModal field type "imagefile").
+   Used by Room Type / Room forms. Calm, bordered, surface-based — matches the
+   existing field styling rather than introducing a new visual language.
+   ========================================================================== */
+.img-field .img-drop {
+  position: relative;
+  border: 1px dashed var(--color-border-strong);
+  border-radius: var(--radius);
+  background: var(--color-surface-alt);
+  padding: var(--sp-4);
+  transition: border-color .16s ease, background .16s ease;
+}
+.img-field .img-drop:hover,
+.img-field .img-drop.is-dragging { border-color: var(--color-accent); background: var(--color-accent-soft); }
+.img-field .img-drop.has-image { border-style: solid; background: var(--color-surface); }
+.field.has-error .img-drop { border-color: var(--color-danger); }
+
+/* The input covers the empty state so the whole area is clickable/droppable. */
+.img-drop-input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+  z-index: 2;
+}
+.img-drop.has-image .img-drop-input { display: none; }
+
+.img-drop-empty {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  min-height: 66px;
+  pointer-events: none;
+}
+.img-drop-icon { color: var(--color-text-faint); display: inline-flex; flex: none; }
+.img-drop-cta { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.img-drop-cta strong { font-size: var(--fs-sm); font-weight: 600; color: var(--color-text); }
+
+.img-drop-preview { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; }
+.img-drop-preview img {
+  width: 108px;
+  height: 74px;
+  object-fit: cover;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-alt);
+  flex: none;
+  display: block;
+}
+.img-drop-meta { flex: 1 1 150px; min-width: 0; }
+.img-drop-name {
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--color-text);
+  overflow-wrap: anywhere;      /* long filenames must never overflow */
+}
+.img-drop-info { margin-top: 2px; }
+.img-drop-actions { display: flex; gap: var(--sp-2); flex: none; flex-wrap: wrap; }
+
+/* Room-type cover thumbnails in the staff table. */
+.rt-thumb {
+  width: 54px;
+  height: 38px;
+  object-fit: cover;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-alt);
+  display: block;
+}
+.rt-thumb-empty {
+  width: 54px;
+  height: 38px;
+  border-radius: var(--radius-sm);
+  border: 1px dashed var(--color-border-strong);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-faint);
+  background: var(--color-surface-alt);
+}
+
+@media (max-width: 560px) {
+  .img-field .img-drop { padding: var(--sp-3); }
+  .img-drop-preview img { width: 100%; height: 132px; }
+  .img-drop-meta { flex-basis: 100%; }
+  .img-drop-actions { width: 100%; }
+  .img-drop-actions .btn { flex: 1; justify-content: center; }
+}
+
 /* Printing (receipts): the app shell's fixed-height scroll container would
    clip everything after page one — let the document flow normally on paper. */
 @media print {

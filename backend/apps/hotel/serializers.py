@@ -1,6 +1,8 @@
 from django.conf import settings as django_settings
 from rest_framework import serializers
 
+from apps.core.storage import absolute_media_url
+
 from .models import Facility, HotelPolicy, HotelSettings
 
 
@@ -43,11 +45,7 @@ class FacilitySerializer(serializers.ModelSerializer):
         read_only_fields = ["id"]
 
     def get_image_url(self, obj):
-        if obj.image:
-            request = self.context.get("request")
-            url = obj.image.url
-            return request.build_absolute_uri(url) if request else url
-        return None
+        return absolute_media_url(obj.image, self.context.get("request"))
 
 
 class HotelSettingsAdminSerializer(serializers.ModelSerializer):

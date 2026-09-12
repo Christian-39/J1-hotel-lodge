@@ -6,7 +6,7 @@ from django.db.models import Count, Exists, OuterRef, Prefetch, Q
 from django.utils import timezone
 from drf_spectacular.utils import extend_schema
 from rest_framework import generics, status, viewsets
-from rest_framework.parsers import FormParser, MultiPartParser
+from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.response import Response
 
 from apps.audit.services import log_action
@@ -52,12 +52,17 @@ class AmenityAdminViewSet(_AuditedModelViewSet):
 @extend_schema(tags=["Admin · Room Types"])
 class RoomTypeAdminViewSet(_AuditedModelViewSet):
     serializer_class = RoomTypeAdminSerializer
+    # JSON keeps working for plain field edits; multipart carries the cover image.
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
 
     def get_queryset(self):
         return (
             RoomType.objects.all()
             .annotate(room_count=Count("rooms", filter=Q(rooms__is_active=True)))
-            .prefetch_related("amenities", "images")
+            .prefetch_related(
+                "amenities",
+                Prefetch("images", queryset=RoomTypeImage.objects.filter(is_active=True)),
+            )
             .order_by("display_order", "name")
         )
 
@@ -112,6 +117,7 @@ class RoomTypeImageDetailView(generics.RetrieveUpdateDestroyAPIView):
 @extend_schema(tags=["Admin · Rooms"])
 class RoomAdminViewSet(_AuditedModelViewSet):
     serializer_class = RoomSerializer
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
 
     def get_queryset(self):
         from apps.bookings.models import Booking, BookingRoom
@@ -128,7 +134,9 @@ class RoomAdminViewSet(_AuditedModelViewSet):
         qs = (
             Room.objects.select_related("room_type")
             .prefetch_related(
-                Prefetch("images", queryset=RoomImage.objects.filter(is_active=True), to_attr="_active_images")
+                Prefetch("images", queryset=RoomImage.objects.filter(is_active=True), to_attr="_active_images"),
+                # Cover image of the parent type powers primary_image_url's fallback.
+                Prefetch("room_type__images", queryset=RoomTypeImage.objects.filter(is_active=True)),
             )
             .annotate(
                 _reserved_tonight=Exists(tonight),

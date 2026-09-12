@@ -35,7 +35,8 @@ else { /* body.code, body.message, body.errors? */ }
 `ROOM_UNAVAILABLE`, `BOOKING_EXPIRED`, `INVALID_BOOKING_STATE`,
 `CANCELLATION_NOT_ALLOWED`, `OFFER_NOT_APPLICABLE`, `OUTSTANDING_BALANCE`,
 `PAYMENT_NOT_CONFIGURED`, `PAYMENT_FAILED`, `PAYMENT_ALREADY_COMPLETED`,
-`PAYMENT_AMOUNT_MISMATCH`, `PAYMENT_GATEWAY_ERROR`.
+`PAYMENT_AMOUNT_MISMATCH`, `PAYMENT_GATEWAY_ERROR`, `STORAGE_UPLOAD_FAILED`
+(502 — the media bucket rejected the upload; show the message and let the user retry).
 
 `errors` (when present) maps field → message list:
 
@@ -43,6 +44,27 @@ else { /* body.code, body.message, body.errors? */ }
 { "success": false, "code": "VALIDATION_ERROR", "message": "Validation failed.",
   "errors": { "check_in": ["Check-in date cannot be in the past."] } }
 ```
+
+## Media URLs & image uploads
+
+All image URLs the API returns (`primary_image_url`, `images[].image_url`,
+`profile_image_url`, gallery/offer/facility `image_url`) are **absolute**, so the
+separately hosted frontend can use them directly — never prefix them with the API
+host. They are produced by one helper (`apps.core.storage.absolute_media_url`):
+
+* remote storage (Backblaze B2 / CDN) already returns an absolute URL → passed through;
+* otherwise the current request builds it, falling back to `MEDIA_PUBLIC_BASE_URL`
+  when there is no request (management commands, availability engine);
+* an empty image field yields `null` — render your own placeholder.
+
+Uploads are `multipart/form-data`: build a `FormData`, append the `File` under the
+documented field name, and **do not set `Content-Type` manually** (the browser must
+add the multipart boundary). Keep the `Authorization` header.
+
+Validation is backend-authoritative: type (jpg/png/webp), size (≤5 MB) and a real
+decode check. Failures return `400 VALIDATION_ERROR` with `errors.image`. If the
+storage backend itself fails, the API returns `502 STORAGE_UPLOAD_FAILED` and no
+database row is created — a failed upload is never reported as success.
 
 ## Pagination envelope (all lists)
 
@@ -436,17 +458,33 @@ POST { "booking_reference": "J1-…", "amount": "15000.00",
 
 * `GET/POST /api/admin/rooms/` · `GET/PATCH/DELETE /api/admin/rooms/{id}/`
   Row: `{ id, room_number, room_type, room_type_name, room_type_slug, floor,
-  status, housekeeping_status, notes, is_active, created_at, updated_at }`
+  status, housekeeping_status, notes, is_active, created_at, updated_at,
+  room_type_base_price, room_type_max_guests, room_type_is_active,
+  primary_image_url, images[] }`
   (`status`: AVAILABLE/OCCUPIED/RESERVED/MAINTENANCE/OUT_OF_SERVICE ·
   `housekeeping_status`: CLEAN/DIRTY/CLEANING). Filters: `status`,
   `housekeeping_status`, `room_type`, `is_active`, `search`. **DELETE
   deactivates** (soft). Writes need MANAGER/ADMIN.
+  `room_type_*` are read-only mirrors of the assigned type so the dashboard can
+  label the room-type selector without a second request; `primary_image_url`
+  falls back to the room type's cover when the room has no photo of its own.
+  Accepts **JSON or multipart/form-data**; send `image` (file) to set/replace
+  this room's own primary photo.
 * `GET/POST /api/admin/room-types/` · `GET/PATCH/DELETE …/{id}/` — full type
-  incl. pricing/capacity/policies + `amenity_ids[]` + `images[]` + `room_count`.
-  DELETE deactivates.
+  incl. pricing/capacity/policies + `amenity_ids[]` + `images[]` + `room_count`
+  + `primary_image_url`. DELETE deactivates.
+  Accepts **JSON or multipart/form-data** on POST/PATCH/PUT. Multipart write-only
+  fields: `image` (file, jpg/png/webp ≤5MB) sets or replaces the cover image,
+  `image_alt_text` (string) and `remove_image=true` clears it. They map onto the
+  existing `RoomTypeImage` rows (`is_primary=true`) — there is no separate
+  `ImageField` on the model, and `images[]`/`primary_image_url` keep their shape.
+  In multipart, repeat `amenity_ids` once per id; send a single empty
+  `amenity_ids` value to clear the selection.
 * `POST /api/admin/room-types/{id}/images/` — **multipart/form-data**:
   `image*` (jpg/png/webp ≤5MB), `alt_text`, `caption`, `display_order`,
   `is_primary` → 201 image row. `PATCH/DELETE /api/admin/room-images/{id}/`.
+  Still supported for managing the full gallery; the `image` field above is the
+  shortcut for the single cover image.
 * `GET/POST/PATCH/DELETE /api/admin/amenities/…` — `{ id, name, slug, icon, is_active }`.
 
 ## 24. Content management

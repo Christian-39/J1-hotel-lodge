@@ -7,7 +7,7 @@ import logging
 from datetime import timedelta
 
 from django.db import transaction
-from django.db.models import Count, F, Q
+from django.db.models import Count, F, Prefetch, Q
 from django.utils import timezone
 
 from apps.audit.services import log_action
@@ -24,7 +24,7 @@ from apps.core.utils import combine_hotel_datetime, generate_booking_reference, 
 from apps.hotel.models import HotelSettings
 from apps.notifications.services import notify_staff, notify_users
 from apps.offers import services as offer_services
-from apps.rooms.models import Room, RoomType
+from apps.rooms.models import Room, RoomType, RoomTypeImage
 
 from ..models import Booking, BookingRoom, Guest
 from . import availability
@@ -87,13 +87,13 @@ def refresh_expired_pending(booking):
 # ---------------------------------------------------------------------------
 # Availability search (public)
 # ---------------------------------------------------------------------------
-def search_availability(*, check_in, check_out, guests=1, rooms=1, room_type_value=None):
+def search_availability(*, check_in, check_out, guests=1, rooms=1, room_type_value=None, request=None):
     from apps.rooms.serializers import RoomTypeListSerializer
 
     settings_obj = HotelSettings.get_settings()
     types_qs = (
         RoomType.objects.filter(is_active=True)
-        .prefetch_related("amenities", "images")
+        .prefetch_related("amenities", Prefetch("images", queryset=RoomTypeImage.objects.filter(is_active=True)))
         .order_by("display_order", "name")
     )
     if room_type_value:
@@ -127,7 +127,7 @@ def search_availability(*, check_in, check_out, guests=1, rooms=1, room_type_val
 
         results.append(
             {
-                "room_type": RoomTypeListSerializer(room_type).data,
+                "room_type": RoomTypeListSerializer(room_type, context={"request": request}).data,
                 "available_rooms": available_count,
                 "requested_rooms": rooms,
                 "max_guests_per_room": room_type.max_guests,
