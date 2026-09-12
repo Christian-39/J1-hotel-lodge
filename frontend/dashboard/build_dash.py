@@ -805,7 +805,7 @@ write("settings", "Settings", f"""
   <div class="panel-head"><h2>Hotel information</h2><button class="btn btn-sm" data-settings-save>Save</button></div>
   <div class="panel-body">
     <div class="field"><label class="field-label" for="s-name">Hotel name</label><input class="input" id="s-name" value="J-ONE HOTEL &amp; LODGE"></div>
-    <div class="field"><label class="field-label" for="s-addr">Address</label><input class="input" id="s-addr" value="Plot 566 Mgbowo Street, off Ezike Street"></div>
+    <div class="field"><label class="field-label" for="s-addr">Address</label><input class="input" id="s-addr" value="Plot 566 Mgbowo Street, off Ezike Street, Enugu State."></div>
     <div class="form-grid fg-2" style="margin-bottom:1rem;">
       <div class="field"><label class="field-label" for="s-phone">Phone</label><input class="input" id="s-phone" value="+234 803 211 2874"></div>
       <div class="field"><label class="field-label" for="s-email">Email</label><input class="input" id="s-email" value="jonathanonu76@gmail.com"></div>

@@ -133,7 +133,7 @@
 
       <div class="footer-col">
         <h5>Contact</h5>
-        <span class="footer-line"><span data-icon="mapPin" data-size="16"></span><span data-contact-address>Plot 566 Mgbowo Street, off Ezike Street</span></span>
+        <span class="footer-line"><span data-icon="mapPin" data-size="16"></span><span data-contact-address>Plot 566 Mgbowo Street, off Ezike Street, Enugu State.</span></span>
         <a class="footer-line" data-contact-whatsapp href="#"><span data-icon="phone" data-size="16"></span><span data-contact-phone>+234 803 211 2874</span></a>
         <a class="footer-line" href="mailto:jonathanonu76@gmail.com"><span data-icon="mail" data-size="16"></span><span data-contact-email>jonathanonu76@gmail.com</span></a>
         <a class="footer-line" data-google-maps href="https://www.google.com/maps" target="_blank" rel="noopener"><span data-icon="mapPin" data-size="16"></span>View on Google Maps</a>
@@ -235,6 +235,17 @@
     }
   }
 
+  function setHero(r) {
+    var hero = document.getElementById("room-hero");
+    if (!hero) return;
+    var imgs = r.images || r.gallery || [];
+    var primary = imgs.find(function (i) { return i && i.is_primary; }) || imgs[0];
+    var url = primary && (primary.image_url || primary.image || primary);
+    hero.innerHTML = url
+      ? '<img src="' + JONE.esc(url) + '" alt="' + JONE.esc(r.name || "Room") + '" loading="lazy">'
+      : '<div class="placeholder-placeholder"><span data-icon="bed" data-size="50"></span></div>';
+  }
+
   /* Verified /api/rooms/{slug}/ detail: all catalog fields plus description,
      smoking_policy, children_allowed, extra_guest_allowed, extra_guest_fee,
      images: [{ image_url, alt_text, caption, is_primary }],
@@ -262,6 +273,7 @@
     if (book) book.href = "booking.html?room=" + encodeURIComponent(r.slug || r.id || slug || "");
     JONE.icons.inject(document);
     buildThumbs(r);
+    setHero(r)
     document.title = (r.name || "Room") + " | J-ONE Hotel & Lodge";
   }
 
