@@ -48,10 +48,15 @@ class BookingFlowTests(BaseAPITestCase):
         self.assertIsNotNone(booking.expires_at)
         self.assertEqual(booking.guest.user, self.user)
 
-    def test_booking_requires_authentication(self):
+    def test_anonymous_booking_requires_complete_guest_details(self):
         self.unauth()
         response = self._create()
-        self.assertEqual(response.status_code, 401)
+        self.assertEqual(response.status_code, 400)
+        response = self._create(guest={
+            "first_name": "Ada", "last_name": "Obi",
+            "email": "ada@example.test", "phone": "08031234567",
+        })
+        self.assertEqual(response.status_code, 201, response.json())
 
     def test_create_rejects_past_dates(self):
         response = self._create(
@@ -106,12 +111,12 @@ class BookingFlowTests(BaseAPITestCase):
         self.auth(other)
         response = self.client.get(f"/api/bookings/{reference}/")
         # Object-level permission denies access without leaking the object.
-        self.assertEqual(response.status_code, 403)
-        self.assertEqual(response.json()["code"], "FORBIDDEN")
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(response.json()["code"], "RESOURCE_NOT_FOUND")
         # Also by guessing the numeric id.
         booking = Booking.objects.get(booking_reference=reference)
         by_id = self.client.get(f"/api/bookings/{booking.pk}/")
-        self.assertEqual(by_id.status_code, 403)
+        self.assertEqual(by_id.status_code, 404)
 
     def test_cancel_allowed_before_deadline(self):
         reference = self._create(

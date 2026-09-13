@@ -135,8 +135,9 @@ reserve the same room. Manual (staff) bookings follow the identical path.
 
 * **Initialize**: server computes the amount (remaining deposit requirement,
   then any balance), stores `Payment(PENDING, reference=J1P-…)`, calls
-  Paystack initialize, returns only safe fields (`authorization_url`,
-  `access_code`, public key). Never accepts an amount from the client.
+  commits that short transaction, and only then calls Paystack. Concurrent or
+  repeated clicks reuse the same pending reference and authorization URL. The
+  API returns only safe redirect fields. It never accepts an amount from the client.
 * **Verify** (`GET /api/payments/verify/<ref>/`): server fetches the transaction
   from Paystack itself; checks `status=success`, **amount == expected
   (kobo)**, **currency == NGN**; then atomically marks the payment SUCCESS,
@@ -149,7 +150,7 @@ reserve the same room. Manual (staff) bookings follow the identical path.
 * **Offline payments** (front desk CASH/POS/BANK_TRANSFER) are recorded as
   SUCCESS `Payment` rows via `/api/admin/payments/record/` and drive the same
   confirmation logic — one monetary code path.
-* We never store card data; gateway metadata is whitelisted (id, channel, ip).
+* We never store card data; gateway metadata is whitelisted (id and channel; payer IP is not retained).
 
 ## 8. Booking state machine
 

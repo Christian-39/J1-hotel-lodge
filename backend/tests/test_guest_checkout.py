@@ -63,7 +63,6 @@ class AnonymousGuestCheckoutTests(BaseAPITestCase):
             404,
         )
 
-    def test_guest_registration_is_disabled(self):
-        response = self.client.post("/api/auth/register/", {}, format="json")
-        self.assertEqual(response.status_code, 410)
-        self.assertEqual(response.json()["code"], "GUEST_ACCOUNT_NOT_REQUIRED")
+    def test_guest_checkout_does_not_create_an_account(self):
+        self.client.post("/api/bookings/", self.payload, format="json")
+        self.assertFalse(Guest.objects.get(email="amina@example.test").user_id)

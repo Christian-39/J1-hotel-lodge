@@ -83,20 +83,20 @@ Conventions: dates `YYYY-MM-DD` · datetimes ISO 8601 · money as strings
 |---|---|---|
 | `POST /quote/` | 🔓 | room_type, check_in, check_out, rooms?, adults?, children?, offer_code? → full price breakdown + policies + hold info (nothing persisted) |
 | `GET /` | 🔑 | my bookings (paginated; `?status=`) |
-| `POST /` | 🔑 | stay fields + `guest{}`? + special_requests? → 201 booking (PENDING, inventory held, `expires_at` set). Throttled. |
+| `POST /` | 🔓 guest / 🔑 optional | stay fields + `guest{}`? + special_requests? → 201 booking (PENDING, inventory held, `expires_at` set). Throttled. |
 | `GET /<id or reference>/` | 🔑 (owner/staff) | full booking detail with `can_pay`, `can_cancel` |
 | `POST /<id or ref>/cancel/` | 🔑 (owner/staff) | reason? → cancelled booking. Enforces deadline/fee rules. |
 | `GET /<id or ref>/receipt/` | 🔑 (owner/staff) | hotel + guest + stay + payment lines receipt |
 
 Ownership is enforced **object-level** — another guest's booking reference/id
-returns `403 FORBIDDEN`.
+returns `404` to avoid confirming that the object exists.
 
 ## Payments (`/api/payments/`)
 
 | Method & path | Auth | Notes |
 |---|---|---|
-| `POST /initialize/` | 🔑 (owner/staff) | `{booking_reference}` → `{reference, authorization_url, access_code, amount, currency, public_key}`. Amount is computed server-side. |
-| `GET /verify/<reference>/` | 🔑 (owner/staff) | Server verifies directly with Paystack; **idempotent**; confirms booking on success. |
+| `POST /initialize/` | guest token or owner/staff JWT | `{booking_reference}` → `{reference, authorization_url, amount, currency}`. Amount is computed server-side; retries reuse the pending attempt. |
+| `GET /verify/<reference>/` | guest token or owner/staff JWT | Server verifies directly with Paystack; **idempotent**; confirms booking on success. |
 | `POST /webhook/` | 🔓 signed | Paystack → `x-paystack-signature` HMAC-SHA512 validated before anything else. Always 200 on accepted/ignored events. |
 
 ## Notifications (`/api/notifications/`)
@@ -152,4 +152,4 @@ retries/bursts are never dropped, while abuse floods are blunted)
 
 ## Guest checkout authentication
 
-`POST /api/auth/register/` is intentionally disabled with `410 GUEST_ACCOUNT_NOT_REQUIRED`; normal guests do not create `User` accounts. `POST /api/bookings/` is public and accepts the nested guest contact record. Its response contains a one-time raw guest access token; the booking stores only its digest. Send that token as `X-Guest-Access-Token` with booking detail, receipt, cancellation, payment initialization, and payment verification requests. Booking references alone return not found.
+`POST /api/auth/register/` remains available for optional accounts, but checkout never requires it. `POST /api/bookings/` is public and accepts the nested guest contact record. Its response contains a one-time raw guest access token; the booking stores only its digest. Send that token as `X-Guest-Access-Token` with booking detail, receipt, cancellation, payment initialization, and payment verification requests. Booking references alone return not found.

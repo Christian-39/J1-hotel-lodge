@@ -47,12 +47,17 @@ class PaymentFlowTests(BaseAPITestCase):
         self.assertEqual(response.json()["code"], "PAYMENT_NOT_CONFIGURED")
         self.assertEqual(Payment.objects.count(), 0)  # rolled back, no orphan record
 
-    @override_settings(PAYSTACK_SECRET_KEY="sk_test_mock", PAYSTACK_PUBLIC_KEY="pk_test_mock")
+    @override_settings(PAYSTACK_SECRET_KEY="sk_test_mock")
     @patch("apps.payments.services.paystack.initialize_transaction")
     def test_initialize_creates_payment_and_returns_checkout_payload(self, mock_init):
         mock_init.return_value = {
             "authorization_url": "https://checkout.paystack.com/abc",
             "access_code": "abc",
+            "reference": None,  # replaced below with the generated local reference
+        }
+        mock_init.side_effect = lambda **kw: {
+            "authorization_url": "https://checkout.paystack.com/abc",
+            "access_code": "abc", "reference": kw["reference"],
         }
         response = self.client.post("/api/payments/initialize/",
                                     {"booking_reference": self.booking_ref})
@@ -126,8 +131,8 @@ class PaymentFlowTests(BaseAPITestCase):
         payment = self._make_payment()
         mock_verify.return_value = self._paystack_payload(payment.reference, status_value="failed")
         response = self.client.get(f"/api/payments/verify/{payment.reference}/")
-        self.assertEqual(response.status_code, 400)
-        self.assertEqual(response.json()["code"], "PAYMENT_FAILED")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["data"]["transaction_status"], "failed")
         self.booking.refresh_from_db()
         self.assertEqual(self.booking.status, "PENDING")
         self.assertEqual(self.booking.amount_paid, Decimal("0.00"))
@@ -253,7 +258,7 @@ class PaymentFlowTests(BaseAPITestCase):
         self.auth(other)
         response = self.client.post("/api/payments/initialize/",
                                     {"booking_reference": self.booking_ref})
-        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.status_code, 404)
 
     # --- Offline (staff) -----------------------------------------------------
     def test_staff_records_cash_payment_and_confirms_booking(self):
@@ -280,3 +285,239 @@ class PaymentFlowTests(BaseAPITestCase):
         })
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.json()["code"], "PAYMENT_FAILED")
+
+
+class AnonymousGuestPaymentSecurityTests(BaseAPITestCase):
+    """Guest checkout/payment contract: no JWT, token-scoped, authoritative."""
+
+    def setUp(self):
+        super().setUp()
+        room_type = make_room_type("Guest Pay", price="30000.00")
+        make_room(room_type, "GP1")
+        today = hotel_today()
+        response = self.client.post("/api/bookings/", {
+            "room_type": room_type.slug,
+            "check_in": (today + timedelta(days=5)).isoformat(),
+            "check_out": (today + timedelta(days=7)).isoformat(),
+            "rooms": 1, "adults": 1, "children": 0,
+            "guest": {
+                "first_name": "Guest", "last_name": "Payer",
+                "email": "guestpayer@example.test", "phone": "08030000001",
+            },
+        }, format="json")
+        self.assertEqual(response.status_code, 201, response.json())
+        data = response.json()["data"]
+        self.booking_ref = data["booking_reference"]
+        self.token = data["guest_access_token"]
+        self.headers = {"HTTP_X_GUEST_ACCESS_TOKEN": self.token}
+
+    @staticmethod
+    def _init_response(**kwargs):
+        return {
+            "authorization_url": "https://checkout.paystack.com/guest-code",
+            "access_code": "guest-code",
+            "reference": kwargs["reference"],
+        }
+
+    @override_settings(
+        PAYSTACK_SECRET_KEY="sk_test_mock",
+        PAYMENT_CALLBACK_URL="https://www.jonehotel.com/payment-verify.html",
+    )
+    @patch("apps.payments.services.paystack.initialize_transaction")
+    def test_guest_initializes_without_jwt_and_amount_is_authoritative(self, mock_init):
+        mock_init.side_effect = self._init_response
+        response = self.client.post(
+            "/api/payments/initialize/",
+            {"booking_reference": self.booking_ref, "amount": "1.00", "currency": "USD"},
+            format="json", **self.headers,
+        )
+        self.assertEqual(response.status_code, 201, response.json())
+        payment = Payment.objects.get()
+        self.assertEqual(payment.amount, Decimal("60000.00"))
+        kwargs = mock_init.call_args.kwargs
+        self.assertEqual(kwargs["amount_kobo"], 6_000_000)
+        self.assertEqual(kwargs["callback_url"], "https://www.jonehotel.com/payment-verify.html")
+        self.assertEqual(kwargs["email"], "guestpayer@example.test")
+        self.assertNotIn("amount", kwargs["metadata"])
+        self.assertNotIn("guest_access_token", kwargs["metadata"])
+
+    @override_settings(PAYSTACK_SECRET_KEY="sk_test_mock")
+    @patch("apps.payments.services.paystack.initialize_transaction")
+    def test_duplicate_initialize_reuses_one_gateway_transaction(self, mock_init):
+        mock_init.side_effect = self._init_response
+        first = self.client.post("/api/payments/initialize/", {"booking_reference": self.booking_ref},
+                                 format="json", **self.headers)
+        second = self.client.post("/api/payments/initialize/", {"booking_reference": self.booking_ref},
+                                  format="json", **self.headers)
+        self.assertEqual(first.status_code, 201)
+        self.assertEqual(second.status_code, 201)
+        self.assertEqual(first.json()["data"]["reference"], second.json()["data"]["reference"])
+        self.assertEqual(Payment.objects.count(), 1)
+        self.assertEqual(mock_init.call_count, 1)
+        self.assertTrue(second.json()["data"]["reused"])
+
+    @override_settings(PAYSTACK_SECRET_KEY="sk_test_mock")
+    @patch("apps.payments.services.paystack.initialize_transaction")
+    def test_gateway_failure_can_retry_same_reference(self, mock_init):
+        from apps.core.exceptions import PaymentGatewayError
+        attempts = {"count": 0}
+        def flaky(**kwargs):
+            attempts["count"] += 1
+            if attempts["count"] == 1:
+                raise PaymentGatewayError()
+            return self._init_response(**kwargs)
+        mock_init.side_effect = flaky
+        failed = self.client.post("/api/payments/initialize/", {"booking_reference": self.booking_ref},
+                                  format="json", **self.headers)
+        self.assertEqual(failed.status_code, 502)
+        original = Payment.objects.get().reference
+        retried = self.client.post("/api/payments/initialize/", {"booking_reference": self.booking_ref},
+                                   format="json", **self.headers)
+        self.assertEqual(retried.status_code, 201, retried.json())
+        self.assertEqual(retried.json()["data"]["reference"], original)
+        self.assertEqual(Payment.objects.count(), 1)
+
+    @override_settings(PAYSTACK_SECRET_KEY="sk_test_mock")
+    @patch("apps.payments.services.paystack.initialize_transaction")
+    def test_wrong_guest_token_cannot_initialize(self, mock_init):
+        response = self.client.post(
+            "/api/payments/initialize/", {"booking_reference": self.booking_ref}, format="json",
+            HTTP_X_GUEST_ACCESS_TOKEN="wrong-token",
+        )
+        self.assertEqual(response.status_code, 404)
+        mock_init.assert_not_called()
+        self.assertEqual(Payment.objects.count(), 0)
+
+    def _payment(self):
+        return Payment.objects.create(
+            booking=Booking.objects.get(booking_reference=self.booking_ref),
+            reference="J1P-GUEST-SECURE-1", provider=Payment.Provider.PAYSTACK,
+            amount=Decimal("60000.00"), currency="NGN", status=Payment.Status.PENDING,
+        )
+
+    def _verification(self, payment, *, status="success", amount=6_000_000,
+                      currency="NGN", reference=None):
+        return {"status": True, "message": "ok", "data": {
+            "status": status, "reference": reference or payment.reference,
+            "amount": amount, "currency": currency, "channel": "card",
+            "gateway_response": "Successful", "id": 12345,
+            "paid_at": "2026-09-13T10:00:00Z",
+        }}
+
+    @override_settings(PAYSTACK_SECRET_KEY="sk_test_mock")
+    @patch("apps.payments.services.paystack.verify_transaction")
+    def test_guest_verification_success_and_refresh_are_idempotent(self, mock_verify):
+        payment = self._payment()
+        mock_verify.return_value = self._verification(payment)
+        url = f"/api/payments/verify/{payment.reference}/"
+        first = self.client.get(url, **self.headers)
+        second = self.client.get(url, **self.headers)
+        self.assertEqual(first.status_code, 200, first.json())
+        self.assertEqual(first.json()["data"]["transaction_status"], "success")
+        self.assertEqual(second.status_code, 200)
+        self.assertEqual(mock_verify.call_count, 1)
+        booking = Booking.objects.get(booking_reference=self.booking_ref)
+        self.assertEqual(booking.amount_paid, Decimal("60000.00"))
+        self.assertEqual(Payment.objects.filter(status=Payment.Status.SUCCESS).count(), 1)
+
+    @override_settings(PAYSTACK_SECRET_KEY="sk_test_mock")
+    @patch("apps.payments.services.paystack.verify_transaction")
+    def test_processing_status_remains_pending(self, mock_verify):
+        payment = self._payment()
+        mock_verify.return_value = self._verification(payment, status="processing")
+        response = self.client.get(f"/api/payments/verify/{payment.reference}/", **self.headers)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["data"]["transaction_status"], "processing")
+        payment.refresh_from_db()
+        self.assertEqual(payment.status, Payment.Status.PENDING)
+        self.assertEqual(payment.booking.status, Booking.Status.PENDING)
+
+    @override_settings(PAYSTACK_SECRET_KEY="sk_test_mock")
+    @patch("apps.payments.services.paystack.verify_transaction")
+    def test_reference_and_currency_mismatches_never_credit_booking(self, mock_verify):
+        payment = self._payment()
+        mock_verify.return_value = self._verification(payment, reference="DIFFERENT")
+        response = self.client.get(f"/api/payments/verify/{payment.reference}/", **self.headers)
+        self.assertEqual(response.status_code, 400)
+        mock_verify.return_value = self._verification(payment, currency="USD")
+        response = self.client.get(f"/api/payments/verify/{payment.reference}/", **self.headers)
+        self.assertEqual(response.status_code, 400)
+        payment.booking.refresh_from_db()
+        self.assertEqual(payment.booking.amount_paid, Decimal("0.00"))
+
+    def test_reference_without_guest_token_exposes_nothing(self):
+        payment = self._payment()
+        response = self.client.get(f"/api/payments/verify/{payment.reference}/")
+        self.assertEqual(response.status_code, 404)
+        self.assertNotIn("guestpayer", str(response.json()).lower())
+
+    def test_cors_preflight_allows_guest_access_header(self):
+        response = self.client.options(
+            "/api/payments/initialize/",
+            HTTP_ORIGIN="https://www.jonehotel.com",
+            HTTP_ACCESS_CONTROL_REQUEST_METHOD="POST",
+            HTTP_ACCESS_CONTROL_REQUEST_HEADERS="content-type,x-guest-access-token",
+        )
+        allowed = response.get("Access-Control-Allow-Headers", "").lower()
+        self.assertIn("x-guest-access-token", allowed)
+
+    @override_settings(PAYSTACK_SECRET_KEY="sk_test_mock")
+    @patch("apps.payments.services.paystack.verify_transaction")
+    def test_success_webhook_replay_has_no_duplicate_side_effects(self, mock_verify):
+        staff = make_staff("webhook-replay@staff.test", role=User.Role.RECEPTIONIST)
+        payment = self._payment()
+        mock_verify.return_value = self._verification(payment)
+        payload = {"event": "charge.success", "data": {"reference": payment.reference}}
+        body = json.dumps(payload).encode()
+        signature = hmac.new(b"sk_test_mock", msg=body, digestmod=hashlib.sha512).hexdigest()
+        def send():
+            return self.client.post(
+                "/api/payments/webhook/", data=body, content_type="application/json",
+                HTTP_X_PAYSTACK_SIGNATURE=signature,
+            )
+        self.assertEqual(send().status_code, 200)
+        count_after_first = Notification.objects.filter(recipient=staff).count()
+        self.assertEqual(send().status_code, 200)
+        self.assertEqual(Notification.objects.filter(recipient=staff).count(), count_after_first)
+        self.assertEqual(mock_verify.call_count, 1)
+
+
+class PaystackWrapperContractTests(BaseAPITestCase):
+    @override_settings(PAYSTACK_SECRET_KEY="sk_test_secret")
+    @patch("apps.payments.services.paystack.requests.post")
+    def test_initialize_uses_bearer_auth_and_validates_required_response(self, mock_post):
+        from apps.payments.services import paystack
+        response = mock_post.return_value
+        response.status_code = 200
+        response.json.return_value = {
+            "status": True,
+            "data": {
+                "authorization_url": "https://checkout.paystack.com/code",
+                "access_code": "code", "reference": "J1P-CONTRACT-1",
+            },
+        }
+        data = paystack.initialize_transaction(
+            email="payer@example.test", amount_kobo=6_000_000,
+            reference="J1P-CONTRACT-1",
+            callback_url="https://www.jonehotel.com/payment-verify.html",
+            metadata={"booking_reference": "J1-TEST"},
+        )
+        self.assertEqual(data["reference"], "J1P-CONTRACT-1")
+        kwargs = mock_post.call_args.kwargs
+        self.assertEqual(kwargs["headers"]["Authorization"], "Bearer sk_test_secret")
+        self.assertEqual(kwargs["json"]["amount"], 6_000_000)
+        self.assertEqual(kwargs["json"]["currency"], "NGN")
+        self.assertNotIn("sk_test_secret", str(kwargs["json"]))
+
+    @override_settings(PAYSTACK_SECRET_KEY="sk_test_secret")
+    @patch("apps.payments.services.paystack.requests.post")
+    def test_initialize_rejects_http_200_without_complete_success_data(self, mock_post):
+        from apps.core.exceptions import PaymentGatewayError
+        from apps.payments.services import paystack
+        mock_post.return_value.status_code = 200
+        mock_post.return_value.json.return_value = {"status": True, "data": {}}
+        with self.assertRaises(PaymentGatewayError):
+            paystack.initialize_transaction(
+                email="payer@example.test", amount_kobo=100,
+                reference="J1P-BAD", callback_url="https://example.test/verify",
+            )

@@ -339,7 +339,7 @@ Rows:
 
 ## 14. Booking detail — `GET /api/bookings/{id or reference}/` 🔑
 
-Same payload as §12. 404 if unknown; 403 if it belongs to someone else.
+Same payload as §12. Unknown or unauthorized lookups both return 404.
 
 ## 15. Cancel — `POST /api/bookings/{id or reference}/cancel/` 🔑
 
@@ -348,33 +348,33 @@ Body `{ "reason": "optional" }` → 200 with the updated booking (§12 shape) �
 
 ## 16. Payments
 
-**Initialize** — `POST /api/payments/initialize/` 🔑
+**Initialize** — `POST /api/payments/initialize/` (guest token or owner/staff JWT)
 `{ "booking_reference": "J1-…" }` → 201:
 
 ```jsonc
 "data": { "reference": "J1P-20261012-9A1B2C3D4E",
   "booking_reference": "J1-…",
   "authorization_url": "https://checkout.paystack.com/…",   // redirect the guest here
-  "access_code": "…", "amount": "67500.00", "currency": "NGN",
-  "public_key": "pk_live_…" | null }
+  "amount": "67500.00", "currency": "NGN", "reused": false }
 ```
 
-Then either redirect to `authorization_url` **or** use Paystack Inline/Popup
-with `public_key` + `reference` + `amount` (server-verified anyway).
+Redirect to `authorization_url`. Paystack secret/public credentials are not
+needed by this hosted-checkout frontend.
 
-**Verify** — `GET /api/payments/verify/{reference}/` 🔑 (call when Paystack
+**Verify** — `GET /api/payments/verify/{reference}/` (guest token or owner/staff JWT; call when Paystack
 redirects back to `PAYMENT_CALLBACK_URL`; safe to call repeatedly):
 
 ```jsonc
 "data": { "payment_reference": "J1P-…", "booking_reference": "J1-…",
-  "booking_status": "CONFIRMED", "payment_status": "PAID",
+  "transaction_status": "success", "booking_status": "CONFIRMED", "payment_status": "PAID",
   "amount_paid_this_transaction": "67500.00",
   "booking_amount_paid": "67500.00", "booking_amount_due": "0.00",
   "booking_total": "67500.00", "currency": "NGN", "paid_at": "…" }
 ```
 
-Failed payment → 400 `PAYMENT_FAILED` with gateway message. **Never trust the
-popup's own success hint; only this endpoint (or the webhook) confirms.**
+Terminal failures return `transaction_status` failed/abandoned/reversed;
+processing states remain pending. **Never trust the browser redirect; only this
+endpoint (or the signed webhook) confirms.**
 
 ## 17. Receipt — `GET /api/bookings/{id or reference}/receipt/` 🔑
 

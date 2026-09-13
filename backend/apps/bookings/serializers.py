@@ -160,6 +160,20 @@ class QuoteRequestSerializer(StayDetailsSerializer):
 class BookingCreateSerializer(StayDetailsSerializer):
     guest = GuestWriteSerializer(required=False)
     special_requests = serializers.CharField(required=False, allow_blank=True, default="")
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        request = self.context.get("request")
+        authenticated = bool(request and request.user and request.user.is_authenticated)
+        if not authenticated:
+            guest = attrs.get("guest") or {}
+            errors = {}
+            for field in ("first_name", "last_name", "email", "phone"):
+                if not str(guest.get(field) or "").strip():
+                    errors[field] = ["This field is required for guest checkout."]
+            if errors:
+                raise serializers.ValidationError({"guest": errors})
+        return attrs
     # "Book this room" — the id of one EXACT physical room the guest picked.
     # Advisory only: the server re-checks availability and may substitute an
     # equivalent room (reported back as `room_substitution`).

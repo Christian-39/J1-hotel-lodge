@@ -72,8 +72,6 @@ class JOneTokenObtainPairSerializer(TokenObtainPairSerializer):
 
     def validate(self, attrs):
         data = super().validate(attrs)
-        if not self.user.is_staff_member:
-            raise serializers.ValidationError("Staff sign-in is for hotel staff accounts only.")
         data["user"] = UserSerializer(self.user, context=self.context).data
         return data
 

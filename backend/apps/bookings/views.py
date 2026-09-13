@@ -164,7 +164,7 @@ class MyBookingsView(generics.ListCreateAPIView):
         return super().get_throttles()
 
     def create(self, request, *args, **kwargs):
-        serializer = BookingCreateSerializer(data=request.data)
+        serializer = BookingCreateSerializer(data=request.data, context={"request": request})
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
         booking = booking_service.create_booking(
@@ -263,4 +263,6 @@ class BookingReceiptView(_OwnedBookingMixin, APIView):
 
     def get(self, request, lookup):
         booking = self.get_booking()
+        # ReceiptSerializer includes only SUCCESS payments. Before verification
+        # this endpoint is an explicitly UNPAID booking folio, never a paid receipt.
         return success_response(ReceiptSerializer().to_representation(booking))

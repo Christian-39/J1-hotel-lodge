@@ -93,7 +93,7 @@ JONE.ui.initChrome();
     return;
   }
 
-  var guestToken = sessionStorage.getItem("jone.guest_access_token") || params.get("token") || "";
+  var guestToken = sessionStorage.getItem("jone.payment_access." + reference) || sessionStorage.getItem("jone.guest_access_token") || params.get("token") || "";
   if (guestToken) sessionStorage.setItem("jone.guest_access_token", guestToken);
   function guestOpts() { return guestToken ? window.API.guestAccessOpts(guestToken) : {}; }
 
@@ -103,7 +103,8 @@ JONE.ui.initChrome();
       var res = await window.API.verifyPayment(reference, guestOpts());
       var d = (res && res.data) || {};
       var paymentStatus = String(d.payment_status || "").toUpperCase();
-      if (paymentStatus === "PAID" || paymentStatus === "PARTIALLY_PAID") {
+      var transactionStatus = String(d.transaction_status || "").toLowerCase();
+      if (transactionStatus === "success") {
         // Backend confirmed — only now show success.
         setTxt("s-payref", d.payment_reference || reference);
         setTxt("s-bookref", d.booking_reference);
@@ -112,6 +113,9 @@ JONE.ui.initChrome();
         var line = document.getElementById("success-line");
         if (line) line.textContent = (d.booking_status === "CONFIRMED") ? "Your booking is confirmed. We look forward to hosting you." : "Payment received. Your booking is being confirmed.";
         var view = document.getElementById("s-view-booking");
+        if (d.booking_reference && guestToken) {
+          sessionStorage.setItem("jone.guest_access_token." + d.booking_reference, guestToken);
+        }
         if (view && d.booking_reference) view.href = "booking-confirmation.html?ref=" + encodeURIComponent(d.booking_reference);
         show(elSuccess);
         // Backend-confirmed — the ONLY place a success toast is allowed.
@@ -120,7 +124,7 @@ JONE.ui.initChrome();
             title: "Payment successful", assertive: true, duration: 6000
           });
         }
-      } else if (paymentStatus === "FAILED") {
+      } else if (["failed", "abandoned", "reversed"].indexOf(transactionStatus) !== -1) {
         setTxt("f-ref", reference);
         var t = document.getElementById("f-title"); if (t) t.textContent = "This payment failed";
         var l = document.getElementById("f-line"); if (l) l.textContent = "The transaction was not completed. No amount was debited — you can safely try again.";

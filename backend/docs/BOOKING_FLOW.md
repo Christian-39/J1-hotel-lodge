@@ -44,7 +44,8 @@ CONFIRMED ──── staff terminal ───► CHECKED_IN ───► CHECK
 | Booking hold expired before paying | 409 | `BOOKING_EXPIRED` | payment initialize |
 | Already fully paid | 409 | `PAYMENT_ALREADY_COMPLETED` | payment initialize |
 | Paystack not configured | 503 | `PAYMENT_NOT_CONFIGURED` | payment initialize |
-| Paystack says "failed"/declined | 400 | `PAYMENT_FAILED` | verify |
+| Paystack says failed/abandoned/reversed | 200 terminal state | `transaction_status` | verify |
+| Paystack says pending/ongoing/processing/queued | 200 pending state | `transaction_status` | verify |
 | Amount/currency mismatch (fraud guard) | 400 | `PAYMENT_AMOUNT_MISMATCH` | verify, webhook |
 | Gateway unreachable | 502 | `PAYMENT_GATEWAY_ERROR` | initialize, verify |
 | Too late to cancel (deadline passed) | 400 | `CANCELLATION_NOT_ALLOWED` | guest cancel |

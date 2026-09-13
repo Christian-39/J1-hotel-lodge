@@ -4,7 +4,8 @@ import logging
 
 from drf_spectacular.utils import extend_schema
 from rest_framework import status
-from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.exceptions import NotFound
+from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
@@ -13,8 +14,6 @@ from django.utils.decorators import method_decorator
 
 from apps.bookings.models import Booking
 from apps.bookings.services import booking_service
-from apps.core.exceptions import PaymentNotConfiguredError
-from apps.core.permissions import IsOwnerOrStaff
 from apps.core.responses import success_response
 from apps.core.serializers import EmptySerializer
 
@@ -38,7 +37,6 @@ class InitializePaymentView(APIView):
             serializer.validated_data["booking_reference"]
         )
         if booking is None:
-            from rest_framework.exceptions import NotFound
             raise NotFound("Booking not found.")
         if not (request.user.is_authenticated and (getattr(request.user, "is_staff_member", False) or booking.guest.user_id == request.user.id)):
             if not booking.guest_token_matches(request.headers.get("X-Guest-Access-Token", "")):
@@ -62,13 +60,10 @@ class VerifyPaymentView(APIView):
 
         payment = Payment.objects.select_related("booking").filter(reference=reference).first()
         if payment is None:
-            from rest_framework.exceptions import NotFound
-
             raise NotFound("Payment not found.")
         booking = payment.booking
         if not (request.user.is_authenticated and (getattr(request.user, "is_staff_member", False) or booking.guest.user_id == request.user.id)):
             if not booking.guest_token_matches(request.headers.get("X-Guest-Access-Token", "")):
-                from rest_framework.exceptions import NotFound
                 raise NotFound("Payment not found.")
         result = payment_service.process_verification(reference=reference, request=request)
         return success_response(result, message="Payment verified.")

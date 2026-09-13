@@ -39,16 +39,22 @@ def _tokens_for(user):
     return {"access": str(refresh.access_token), "refresh": str(refresh)}
 
 
-@extend_schema(tags=["Auth"], summary="Guest registration disabled; guest checkout is account-free")
-class RegisterView(APIView):
+@extend_schema(tags=["Auth"], summary="Register an optional guest account")
+class RegisterView(generics.CreateAPIView):
     permission_classes = [AllowAny]
+    serializer_class = RegisterSerializer
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "register"
 
-    def post(self, request):
-        return Response({
-            "success": False,
-            "code": "GUEST_ACCOUNT_NOT_REQUIRED",
-            "message": "Hotel guests do not need an account. Please use guest checkout.",
-        }, status=status.HTTP_410_GONE)
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user = serializer.save()
+        return success_response(
+            {"user": UserSerializer(user, context={"request": request}).data,
+             "tokens": _tokens_for(user)},
+            message="Account created successfully.", status=status.HTTP_201_CREATED,
+        )
 
 
 @extend_schema(tags=["Auth"], summary="Log in with email and password")

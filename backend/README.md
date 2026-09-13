@@ -136,7 +136,7 @@ Production refuses to boot on SQLite (guard in `production.py`).
 ## 7. Paystack
 
 1. Get test/live keys: <https://dashboard.paystack.com/#/settings/developers>
-2. Set `PAYSTACK_SECRET_KEY`, `PAYSTACK_PUBLIC_KEY` (secret stays server-side only).
+2. Set `PAYSTACK_SECRET_KEY` (server-side only).
 3. Webhook URL (Paystack dashboard): `https://<your-api-host>/api/payments/webhook/`
    — the endpoint validates the `x-paystack-signature` HMAC before processing.
 4. `PAYMENT_CALLBACK_URL` should point at your frontend's verify page

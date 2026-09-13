@@ -247,8 +247,12 @@
   // so the folio survives the payment redirect.
   var booking = null;
   var quote = null;
-  var guestToken = sessionStorage.getItem("jone.guest_access_token") || p.get("token") || "";
-  if (guestToken) sessionStorage.setItem("jone.guest_access_token", guestToken);
+  function bookingTokenKey(ref) { return "jone.guest_access_token." + String(ref || ""); }
+  var guestToken = (bookingRef && sessionStorage.getItem(bookingTokenKey(bookingRef))) || sessionStorage.getItem("jone.guest_access_token") || p.get("token") || "";
+  if (guestToken) {
+    sessionStorage.setItem("jone.guest_access_token", guestToken); // legacy fallback
+    if (bookingRef) sessionStorage.setItem(bookingTokenKey(bookingRef), guestToken);
+  }
   function guestOpts() { return window.API.guestAccessOpts(guestToken); }
 
   /* ------------------------------ Stepper -------------------------------- */
@@ -430,12 +434,18 @@
     var payRes = await window.API.initPayment(booking.booking_reference, guestOpts());
     var pay = payRes.data || {};
     var authUrl = pay.authorization_url || pay.payment_url;
-    if (authUrl) {
-      try { JONE.storage.set(S + ".confirmed", booking); } catch (_) {}
-      location.href = authUrl;
-      return true;
+    if (!authUrl || !pay.reference) {
+      throw new Error("Payment could not be started. Please try again.");
     }
-    return false;
+    try { JONE.storage.set(S + ".confirmed", booking); } catch (_) {}
+    // Scope guest authorization to both records. This survives the same-tab
+    // Paystack redirect without putting the private token in a URL.
+    if (guestToken) {
+      sessionStorage.setItem(bookingTokenKey(booking.booking_reference), guestToken);
+      sessionStorage.setItem("jone.payment_access." + pay.reference, guestToken);
+    }
+    location.href = authUrl;
+    return true;
   }
 
   async function pay() {
@@ -445,7 +455,7 @@
     if (!JONE.guardSubmit(btn)) return;
     btn.disabled = true;
     var prevLabel = btn.innerHTML;
-    btn.innerHTML = '<span class="btn-spinner"></span> Processing\u2026';
+    btn.innerHTML = '<span class="btn-spinner"></span> Initializing payment\u2026';
     show("payment-loading");
     // Restore the button if we DON'T navigate away (only failure paths reach
     // the catch below, which releases the guard).
@@ -468,25 +478,27 @@
         if (criteria.room_id) payload.room_id = Number(criteria.room_id);
         var res = await window.API.createBooking(payload);
         booking = res.data || {};
-        if (booking.guest_access_token) { guestToken = booking.guest_access_token; sessionStorage.setItem("jone.guest_access_token", guestToken); }
+        if (booking.guest_access_token) {
+          guestToken = booking.guest_access_token;
+          sessionStorage.setItem("jone.guest_access_token", guestToken);
+          sessionStorage.setItem(bookingTokenKey(booking.booking_reference), guestToken);
+        }
         bookingRef = booking.booking_reference || bookingRef;
         fillPaymentSummary();
         showSubstitutionNotice(booking);
       }
       // Step 2 — nothing due? The booking itself is the confirmation.
       if (Number(booking.amount_due || 0) <= 0 || booking.can_pay === false) {
-        renderSuccessView(successOpts(booking));
-        return;
+        var completed = successOpts(booking);
+        if (completed.paid || completed.confirmed) {
+          renderSuccessView(completed);
+          return;
+        }
+        throw new Error("This booking cannot accept payment in its current state. Please contact the hotel.");
       }
       // Step 3 — initialize payment and hand off to the provider.
       var redirected = await redirectToPayment();
-      if (!redirected) {
-        // Provider not configured / declined init: the booking still exists
-        // but is NOT paid — show the saved-booking view WITHOUT a success toast.
-        renderSuccessView();
-        var note = document.querySelector("#success-screen .confirm-hero p");
-        if (note) note.textContent = "Your booking " + (booking.booking_reference || "") + " is saved. Online payment isn't available right now — the hotel will contact you to complete payment.";
-      }
+      if (!redirected) throw new Error("Payment could not be started. Please try again.");
     } catch (err) {
       JONE.releaseGuard(btn);
       btn.disabled = false;
@@ -496,7 +508,7 @@
       document.querySelector("[data-fail-ref]").textContent = "Booking ref: " + (bookingRef || "—");
       var p2 = document.querySelector("#failure-screen .confirm-hero p");
       var msg;
-      if (err && err.status === 409) {
+      if (err && err.status === 409 && err.code === "ROOM_UNAVAILABLE") {
         msg = "The room you selected is no longer available for those dates and no equivalent room could be held automatically. Please choose another room or different dates.";
       } else if (err && err.status === 0) {
         msg = "We can't reach the booking service right now. Please try again in a moment, or contact the hotel.";
@@ -540,10 +552,19 @@
           stepper.update(5);
           setStepperText(5);
         } else {
-          // Backend-authoritative: only toast when the booking is truly
-          // paid/confirmed (e.g. returning after a verified payment).
-          renderSuccessView(successOpts(booking));
-          setStepperText(6);
+          // Never turn EXPIRED/CANCELLED/FAILED into a success screen merely
+          // because can_pay is false.
+          var completed = successOpts(booking);
+          if (completed.paid || completed.confirmed) {
+            renderSuccessView(completed);
+            setStepperText(6);
+          } else {
+            show("failure-screen");
+            stepper.update(5);
+            document.querySelector("[data-fail-ref]").textContent = "Booking ref: " + bookingRef;
+            var stateLine = document.querySelector("#failure-screen .confirm-hero p");
+            if (stateLine) stateLine.textContent = "This booking is " + String(booking.status || "not payable").toLowerCase().replace(/_/g, " ") + ". Payment has not been confirmed.";
+          }
         }
       } catch (err) {
         show("failure-screen");

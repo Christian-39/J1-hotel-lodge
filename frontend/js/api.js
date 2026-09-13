@@ -294,13 +294,13 @@ const API = (() => {
   function submitEnquiry(payload, opts = {}) { return post("/api/enquiries/", payload, { auth: false, ...opts }); }
 
   /* ------------------------ BOOKING FLOW (guest) ---------------------------
-     Quote & availability are public. Creating, viewing, paying for and
-     cancelling a booking REQUIRES AUTHENTICATION (verified: IsAuthenticated). */
+     Quote and creation are public. Subsequent booking/payment operations use
+     either staff/owner JWT or the booking-scoped guest access token. */
 
   /* Quote — authoritative price preview. Nothing is persisted. */
   function quoteBooking(payload, opts = {}) { return post("/api/bookings/quote/", payload, { auth: false, ...opts }); }
 
-  /* Create booking (auth required). The backend validates availability and
+  /* Create booking (guest checkout supported). The backend validates availability and
      computes every amount; the response is the authoritative booking detail. */
   function createBooking(payload, opts = {}) { return post("/api/bookings/", payload, { auth: false, ...opts }); }
 
