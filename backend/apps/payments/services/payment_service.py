@@ -9,6 +9,7 @@ Invariants guarded here:
 import hashlib
 import hmac
 import logging
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from decimal import Decimal
 
 from django.conf import settings
@@ -81,11 +82,22 @@ def initialize_booking_payment(*, booking: Booking, user, request=None):
         status=Payment.Status.PENDING,
         metadata={"booking_reference": booking.booking_reference},
     )
+    # Paystack opens the callback in the browser after payment. Preserve the
+    # guest bearer token across that redirect so a guest does not need a JWT.
+    # The token is never logged or persisted in the Payment record.
+    callback_url = settings.PAYMENT_CALLBACK_URL
+    guest_token = request.headers.get("X-Guest-Access-Token", "") if request else ""
+    if guest_token and callback_url:
+        parts = urlsplit(callback_url)
+        query = dict(parse_qsl(parts.query, keep_blank_values=True))
+        query["token"] = guest_token
+        callback_url = urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(query), parts.fragment))
+
     paystack_data = paystack.initialize_transaction(
         email=booking.guest.email,
         amount_kobo=int(charge * KOB0_PER_NAIRA),
         reference=reference,
-        callback_url=settings.PAYMENT_CALLBACK_URL,
+        callback_url=callback_url,
         metadata={
             "booking_reference": booking.booking_reference,
             "payment_id": payment.pk,
