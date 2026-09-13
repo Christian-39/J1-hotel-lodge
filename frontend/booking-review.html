@@ -74,7 +74,7 @@
             </div>
             <div class="field">
               <label class="field-label" for="g-phone">Phone</label>
-              <input class="input" id="g-phone" name="phone" type="tel" required autocomplete="tel" inputmode="tel" pattern="[0-9+()\-\s]{7,}">
+              <input class="input" id="g-phone" name="phone" type="tel" required autocomplete="tel" inputmode="tel" pattern="[0-9+\(\)\s\-]{7,}">
               <div class="field-error">Please enter a valid phone number.</div>
             </div>
             <div class="field">
@@ -291,8 +291,12 @@
     adults: p.get("adults") || savedDraft.adults || 1,
     children: p.get("children") || savedDraft.children || 0,
     room: p.get("room") || savedDraft.room_type,
-    room_name: p.get("room_name") || savedDraft.room_name
+    room_name: p.get("room_name") || savedDraft.room_name,
+    // Exact physical room carried over from "Book this room — Room 203".
+    room_id: p.get("room_id") || savedDraft.room_id || "",
+    room_no: p.get("room_no") || savedDraft.room_number || ""
   };
+  function roomLine(){ return (data.room_name || data.room) + (data.room_no ? " \u00B7 Room " + data.room_no : ""); }
 
   if (!data.check_in || !data.room) {
     // Incomplete entry — restart the flow rather than inventing details.
@@ -359,10 +363,10 @@
   setColl("[data-r-ci]", cd(data.check_in) || "--");
   setColl("[data-r-co]", cd(data.check_out) || "--");
   setColl("[data-r-guests]", guestsLabel());
-  setColl("[data-r-room]", data.room_name || data.room);
+  setColl("[data-r-room]", roomLine());
   setColl("[data-sc-ci]", cd(data.check_in));
   setColl("[data-sc-co]", cd(data.check_out));
-  setColl("[data-sc-room]", data.room_name || data.room);
+  setColl("[data-sc-room]", roomLine());
   setColl("[data-sc-guests]", guestsLabel());
 
   /* -------------------- Mobile collapsible summary ----------------------- */
@@ -447,6 +451,7 @@
     draft.check_in = data.check_in; draft.check_out = data.check_out;
     draft.adults = Number(data.adults) || 1; draft.children = Number(data.children) || 0;
     draft.room_type = data.room; draft.room_name = data.room_name;
+    draft.room_id = data.room_id || ""; draft.room_number = data.room_no || "";
     draft.guest = {
       first_name: document.getElementById("g-first").value.trim(),
       last_name: document.getElementById("g-last").value.trim(),
@@ -509,7 +514,10 @@
           adults: data.adults, children: data.children
         });
         if (criteria.offer) q.set("offer", criteria.offer);
-        if (what === "room") { q.set("room", data.room); q.set("room_name", data.room_name || ""); q.set("step", "room"); }
+        if (what === "room") {
+          q.set("room", data.room); q.set("room_name", data.room_name || ""); q.set("step", "room");
+          if (data.room_id) { q.set("room_id", data.room_id); if (data.room_no) q.set("room_no", data.room_no); }
+        }
         location.href = "booking.html?" + q.toString();
       }
     });
@@ -524,7 +532,8 @@
       step: "payment",
       check_in: data.check_in, check_out: data.check_out,
       adults: data.adults, children: data.children,
-      room: data.room, room_name: data.room_name || ""
+      room: data.room, room_name: data.room_name || "",
+      room_id: data.room_id || "", room_no: data.room_no || ""
     }).toString();
     location.href = "booking-confirmation.html?" + q;
   });

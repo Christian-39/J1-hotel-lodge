@@ -272,6 +272,14 @@ const API = (() => {
   function getRooms(params, opts = {}) { return get("/api/rooms/", { params, auth: false, ...opts }); }
   function getRoom(slugOrId, opts = {}) { return get(`/api/rooms/${encodeURIComponent(slugOrId)}/`, { auth: false, ...opts }); }
 
+  /* The physical rooms behind one room type — what "Book this room — Room 203"
+     needs. Verified: GET /api/rooms/{slug}/rooms/?check_in=&check_out=
+     Returns [{ id, room_number, floor, available|null }]. Dates are optional:
+     without them `available` is null and the room is simply listed. */
+  function getRoomTypeRooms(slugOrId, params, opts = {}) {
+    return get(`/api/rooms/${encodeURIComponent(slugOrId)}/rooms/`, { params, auth: false, ...opts });
+  }
+
   /* Availability — the AUTHORITATIVE search (backend computes everything). */
   function checkAvailability(params, opts = {}) {
     return get("/api/rooms/availability/", { params, auth: false, ...opts });
@@ -341,6 +349,11 @@ const API = (() => {
   function getNotifications(params, opts = {}) { return get("/api/notifications/", { params, ...opts }); }
   function getUnreadCount(opts = {}) { return get("/api/notifications/unread-count/", opts); }
   function markNotificationRead(id, opts = {}) { return post(`/api/notifications/${encodeURIComponent(id)}/read/`, {}, opts); }
+  /* Full notification for the details page. Verified:
+     GET /api/notifications/{id}/ — the backend scopes the queryset to the
+     signed-in recipient, so another user's id is a 404. Opening the detail
+     marks it read and returns the fresh unread_count. */
+  function getNotification(id, opts = {}) { return get(`/api/notifications/${encodeURIComponent(id)}/`, opts); }
   function markAllNotificationsRead(opts = {}) { return post("/api/notifications/read-all/", {}, opts); }
 
   /* ======================================================================
@@ -406,11 +419,47 @@ const API = (() => {
   const noShowBooking    = (lookup, opts = {}) => bookingAction("no-show", lookup, {}, opts);
   const assignRoom       = (lookup, roomId, opts = {}) => bookingAction("assign-room", lookup, { room: roomId }, opts);
 
-  /* Record an offline payment (CASH / POS / BANK_TRANSFER). */
+  /* Record an offline payment (CASH / POS / BANK_TRANSFER).
+     The response carries the payment plus the authoritative booking snapshot
+     (total / paid / due / status) so the payment modal never needs a second
+     request and never has to reload the whole bookings table. */
   function recordPayment(payload, opts = {}) {
     const base = resourceEp("payments");
     if (!base) throw notConfigured("payments");
     return post(base + "/record/", payload, opts);
+  }
+
+  /* --- Operational search ------------------------------------------------
+     Every search below runs SERVER-SIDE: the backend matches booking
+     reference, guest name/email/phone, physical room number, room type and
+     payment/receipt reference (partial + case-insensitive). The frontend
+     never downloads a full list to filter it locally. */
+  function searchBookings(params, opts = {}) { return list("bookings", params, opts); }
+
+  /* Checkout desk search: only bookings that can actually be checked out
+     (in-house or confirmed) and only `page_size` rows back. */
+  function searchCheckout(term, opts = {}) {
+    return list("bookings", {
+      status: "CHECKED_IN,CONFIRMED",
+      search: term,
+      page_size: 25,
+      ...(opts.params || {}),
+    }, opts);
+  }
+
+  /* Staff profile card. Verified: GET /api/admin/users/staff/{id}/ — admins
+     and managers may open any card, receptionists only their own. */
+  function getStaffProfile(id, opts = {}) {
+    const base = resourceEp("users");
+    if (!base) throw notConfigured("users");
+    return get(`${base}/staff/${encodeURIComponent(id)}/`, opts);
+  }
+
+  /* Email the receipt for a booking to the guest (staff action). */
+  function sendReceipt(lookup, opts = {}) {
+    const base = BOOKINGS_EP();
+    if (!base) throw notConfigured("bookings");
+    return post(`${base}/${encodeURIComponent(lookup)}/send-receipt/`, {}, opts);
   }
 
   return {
@@ -425,11 +474,12 @@ const API = (() => {
     // Auth
     login, register, logout, me, refreshTokenCall,
     // Notifications
-    getNotifications, getUnreadCount, markNotificationRead, markAllNotificationsRead,
+    getNotifications, getUnreadCount, markNotificationRead, markAllNotificationsRead, getNotification,
     // Staff resources + actions
     list, getOne, create, update, remove,
     confirmBooking, staffCancelBooking, checkInBooking, checkOutBooking,
-    noShowBooking, assignRoom, recordPayment,
+    noShowBooking, assignRoom, recordPayment, searchBookings, searchCheckout,
+    getStaffProfile, sendReceipt, getRoomTypeRooms,
     // Helpers
     setTokenProvider, setRefreshProvider, APIError, BASE,
     normalizeList, unwrap, safe

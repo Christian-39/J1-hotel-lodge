@@ -175,9 +175,16 @@ class MyBookingsView(generics.ListCreateAPIView):
             user=request.user,
             guest_data=data.get("guest") or None,
             request=request,
+            room_id=data.get("room_id"),
         )
+        payload = BookingDetailSerializer(booking, context={"request": request}).data
+        substitution = getattr(booking, "room_substitution", None)
+        if substitution:
+            # Never switch rooms silently — the guest is told on the
+            # confirmation screen (and the receipt shows the assigned room).
+            payload["room_substitution"] = substitution
         return success_response(
-            BookingDetailSerializer(booking, context={"request": request}).data,
+            payload,
             message="Booking created. Complete payment to confirm your reservation.",
             status=status.HTTP_201_CREATED,
         )

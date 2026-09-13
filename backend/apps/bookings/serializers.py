@@ -160,6 +160,19 @@ class QuoteRequestSerializer(StayDetailsSerializer):
 class BookingCreateSerializer(StayDetailsSerializer):
     guest = GuestWriteSerializer(required=False)
     special_requests = serializers.CharField(required=False, allow_blank=True, default="")
+    # "Book this room" — the id of one EXACT physical room the guest picked.
+    # Advisory only: the server re-checks availability and may substitute an
+    # equivalent room (reported back as `room_substitution`).
+    room_id = serializers.IntegerField(required=False, allow_null=True, min_value=1)
+
+    def validate_room_id(self, value):
+        if value in (None, ""):
+            return None
+        from apps.rooms.models import Room
+
+        if not Room.objects.filter(pk=value, is_active=True).exists():
+            raise serializers.ValidationError("That room is not available for booking.")
+        return value
 
 
 class CancelBookingSerializer(serializers.Serializer):
@@ -170,33 +183,89 @@ class CancelBookingSerializer(serializers.Serializer):
 # Receipts / confirmation
 # ---------------------------------------------------------------------------
 class ReceiptSerializer(serializers.Serializer):
-    """Receipt data for a paid booking (owner/staff)."""
+    """Receipt data for a paid booking (owner/staff).
+
+    Shapes the professional digital transaction receipt rendered by
+    ``dashboard/receipt-details.html`` and the guest confirmation page. All
+    fields previously returned are still present — every addition below is
+    additive so existing consumers keep working.
+    """
+
+    PAYMENT_STATUS_LABELS = {
+        "UNPAID": "Awaiting payment",
+        "PARTIALLY_PAID": "Partially paid",
+        "PAID": "Paid in full",
+        "PARTIALLY_REFUNDED": "Partially refunded",
+        "REFUNDED": "Refunded",
+        "FAILED": "Payment failed",
+    }
+    BOOKING_STATUS_LABELS = {
+        "PENDING": "Pending",
+        "CONFIRMED": "Confirmed",
+        "CHECKED_IN": "Checked in",
+        "CHECKED_OUT": "Checked out",
+        "CANCELLED": "Cancelled",
+        "EXPIRED": "Expired",
+        "NO_SHOW": "No show",
+    }
 
     def to_representation(self, booking: Booking):
+        from decimal import Decimal
+
+        from django.utils import timezone
+
         from apps.hotel.models import HotelSettings
 
         hotel = HotelSettings.get_settings()
-        payments = booking.payments.filter(status="SUCCESS").order_by("paid_at")
+        payments = list(booking.payments.filter(status="SUCCESS").order_by("paid_at", "id"))
+        room_numbers = [
+            a.room.room_number
+            for a in booking.room_assignments.select_related("room").order_by("room__room_number")
+        ]
+        latest = payments[-1] if payments else None
+        previous_total = sum(
+            (Decimal(p.amount) for p in payments[:-1]), Decimal("0.00")
+        ) if len(payments) > 1 else Decimal("0.00")
+        issued_at = latest.paid_at if latest and latest.paid_at else timezone.now()
+
         return {
             "hotel": {
                 "name": hotel.hotel_name,
                 "address": hotel.address,
+                "city": getattr(hotel, "city", "") or "",
+                "state": getattr(hotel, "state", "") or "",
+                "country": getattr(hotel, "country", "") or "",
                 "phone": hotel.phone,
                 "email": hotel.email,
             },
             "booking_reference": booking.booking_reference,
             "booking_status": booking.status,
+            "booking_status_label": self.BOOKING_STATUS_LABELS.get(
+                booking.status, booking.get_status_display()
+            ),
             "payment_status": booking.payment_status,
+            "payment_status_label": self.PAYMENT_STATUS_LABELS.get(
+                booking.payment_status, booking.get_payment_status_display()
+            ),
             "guest": {
                 "name": booking.guest.full_name,
                 "email": booking.guest.email,
                 "phone": booking.guest.phone,
+                "address": booking.guest.address,
+                "city": booking.guest.city,
+                "state": booking.guest.state,
+                "country": booking.guest.country,
             },
             "room_type": booking.room_type.name,
+            "room_numbers": room_numbers,
             "rooms": booking.number_of_rooms,
             "check_in": booking.check_in.isoformat(),
             "check_out": booking.check_out.isoformat(),
             "nights": booking.nights,
+            "number_of_guests": booking.number_of_guests,
+            "adults": booking.adults,
+            "children": booking.children,
+            "price_per_night": money(booking.price_per_night),
             "subtotal": money(booking.subtotal),
             "discount": money(booking.discount_amount),
             "tax": money(booking.tax_amount),
@@ -205,14 +274,35 @@ class ReceiptSerializer(serializers.Serializer):
             "amount_paid": money(booking.amount_paid),
             "amount_due": money(booking.amount_due),
             "currency": booking.currency,
+            "issued_at": issued_at.isoformat(),
+            "receipt_reference": latest.reference if latest else booking.booking_reference,
+            "latest_payment": (
+                {
+                    "reference": latest.reference,
+                    "amount": money(latest.amount),
+                    "provider": latest.provider,
+                    "provider_label": latest.get_provider_display(),
+                    "channel": latest.channel,
+                    "status": latest.status,
+                    "paid_at": latest.paid_at.isoformat() if latest.paid_at else None,
+                    "recorded_by": latest.user.email if latest.user_id else None,
+                    "notes": latest.notes,
+                }
+                if latest
+                else None
+            ),
+            "previous_payments_total": money(previous_total),
             "payments": [
                 {
                     "reference": p.reference,
                     "amount": money(p.amount),
                     "status": p.status,
                     "provider": p.provider,
+                    "provider_label": p.get_provider_display(),
                     "channel": p.channel,
                     "paid_at": p.paid_at.isoformat() if p.paid_at else None,
+                    "recorded_by": p.user.email if p.user_id else None,
+                    "notes": p.notes,
                 }
                 for p in payments
             ],

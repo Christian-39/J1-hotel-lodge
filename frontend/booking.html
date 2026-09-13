@@ -102,6 +102,7 @@
           <div class="card card-pad">
             <h2 style="font-size:var(--fs-xl);margin-bottom:0.35rem;">Available rooms</h2>
             <p class="muted" style="margin-bottom:1.25rem;font-size:var(--fs-sm);">Choose the room that suits your stay. Prices are shown per night and in total for your dates.</p>
+            <div class="notice info" data-room-note style="display:none;margin-bottom:1rem;"></div>
             <div id="room-results" aria-live="polite"></div>
             <div class="bk-actions" id="step2-actions">
               <button class="btn btn-outline" id="back-to-stay" type="button"><span data-icon="arrowLeft" data-size="16"></span> Back</button>
@@ -229,6 +230,41 @@
   var params = new URLSearchParams(location.search);
   var S = JONE.APP_CONFIG.STORAGE.BOOKING;
   var draft = JONE.storage.get(S, {}) || {};
+
+  /* ================= ONE authoritative booking-flow room state =============
+     Two different things travel through this flow and must never be confused:
+
+       ROOM TYPE  — "Deluxe Room", identified by its slug (or id).
+       ROOM       — the physical room, "Room 203", identified by its stable id.
+
+     ?room= carries the ROOM TYPE (a room-type page or the rooms list sends it);
+     ?room_id= / ?room_no= carry the PHYSICAL ROOM chosen on a room page.
+
+     An explicit URL parameter is always NEWER than whatever a previous visit
+     left in localStorage, so it becomes `exactRoomType` and any stale draft
+     room state is cleared here. Previously the page computed `exactRoomType`
+     from the URL but then restored the selection from `draft.room_type`, so a
+     guest arriving from "Book this room" landed on step 2 with nothing
+     selected and had to choose the room type a second time. */
+  var urlRoomType = (params.get("room") || "").toString().trim();
+  var exactRoomType = (urlRoomType || draft.room_type || "").toString();
+  var exactRoomId = params.get("room_id") || "";
+  var exactRoomNumber = params.get("room_no") || "";
+
+  if (urlRoomType && draft.room_type && String(draft.room_type) !== urlRoomType) {
+    // The URL wins: drop the stale draft so it cannot win later in the flow.
+    var stale = JONE.storage.get(S, {}) || {};
+    delete stale.room_type; delete stale.room_name;
+    delete stale.room_id; delete stale.room_number;
+    JONE.storage.set(S, stale);
+    draft = JONE.storage.get(S, {}) || {};
+  }
+  if (exactRoomId && !exactRoomType) exactRoomId = "";
+  if (!exactRoomId && draft.room_id && draft.room_type &&
+      String(draft.room_type) === String(exactRoomType)) {
+    exactRoomId = draft.room_id;
+    exactRoomNumber = draft.room_number || exactRoomNumber;
+  }
 
   var ci = document.getElementById("b-checkin");
   var co = document.getElementById("b-checkout");
@@ -436,9 +472,15 @@
           note +
         '</div>' +
         '<div class="room-option-price"><div class="price">' + priceLabel + '<small> / night</small></div><div class="caption">' + JONE.esc(totalLabel) + ' total</div>' +
+          (exactRoomId && String(rt.slug || rt.id) === exactRoomType
+            ? '<div class="caption" style="color:var(--color-accent);margin-top:0.25rem;">Your chosen room: ' + JONE.esc(exactRoomNumber || ("Room " + exactRoomId)) + '</div>'
+            : "") +
           '<span class="room-option-select"><span class="sel-idle">Select</span><span class="sel-done"><span data-icon="check" data-size="14"></span> Selected</span></span>' +
         '</div>' +
-        '<input type="radio" name="room-choice" value="' + JONE.esc(rt.slug || rt.id || name) + '" data-name="' + JONE.esc(name) + '"' + (bookable ? '' : ' disabled') + ' style="position:absolute;opacity:0;pointer-events:none;">' +
+        '<input type="radio" name="room-choice" value="' + JONE.esc(rt.slug || rt.id || name) + '"' +
+          ' data-name="' + JONE.esc(name) + '" data-rt-id="' + JONE.esc(rt.id) + '"' +
+          ' data-rt-slug="' + JONE.esc(rt.slug || "") + '"' + (bookable ? '' : ' disabled') +
+          ' style="position:absolute;opacity:0;pointer-events:none;">' +
       '</label>';
     }).join("");
     JONE.icons.inject(holder);
@@ -454,11 +496,55 @@
       });
     });
 
-    // Re-apply a previously selected room (e.g. returning via Back).
-    if (draft.room_type) {
-      var prev = holder.querySelector('[data-room-opt] input[value="' + (window.CSS && CSS.escape ? CSS.escape(draft.room_type) : draft.room_type) + '"]');
-      if (prev && !prev.disabled) { prev.closest("[data-room-opt]").click(); }
+    /* ------------------ Auto-select the chosen room type -------------------
+       `exactRoomType` is the single source of truth and already prefers the
+       URL over a saved draft, so a guest who clicked "Book this room" on a
+       room page lands here with that room type ALREADY selected — visually
+       marked, radio checked, summary filled and Continue enabled, exactly as
+       if they had clicked it themselves. Matching accepts the slug, the id or
+       the name so ?room=deluxe-room, ?room=1 and ?room=Deluxe Room all work. */
+    applySelectedType();
+  }
+
+  /* Find the option matching the authoritative room type and select it.
+     Returns true when a bookable match was selected. */
+  function applySelectedType() {
+    var holder = document.getElementById("room-results");
+    var note = document.querySelector("[data-room-note]");
+    var wanted = String(exactRoomType || draft.room_type || "").trim();
+    if (!holder) return false;
+    if (!wanted) { if (note) note.style.display = "none"; return false; }
+    var lowered = wanted.toLowerCase();
+    var match = null;
+    var blocked = null;
+    holder.querySelectorAll("[data-room-opt]").forEach(function (opt) {
+      if (match) return;
+      var input = opt.querySelector("input");
+      if (!input) return;
+      var slug = String(input.getAttribute("data-rt-slug") || "");
+      var rtId = String(input.getAttribute("data-rt-id") || "");
+      var rtName = String(input.getAttribute("data-name") || "");
+      var hit = String(input.value) === wanted || slug.toLowerCase() === lowered ||
+        rtId === wanted || rtName.toLowerCase() === lowered;
+      if (!hit) return;
+      if (input.disabled) blocked = opt;
+      else match = opt;
+    });
+    if (match) {
+      match.click();     // same path a manual click takes
+      if (note) note.style.display = "none";
+      return true;
     }
+    if (note) {
+      note.innerHTML = '<span data-icon="info" data-size="18"></span><span>' +
+        (blocked
+          ? "The room type you picked has no availability for these dates. Please choose another room or change your dates."
+          : "The room type you picked is not available for these dates. Please choose from the rooms below or adjust your dates.") +
+        "</span>";
+      note.style.display = "";
+      JONE.icons.inject(note);
+    }
+    return false;
   }
 
   var selRoom = null;
@@ -471,12 +557,20 @@
     var slug = radio.value;
     var adultsN = Number(adults.value) || 1;
     var childrenN = Number(children.value) || 0;
+    // The chosen physical room only belongs to its own room type.
+    if (exactRoomId && String(slug) !== String(exactRoomType)) {
+      exactRoomId = "";
+      exactRoomNumber = "";
+    }
     selRoom = {
       slug: slug, name: radio.dataset.name,
+      room_id: exactRoomId || null,
+      room_number: exactRoomNumber || null,
       check_in: ci.value, check_out: co.value,
       adults: adultsN, children: childrenN, rooms: 1
     };
-    document.querySelector("[data-sum-room]").textContent = radio.dataset.name;
+    document.querySelector("[data-sum-room]").textContent = radio.dataset.name +
+      (exactRoomId ? (exactRoomNumber ? " · Room " + exactRoomNumber : " · your chosen room") : "");
     var pricing = roomPricing[slug];
     var totalEl = document.querySelector("[data-sum-total]");
     var totalMobile = document.querySelector("[data-sum-total-mobile]");
@@ -487,6 +581,7 @@
     // Persist the room choice so it survives a Back/refresh.
     var d = JONE.storage.get(S, {}) || {};
     d.room_type = selRoom.slug; d.room_name = selRoom.name;
+    d.room_id = selRoom.room_id || ""; d.room_number = selRoom.room_number || "";
     JONE.storage.set(S, d);
 
     var cont = document.getElementById("continue-guest");
@@ -497,6 +592,11 @@
         adults: selRoom.adults, children: selRoom.children,
         room: selRoom.slug, room_name: selRoom.name
       });
+      // Carry the exact physical room through the flow (stable id only).
+      if (selRoom.room_id) {
+        q.set("room_id", selRoom.room_id);
+        if (selRoom.room_number) q.set("room_no", selRoom.room_number);
+      }
       var offer = new URLSearchParams(location.search).get("offer") || criteria.offer;
       if (offer) q.set("offer", offer);
       location.href = "booking-review.html?" + q.toString();

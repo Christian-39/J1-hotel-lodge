@@ -98,37 +98,14 @@
     document.querySelectorAll("[data-reveal]").forEach((n) => observers.observe(n));
   }
 
-  /* ------------------------------ Contact form ---------------------------- */
-  function initContactForm() {
-    const form = document.querySelector("[data-contact-form]");
-    if (!form) return;
-    form.addEventListener("submit", async (e) => {
-      e.preventDefault();
-      if (!form.checkValidity()) { form.reportValidity(); return; }
-      const btn = form.querySelector("[type=submit]");
-      if (!JONE.guardSubmit(btn)) return;
-      const payload = Object.fromEntries(new FormData(form).entries());
-      try {
-        await window.API.submitEnquiry(payload);
-        form.reset();
-        JONE.ui.toast("Thank you — your message has been sent. We'll be in touch soon.", "success");
-      } catch (err) {
-        JONE.releaseGuard(btn);
-        if (err.status === 0) {
-          // API not reachable — development state, honest failure message.
-          JONE.ui.toast("We couldn't send your message right now. Please try again or call the hotel.", "error");
-        } else {
-          JONE.ui.toast(err.message, "error");
-        }
-      }
-    });
-  }
-
   /* -------------------------------- Boot ---------------------------------- */
+  // NOTE: the contact/enquiry form is owned by js/contact.js (the page loads
+  // it explicitly). Binding it here as well attached a SECOND submit listener
+  // to the same form, so one click fired two POSTs and created two enquiries.
+  // There is exactly one enquiry submission path — see js/contact.js.
   document.addEventListener("DOMContentLoaded", () => {
     initAvailabilityForms();
     initReveal();
-    initContactForm();
     initDatePair("[name=check_in]", "[name=check_out]");
   });
 })();

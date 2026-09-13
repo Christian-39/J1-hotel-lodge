@@ -244,10 +244,28 @@ const JONE = (() => {
   // Re-apply once the authoritative hotel timezone is known.
   document.addEventListener("jone:hotel", () => setupDateConstraints());
 
+  /* --------------------- Backend-generated deep links ---------------------- */
+  /* The backend stores notification links ROOT-relative, e.g.
+     "/dashboard/booking-details.html?ref=J1-…" or "/my-bookings.html?ref=…".
+     Naively stripping the leading slash (or leaving it relative) breaks them
+     from inside /dashboard/ — "dashboard/booking-details.html" would resolve
+     to /dashboard/dashboard/booking-details.html. Resolve against the REAL
+     frontend root instead, which is one level up inside /dashboard/. */
+  function appUrl(link) {
+    if (!link) return "";
+    const s = String(link).trim();
+    if (!s) return "";
+    if (/^(https?:)?\/\//i.test(s) || /^(mailto:|tel:|#)/i.test(s)) return s;
+    const absolute = s.charAt(0) === "/" ? s : "/" + s;
+    let base = (location.pathname || "/").replace(/[^/]*$/, "");   // current dir
+    if (/\/dashboard\/$/.test(base)) base = base.replace(/dashboard\/$/, "");
+    return base + absolute.slice(1);
+  }
+
   return {
     formatNaira, formatDate, formatDateTime, parseISO, hotelTodayISO, todayISO, nightsBetween, setupDateConstraints,
     $, $$, el, esc, debounce, throttle, storage, bindData, paginate, initials,
-    scrollTop, guardSubmit, releaseGuard
+    scrollTop, guardSubmit, releaseGuard, appUrl
   };
 })();
 

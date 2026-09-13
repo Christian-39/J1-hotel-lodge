@@ -56,7 +56,7 @@
   <div class="panel-head"><h2>Room types</h2><div class="panel-actions"><a class="btn btn-sm btn-outline" href="room-details.html">Manage types</a></div></div>
   <div class="panel-body no-pad">
     <div class="table-wrap"><table class="table">
-      <thead><tr><th>Type</th><th class="hide-sm">Rate / night</th><th class="hide-sm">Capacity</th><th class="num">Rooms</th><th class="num">Available</th><th class="num">Occupied</th></tr></thead>
+      <thead><tr><th>Type</th><th class="hide-sm">Rate / night</th><th class="hide-sm">Capacity</th><th class="num">Rooms</th><th class="num">Available</th><th class="num">Occupied</th><th></th></tr></thead>
       <tbody data-tbody="roomtypes"></tbody>
     </table></div>
   </div>
@@ -150,9 +150,20 @@
       var m=meta[t]||{};
       var rate=m.base_price!=null?JONE.formatNaira(m.base_price):"\u2014";
       var cap=m.max_guests!=null?m.max_guests+" guests":"\u2014";
-      return '<tr><td>'+JONE.esc(t)+'</td><td class="hide-sm">'+JONE.esc(rate)+'</td><td class="hide-sm">'+JONE.esc(cap)+'</td><td class="num">'+byType[t].count+'</td><td class="num">'+byType[t].available+'</td><td class="num">'+byType[t].occupied+'</td></tr>';
+      return '<tr><td>'+JONE.esc(t)+'</td><td class="hide-sm">'+JONE.esc(rate)+'</td><td class="hide-sm">'+JONE.esc(cap)+'</td><td class="num">'+byType[t].count+'</td><td class="num">'+byType[t].available+'</td><td class="num">'+byType[t].occupied+'</td>'+
+        '<td><button class="btn btn-sm btn-outline" type="button" data-view-rooms="'+JONE.esc(t)+'"><span data-icon="bed" data-size="13"></span> View rooms</button></td></tr>';
     }).join("");
-    tb.innerHTML=rows || '<tr><td colspan="6"><div class="empty-state"><h3>No room data</h3></div></td></tr>';
+    tb.innerHTML=rows || '<tr><td colspan="7"><div class="empty-state"><h3>No room data</h3></div></td></tr>';
+
+    // "View rooms" lists the physical rooms of one type straight from
+    // GET /api/admin/rooms/?room_type={id} (the backend's own inventory).
+    tb.querySelectorAll("[data-view-rooms]").forEach(function(btn){
+      btn.addEventListener("click", function(){
+        var t = btn.getAttribute("data-view-rooms");
+        var record = roomTypeRecords.filter(function(rt){ return rt.name === t; })[0];
+        JONE.dashboard.roomTypeRoomsModal(record || { name: t, slug: t });
+      });
+    });
   }
 
   /* ---------------------------- Room types -------------------------------

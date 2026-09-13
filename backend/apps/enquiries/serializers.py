@@ -12,12 +12,41 @@ def _plain(value: str) -> str:
 
 
 class EnquiryCreateSerializer(serializers.ModelSerializer):
-    # Honeypot: real users leave this blank; bots tend to fill every field.
+    """Public contact form.
+
+    `website` is an ANTI-SPAM HONEYPOT, not an Enquiry column. It is declared
+    here so the API accepts (and drf-spectacular documents) the field, but it
+    MUST be dropped before the row is written — `write_only` only hides a field
+    on output, it does not keep it out of `validated_data`, so leaving it in
+    made `Enquiry.objects.create()` raise
+    ``TypeError: Enquiry() got unexpected keyword arguments: 'website'``
+    which surfaced to the browser as an opaque HTTP 500 and meant NO enquiry
+    was ever persisted.
+    """
+
     website = serializers.CharField(required=False, allow_blank=True, write_only=True, default="")
 
     class Meta:
         model = Enquiry
         fields = ["name", "email", "phone", "subject", "message", "website"]
+
+    def create(self, validated_data):
+        validated_data.pop("website", None)
+        return super().create(validated_data)
+
+    def is_honeypot_filled(self):
+        """True when a bot filled the hidden field.
+
+        Read from `initial_data` as well as `validated_data` so the check is
+        correct even if the field is ever removed from `Meta.fields`.
+        """
+        raw = ""
+        initial = getattr(self, "initial_data", None)
+        if isinstance(initial, dict):
+            raw = initial.get("website") or ""
+        if not raw:
+            raw = (self.validated_data or {}).get("website") or ""
+        return bool(str(raw).strip())
 
     def validate_name(self, value):
         value = _plain(value)

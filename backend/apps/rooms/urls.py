@@ -8,6 +8,9 @@ app_name = "rooms"
 # Public catalog ("rooms" == room types for guests)
 urlpatterns = [
     path("", views.RoomTypeListView.as_view(), name="room-type-list"),
+    # Registered BEFORE the room-type slug route so "rooms/" is never captured
+    # by <slug:slug>/.
+    path("<slug:slug>/rooms/", views.RoomTypeRoomsView.as_view(), name="room-type-rooms"),
     path("<slug:slug>/", views.RoomTypeDetailView.as_view(), name="room-type-detail"),
 ]
 

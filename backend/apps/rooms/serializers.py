@@ -397,3 +397,36 @@ class RoomSerializer(serializers.ModelSerializer):
             "images", "image", "primary_image_url", "created_at", "updated_at",
         ]
         read_only_fields = ["id", "created_at", "updated_at"]
+
+
+class PublicRoomOptionSerializer(serializers.ModelSerializer):
+    """Public, deliberately minimal view of one physical room.
+
+    Only what a guest needs to pick "Room 203": its stable id, its number, its
+    floor and — when dates are supplied — whether the availability engine says
+    it is free. Housekeeping state, notes and internal flags stay private.
+    """
+
+    available = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Room
+        fields = ["id", "room_number", "floor", "available"]
+        read_only_fields = fields
+
+    def get_available(self, obj):
+        window = self.context.get("window")
+        if not window:
+            return None
+        check_in, check_out, now = window
+        from apps.bookings.services import availability
+
+        blocked = set(
+            availability.blocked_room_ids(
+                room_type_id=obj.room_type_id,
+                check_in=check_in,
+                check_out=check_out,
+                now=now,
+            )
+        )
+        return obj.pk not in blocked

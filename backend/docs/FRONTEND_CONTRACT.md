@@ -150,6 +150,24 @@ All list fields **plus**:
   "offers": [ { "id", "slug", "title", "short_description", "discount_type", "discount_value", "end_date" } ] }
 ```
 
+## 7b. Physical rooms of a type — `GET /api/rooms/{slug or id}/rooms/` (public)
+
+Registered **before** the room-type detail route, so `…/rooms/` is never
+captured by `<slug:slug>/`. Powers "Book this room — Room 203": the guest picks
+one physical room and its **stable id** travels through the booking flow.
+
+Query params (both optional, both required together): `check_in`, `check_out`
+(`YYYY-MM-DD`). Without dates `available` is `null`; with dates the
+availability engine answers it.
+
+```jsonc
+"data": [ { "id": 12, "room_number": "203", "floor": 2, "available": true } ]
+```
+
+Only rooms the hotel can actually sell are listed (active room type, active
+room, not under maintenance or out of service). Nothing internal —
+housekeeping state, notes and status flags — is ever exposed publicly.
+
 ## 8. Availability — `GET /api/rooms/availability/`
 
 Params: `check_in*`, `check_out*` (YYYY-MM-DD), `guests`≥1, `rooms`≥1, `room_type` (slug or id).
@@ -237,10 +255,11 @@ Errors: `INVALID_DATES`, `CAPACITY_EXCEEDED`, `OFFER_NOT_APPLICABLE` (bad code).
 
 ## 12. Create booking — `POST /api/bookings/` 🔑
 
-Body = quote fields **plus**:
+Body = quote fields **plus** the optional `room_id` (see "Exact room" below):
 
 ```jsonc
-{ "special_requests": "High floor",
+{ "room_id": 12,            // optional — the physical room the guest picked
+  "special_requests": "High floor",
   "guest": {                     // optional overrides for the contact record
     "first_name": "…", "last_name": "…", "email": "…", "phone": "*preferred*",
     "address": "", "city": "", "state": "", "country": "Nigeria",
@@ -269,6 +288,37 @@ Body = quote fields **plus**:
   "checked_in_at": null, "checked_out_at": null, "cancelled_at": null,
   "created_at": "…", "can_pay": true, "can_cancel": true }
 ```
+
+**Exact room ("Book this room — Room 203").** `room_id` is advisory: the server
+re-checks availability inside the room-type lock and never trusts the client.
+
+* The room is free → it is assigned first and `room_substitution` is absent.
+* The room is gone → a deterministic replacement is selected by the
+  availability engine, in this preference order:
+  1. another room of the **same room type** with the **same nightly rate**
+     (ties broken by room number — deterministic, never random),
+  2. same room type, closest nightly rate,
+  3. a different **active room type** with an **identical** rate that still
+     covers the party (the stay total therefore does not change).
+  A replacement at a *different* price is deliberately never auto-applied —
+  a changed total may not be charged without the guest's consent, so the API
+  returns `409 ROOM_UNAVAILABLE` instead and the guest picks another type.
+* No equivalent room exists → `409 ROOM_UNAVAILABLE`.
+
+When a substitution happens, `data` carries an extra key:
+
+```jsonc
+"room_substitution": {
+  "requested_room_id": 12, "requested_room_number": "203",
+  "assigned_room_id": 13,  "assigned_room_number": "204",
+  "room_type": "Deluxe Room", "room_type_id": 3,
+  "price_changed": false,
+  "reason": "Room 204 is available in the same room type (Deluxe Room) for the same nightly rate."
+}
+```
+
+A room is **never** switched silently — the frontend must surface this to the
+guest, and it is mirrored into the audit log metadata.
 
 `status` ∈ `PENDING` `CONFIRMED` `CHECKED_IN` `CHECKED_OUT` `CANCELLED` `EXPIRED` `NO_SHOW` ·
 `payment_status` ∈ `UNPAID` `PARTIALLY_PAID` `PAID` `PARTIALLY_REFUNDED` `REFUNDED` `FAILED`.
@@ -329,16 +379,26 @@ popup's own success hint; only this endpoint (or the webhook) confirms.**
 ## 17. Receipt — `GET /api/bookings/{id or reference}/receipt/` 🔑
 
 ```jsonc
-"data": { "hotel": { "name", "address", "phone", "email" },
-  "booking_reference", "booking_status", "payment_status",
-  "guest": { "name", "email", "phone" },
-  "room_type", "rooms", "check_in", "check_out", "nights",
+"data": { "hotel": { "name", "address", "city", "state", "country", "phone", "email" },
+  "booking_reference", "booking_status", "booking_status_label",
+  "payment_status", "payment_status_label",
+  "guest": { "name", "email", "phone", "address", "city", "state", "country" },
+  "room_type", "room_numbers": ["203"], "rooms", "check_in", "check_out",
+  "nights", "number_of_guests", "adults", "children", "price_per_night",
   "subtotal", "discount", "tax", "fees", "total",
   "amount_paid", "amount_due", "currency",
-  "payments": [ { "reference", "amount", "status", "provider",
-                  "channel", "paid_at" } ] }
+  "issued_at", "receipt_reference",
+  "latest_payment": { "reference", "amount", "provider", "provider_label",
+                      "channel", "status", "paid_at", "recorded_by", "notes" } | null,
+  "previous_payments_total": "0.00",
+  "payments": [ { "reference", "amount", "status", "provider", "provider_label",
+                  "channel", "paid_at", "recorded_by", "notes" } ] }
 ```
-Render as the confirmation/receipt page.
+
+Every field previously documented is still present — the additions are purely
+additive, so existing consumers keep working. Render as the professional
+receipt page: the **amount first**, then the references, then guest / stay,
+then the financial breakdown and the payments recorded.
 
 ## 18. Notifications — `GET /api/notifications/` 🔑
 
@@ -354,6 +414,19 @@ Render as the confirmation/receipt page.
 `GET /unread-count/` → `{ unread_count }` (cheap polling) ·
 `POST /{id}/read/` and `POST /read-all/` → `{ unread_count }`.
 `link` is a frontend-relative path you may route to.
+
+**Detail** `GET /api/notifications/{id}/` 🔑 (registered before
+`/{id}/read/`) — the notification details page. The queryset is scoped to the
+signed-in recipient, so another user's id is a **404, never a leak**. Opening
+the detail marks it read and returns the fresh unread count, so the sidebar
+badge can update without another request.
+
+```jsonc
+"data": { "id", "type", "type_label", "title", "message", "link",
+  "is_read", "created_at", "unread_count": 0,
+  "related": { "kind": "booking"|"payment"|"guest"|"room"|"enquiry"|"notification",
+               "reference": "J1-…", "link": "/dashboard/booking-details.html?ref=J1-…" } | null }
+```
 
 ---
 
@@ -392,6 +465,31 @@ Filters: `status`, `payment_status`, `source`, `room_type`, `date_from`,
 `date_to`, `check_in`, `check_out` (exact date), `search`, `ordering`
 (`created_at`, `check_in`, `check_out`, `total_amount` — prefix `-` desc).
 
+**`search` is the operational "find it from any scrap of information" box.**
+One term is matched (case-insensitively, partially) against:
+
+| matches | field |
+|---|---|
+| booking reference (or a prefix of it) | `booking_reference` |
+| guest first / last name | `guest__first_name`, `guest__last_name` |
+| guest email | `guest__email` |
+| guest phone | `guest__phone` |
+| physical room number | `room_assignments__room__room_number` |
+| room type name or slug | `room_type__name`, `room_type__slug` |
+| payment / receipt reference | `payments__reference` |
+| gateway transaction id | `payments__transaction_id` |
+
+Multi-word input ("amina yusuf") is ANDed across the guest's name parts, so it
+finds that guest without also matching everyone whose surname is Yusuf. Results
+are de-duplicated (`DISTINCT`) because the payment/assignment joins can match a
+booking more than once. The frontend must debounce this and must never download
+the full list to filter locally.
+
+**Checkout desk** reuses this endpoint instead of a bespoke one:
+`GET /api/admin/bookings/?status=CHECKED_IN,CONFIRMED&search=203&page_size=25`
+returns only bookings that can be checked out, already matched by room number,
+booking reference, guest name, phone or email.
+
 Row (everything the table needs — no per-row requests):
 
 ```jsonc
@@ -412,9 +510,15 @@ Row (everything the table needs — no per-row requests):
 { "room_type": "deluxe-room", "check_in": "…", "check_out": "…", "rooms": 1,
   "adults": 2, "children": 0, "source": "WALK_IN" | "PHONE",
   "status": "CONFIRMED" | "PENDING", "offer_code": "", "special_requests": "",
-  "internal_notes": "", "guest": { "first_name": "*", "last_name": "*",
+  "internal_notes": "", "room_id": 12,          // optional exact physical room
+  "guest": { "first_name": "*", "last_name": "*",
   "email": "*", "phone": "*", …optional fields… } }
 ```
+
+The `201` response is the full booking **detail** (guest, room assignments,
+totals and balance), so the receptionist can go straight into the payment
+dialog with **no extra request and no bookings-table reload**. `room_id`
+follows exactly the same substitution rules as §12 (`room_substitution`).
 
 **Modify** `PATCH …/bookings/{id|ref}/` — any of `check_in, check_out,
 number_of_rooms, adults, children, special_requests, internal_notes`
@@ -436,8 +540,27 @@ number_of_rooms, adults, children, special_requests, internal_notes`
 
 List rows: `{ id, first_name, last_name, full_name, email, phone, city, state,
 country, bookings_count, last_booking_at, created_at }` (`?search=`).
-Detail adds address and `bookings[]` (last 15 stays). PATCH accepts contact +
-identification fields.
+
+**Detail** (`GET /api/admin/guests/{id}/`) returns the **complete** guest
+profile — every non-sensitive column the `Guest` model stores:
+
+```jsonc
+{ "id", "user_id", "has_account", "first_name", "last_name", "full_name",
+  "email", "phone", "address", "city", "state", "country",
+  "identification_type", "identification_type_label", "identification_number",
+  "special_requests", "bookings_count", "last_booking_at", "total_stays",
+  "total_spent", "outstanding_balance", "created_at", "updated_at",
+  "bookings": [ { "id", "booking_reference", "room_type_name",
+                  "room_numbers": ["203"], "check_in", "check_out", "nights",
+                  "status", "payment_status", "total_amount", "amount_paid",
+                  "amount_due", "currency", "source", "created_at" } ] }
+```
+
+**Privacy:** `identification_number` is masked for `RECEPTIONIST` (only the
+last four characters) and full for `MANAGER` / `ADMIN`. The frontend never
+un-masks it — the masking is the backend's job.
+
+PATCH accepts contact + identification fields.
 
 ## 22. Payments — `GET /api/admin/payments/` · `GET …/payments/{id|ref}/` · `POST …/payments/record/`
 
@@ -451,8 +574,24 @@ Record offline payment:
 ```jsonc
 POST { "booking_reference": "J1-…", "amount": "15000.00",
        "provider": "CASH" | "POS" | "BANK_TRANSFER", "notes": "…" }
-→ 201 payment row. (Over-balance → 400; confirms booking when deposit covered.)
+→ 201 payment row **plus** the authoritative booking snapshot, so the payment
+  modal refreshes itself from one response (no second round-trip, no full
+  bookings reload):
+
+  { …payment row…,
+    "booking": { "id", "booking_reference", "status", "payment_status",
+                 "currency", "total_amount", "amount_paid", "amount_due",
+                 "guest_name", "guest_email", "guest_phone",
+                 "room_type_name", "room_numbers", "check_in", "check_out",
+                 "nights", "number_of_guests" },
+    "receipt_reference": "J1P-…", "has_receipt": true }
 ```
+
+Validation (server-side — a client-computed total is never trusted):
+`amount` must be > 0 and ≤ the booking's outstanding balance (otherwise `400
+PAYMENT_FAILED` and **nothing is written**); the booking must be `PENDING`,
+`CONFIRMED` or `CHECKED_IN` (otherwise `409`); unknown reference → `404`.
+Confirms the booking when the deposit is covered.
 
 ## 23. Rooms & room types (staff)
 
@@ -536,6 +675,29 @@ POST { "booking_reference": "J1-…", "amount": "15000.00",
 
 ## 27. User administration (ADMIN only) — `GET/POST /api/admin/users/` · `GET/PATCH …/{id}/`
 
+`GET /api/admin/users/staff/{id}/` 🔑 — the **staff profile card** (registered
+before the numeric detail route). Read-only; mutations stay on the ADMIN-only
+`…/users/{id}/` endpoint.
+
+* `ADMIN` — every account, `can_manage: true`.
+* `MANAGER` — every account, read-only, `can_manage: false`.
+* `RECEPTIONIST` — **their own** account only; anything else is `403`.
+
+```jsonc
+"data": { "id", "email", "first_name", "last_name", "full_name", "phone",
+  "role", "role_label", "profile_image_url", "is_active", "email_verified",
+  "is_staff", "is_admin", "is_staff_member", "date_joined", "last_login",
+  "updated_at", "can_manage", "guest_bookings_count",
+  "stats": { "bookings_created", "payments_recorded", "last_payment_at",
+             "actions_logged", "last_action_at" } }
+```
+
+No credential material (password hash, tokens, secrets) is ever serialised.
+
+`GET /api/admin/users/?role__in=ADMIN,MANAGER,RECEPTIONIST` (additive filter,
+also accepts `roles=`) lists only staff accounts, so guest accounts never
+appear on the staff-management screen. An absent parameter changes nothing.
+
 List rows: `{ id, email, first_name, last_name, full_name, phone, role,
 is_active, email_verified, bookings_count, date_joined, last_login }`
 (filters `role`, `is_active`, `search`, `ordering`).
@@ -565,3 +727,21 @@ Actions emitted today: `USER_CREATED` `USER_UPDATED` `USER_ROLE_CHANGED`
 * Renames/removals/meaning changes require a coordinated frontend deploy and a version note here.
 * The single source of truth for machine-readable structure is `/api/schema/`;
   for human behavior, this file.
+
+## Changelog
+
+### 2026-09-13 — operational search, staff profiles, receipt & exact-room booking
+
+All changes are **additive**; no field was renamed or removed.
+
+| Change | Where |
+|---|---|
+| `GET /api/rooms/{slug}/rooms/` — physical rooms of a type (public) | §7b |
+| `room_id` (exact physical room) + `room_substitution` on booking create | §12, §20 |
+| Receipt gains `room_numbers`, `issued_at`, `receipt_reference`, `latest_payment`, `previous_payments_total`, `*_label`, guest/stay detail | §17 |
+| `GET /api/notifications/{id}/` — owner-scoped detail with `related` | §18 |
+| Admin bookings `search` now also matches room number, room type and payment/receipt reference | §20 |
+| `POST /api/admin/payments/record/` returns the booking snapshot + `receipt_reference` | §22 |
+| Guest detail is complete and masks the ID number for receptionists | §21 |
+| `GET /api/admin/users/staff/{id}/` — credential-free staff profile card | §27 |
+| `GET /api/admin/users/?role__in=…` — staff-only listing | §27 |

@@ -159,7 +159,9 @@
     var tbody=document.querySelector("[data-tbody=bd-payments]");
     if(!tbody) return;
     tbody.innerHTML = (payments||[]).length ? payments.map(function(p){
-      return '<tr><td>'+JONE.esc(p.reference||"—")+'</td><td>'+JONE.esc(String(p.provider||"online").toLowerCase())+'</td><td class="hide-sm">'+JONE.esc(p.paid_at?JONE.formatDate(p.paid_at,"mid"):"—")+'</td><td class="num">'+JONE.esc(JONE.formatNaira(p.amount))+'</td><td>'+JONE.dashboard.statusPill(p.status)+'</td></tr>';
+      return '<tr><td>'+JONE.esc(p.reference||"—")+'</td><td>'+JONE.esc(String(p.provider||"online").toLowerCase())+'</td><td class="hide-sm">'+JONE.esc(p.paid_at?JONE.formatDate(p.paid_at,"mid"):"—")+'</td><td class="num">'+JONE.esc(JONE.formatNaira(p.amount))+'</td><td>'+JONE.dashboard.statusPill(p.status)+
+        (String(p.status).toUpperCase()==="SUCCESS"?'<div style="margin-top:0.3rem;"><a class="btn btn-sm btn-ghost" href="receipt-details.html?ref='+encodeURIComponent(book.booking_reference||ref||"")+'"><span data-icon="receipt" data-size="13"></span> Receipt</a></div>':"")+
+        '</td></tr>';
     }).join("") : '<tr><td colspan="5"><div class="empty-state"><span data-icon="wallet"></span><h3>No payments recorded</h3></div></td></tr>';
     JONE.icons.inject(tbody);
   }
@@ -211,9 +213,19 @@
     }catch(err){ JONE.releaseGuard(cancel); JONE.ui.toast(err.message||"Couldn't cancel this booking.","error"); }
   });
 
+  /* Record payment opens the focused payment modal right here — no navigation,
+     no full page reload. It posts to /api/admin/payments/record/ and refreshes
+     this page from the authoritative booking snapshot in the response. */
   var record=document.querySelector("[data-bd-record]");
   if(record) record.addEventListener("click", function(){
-    location.href="payments.html?booking="+encodeURIComponent(ref||"");
+    if(!book){ JONE.ui.toast("This booking hasn't loaded yet.","warning"); return; }
+    JONE.dashboard.paymentModal(book, {
+      onRecorded: function(fresh){
+        if(fresh) book=Object.assign({}, book, fresh);
+        renderBookings();
+        if(JONE.dashboard.notifBadge) JONE.dashboard.notifBadge.refresh();
+      }
+    });
   });
 
   var checkin=document.querySelector("[data-bd-checkin]");

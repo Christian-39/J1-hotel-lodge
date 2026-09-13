@@ -756,6 +756,11 @@
       form.appendChild(foot);
 
       panel.appendChild(head);
+      // Optional read-only context (e.g. the payment summary) rendered above
+      // the form. `onRender(panel)` lets a caller inject it and wire listeners.
+      if (typeof opts.onRender === "function") {
+        try { opts.onRender(panel); } catch (_) {}
+      }
       panel.appendChild(form);
       backdrop.appendChild(panel);
       document.body.appendChild(backdrop);
@@ -870,9 +875,464 @@
     });
   }
 
+
+  /* ======================================================================
+     OPERATIONAL COMPONENTS
+     Shared across pages so a behaviour is implemented once and the whole
+     console behaves identically. Every component talks to the API layer
+     (never raw fetch) and treats the backend response as the only truth.
+     ====================================================================== */
+
+  /* --------------------------- Permission helpers -------------------------
+     These are UX hints ONLY. They hide controls a role cannot use; the
+     backend re-checks every write with its own permission classes, so a
+     tampered localStorage role changes what a user SEES, never what they
+     can DO. */
+  function currentRole() {
+    const user = (window.Auth && window.Auth.state && window.Auth.state.user) || {};
+    return String(user.role || "").toUpperCase();
+  }
+  function hasRole(role) {
+    return !!(window.Auth && window.Auth.hasRole && window.Auth.hasRole(role));
+  }
+  /** Rooms / room-types: staff may read, only manager+ may write. */
+  function canManageRooms() { return hasRole("manager"); }
+  /** Account administration is admin-only. */
+  function canManageStaff() { return hasRole("admin"); }
+
+  /* --------------------------- Money formatting --------------------------- */
+  function money(value, currency) {
+    if (value === null || value === undefined || value === "") return null;
+    return JONE.formatNaira(value, currency ? { currency } : undefined);
+  }
+
+  /* ======================================================================
+     PAYMENT MODAL — the focused "Record payment" dialog.
+     Opened directly after a manual booking is created and from any booking
+     row. It never reloads the surrounding list: it submits to
+     POST /api/admin/payments/record/, refreshes itself from the returned
+     booking snapshot and hands the caller the fresh state through
+     opts.onRecorded(booking, payment) so the row can be updated in place.
+     ====================================================================== */
+  const OFFLINE_PROVIDERS = [
+    { value: "CASH", label: "Cash" },
+    { value: "POS", label: "POS / Card" },
+    { value: "BANK_TRANSFER", label: "Bank transfer" },
+  ];
+
+  function paymentModal(booking, opts = {}) {
+    opts = opts || {};
+    const b = booking || {};
+    const due = Number(b.amount_due != null ? b.amount_due : 0);
+    const total = Number(b.total_amount != null ? b.total_amount : 0);
+    const paid = Number(b.amount_paid != null ? b.amount_paid : 0);
+    const currency = b.currency || "NGN";
+    const guest = b.guest || {};
+    const guestName = guest.full_name || b.guest_name ||
+      ([guest.first_name, guest.last_name].filter(Boolean).join(" ") || "Guest");
+    const rooms = (b.room_numbers && b.room_numbers.length)
+      ? b.room_numbers.join(", ")
+      : (b.room_type_name || "—");
+
+    let latest = b;   // refreshed from every successful response
+
+    return formModal({
+      title: "Record payment",
+      submitText: "Record payment",
+      wide: false,
+      fields: [
+        {
+          name: "amount", label: "Amount received", type: "number",
+          required: true, step: "0.01", min: "1",
+          value: due > 0 ? String(due) : "",
+          placeholder: "0.00",
+          help: "Enter exactly what the guest handed over. The server validates it against the outstanding balance.",
+        },
+        {
+          name: "provider", label: "Payment method", type: "select",
+          required: true, value: "CASH", options: OFFLINE_PROVIDERS,
+        },
+        {
+          name: "notes", label: "Notes (optional)", type: "textarea",
+          placeholder: "e.g. settled at the front desk, receipt issued",
+        },
+      ],
+      onRender(panel) {
+        if (!panel) return;
+        const summary = document.createElement("div");
+        summary.className = "pay-modal-summary";
+        summary.innerHTML =
+          '<div class="pay-modal-hero">' +
+            '<span class="pay-modal-hero-label">Outstanding balance</span>' +
+            '<span class="pay-modal-hero-amount" data-pay-due>' + JONE.esc(money(latest.amount_due, currency) || "₦0.00") + '</span>' +
+          "</div>" +
+          '<dl class="pay-modal-facts">' +
+            fact("Booking", latest.booking_reference || "—") +
+            fact("Guest", guestName) +
+            fact("Contact", guest.phone || b.guest_phone || guest.email || b.guest_email || "—") +
+            fact("Room", rooms) +
+            fact("Stay", [
+              latest.check_in ? JONE.formatDate(latest.check_in, "mid") : null,
+              latest.check_out ? JONE.formatDate(latest.check_out, "mid") : null,
+            ].filter(Boolean).join(" → ") || "—") +
+            fact("Status", String(latest.status || "—").replace(/_/g, " ").toUpperCase()) +
+            fact("Total", money(total, currency) || "—") +
+            fact("Paid to date", money(paid, currency) || "₦0.00") +
+          "</dl>";
+        panel.insertBefore(summary, panel.querySelector("form"));
+      },
+      onSubmit: async (values) => {
+        const payload = {
+          booking_reference: b.booking_reference || b.reference,
+          amount: String(values.amount),
+          provider: values.provider,
+          notes: values.notes || "",
+        };
+        if (!payload.booking_reference) throw new Error("This booking has no reference yet.");
+        const res = await window.API.recordPayment(payload);
+        const data = (res && res.data) || {};
+        // The backend snapshot is authoritative — never trust client arithmetic.
+        if (data.booking) latest = Object.assign({}, latest, data.booking);
+        if (typeof data.amount_paid === "string") latest.amount_paid = data.amount_paid;
+        if (opts.onRecorded) {
+          try { opts.onRecorded(latest, data); } catch (_) {}
+        }
+        return {
+          message: data.booking && Number(data.booking.amount_due) > 0
+            ? "Payment recorded. Balance remaining: " + money(data.booking.amount_due, currency) + "."
+            : "Payment recorded — this booking is now fully paid.",
+        };
+      },
+    });
+  }
+
+  function fact(label, value) {
+    return '<div class="pay-modal-fact"><dt>' + JONE.esc(label) + "</dt><dd>" +
+      JONE.esc(value == null || value === "" ? "—" : String(value)) + "</dd></div>";
+  }
+
+  /* ======================================================================
+     STAFF PROFILE MODAL — complete, credential-free staff card.
+     Data: GET /api/admin/users/staff/{id}/ (admins + managers see everyone,
+     receptionists only themselves). Nothing is invented client-side.
+     ====================================================================== */
+  async function staffProfileModal(userId, opts = {}) {
+    opts = opts || {};
+    openPanel("Loading profile…", '<div class="loading-block"><div class="spinner" role="status"></div></div>');
+    let profile;
+    try {
+      const res = await window.API.getStaffProfile(userId);
+      profile = (res && res.data) || {};
+    } catch (err) {
+      closePanel();
+      JONE.ui.toast((err && err.message) || "This staff profile couldn't be loaded.", "error");
+      return null;
+    }
+    const stats = profile.stats || {};
+    const fullName = profile.full_name ||
+      ([profile.first_name, profile.last_name].filter(Boolean).join(" ") || profile.email || "Staff member");
+    const body =
+      '<div class="profile-card">' +
+        '<div class="profile-identity">' +
+          (profile.profile_image_url
+            ? '<img class="profile-photo" src="' + JONE.esc(profile.profile_image_url) + '" alt="" loading="lazy">'
+            : '<div class="profile-photo profile-photo-fallback">' + JONE.esc(JONE.initials(fullName)) + "</div>") +
+          '<div class="profile-identity-text">' +
+            '<h3>' + JONE.esc(fullName) + "</h3>" +
+            '<p class="muted">' + JONE.esc(profile.email || "—") + "</p>" +
+            '<div class="profile-tags">' +
+              statusPill(profile.role || "—", String(profile.role_label || profile.role || "").toUpperCase()) +
+              statusPill(profile.is_active ? "active" : "inactive",
+                         profile.is_active ? "ACTIVE" : "DEACTIVATED") +
+              (profile.email_verified ? "" : statusPill("pending", "EMAIL UNVERIFIED")) +
+            "</div>" +
+          "</div>" +
+        "</div>" +
+        '<dl class="profile-grid">' +
+          row("Phone", profile.phone) +
+          row("Role", profile.role_label || profile.role) +
+          row("Account status", profile.is_active ? "Active" : "Deactivated") +
+          row("Email verified", profile.email_verified ? "Yes" : "No") +
+          row("Staff member", profile.is_staff_member ? "Yes" : "No") +
+          row("Date joined", profile.date_joined ? JONE.formatDateTime(profile.date_joined) : "—") +
+          row("Last login", profile.last_login ? JONE.formatDateTime(profile.last_login) : "—") +
+          row("Last updated", profile.updated_at ? JONE.formatDateTime(profile.updated_at) : "—") +
+        "</dl>" +
+        '<div class="profile-stats">' +
+          stat("Bookings created", stats.bookings_created) +
+          stat("Payments recorded", stats.payments_recorded) +
+          stat("Actions logged", stats.actions_logged) +
+          stat("Last action", stats.last_action_at ? JONE.formatDate(stats.last_action_at, "mid") : "—") +
+        "</div>" +
+      "</div>";
+
+    const actions = [];
+    if (opts.canManage && profile.is_active) {
+      actions.push('<button class="btn btn-sm btn-outline" data-sp-edit>Edit</button>');
+      actions.push('<button class="btn btn-sm btn-danger" data-sp-deactivate>Deactivate</button>');
+    } else if (opts.canManage && !profile.is_active) {
+      actions.push('<button class="btn btn-sm btn-outline" data-sp-edit>Edit</button>');
+      actions.push('<button class="btn btn-sm btn-accent" data-sp-activate>Activate</button>');
+    }
+    actions.push('<button class="btn btn-sm btn-ghost" data-sp-close>Close</button>');
+
+    openPanel(fullName, body, actions.join(""), "modal-lg");
+
+    const panel = lastPanel;
+    if (!panel) return profile;
+    const editBtn = panel.querySelector("[data-sp-edit]");
+    if (editBtn) {
+      editBtn.addEventListener("click", async () => {
+        closePanel();
+        const ok = await editStaffModal(profile);
+        if (ok && opts.onChanged) opts.onChanged();
+      });
+    }
+    const deactivate = panel.querySelector("[data-sp-deactivate]");
+    if (deactivate) {
+      deactivate.addEventListener("click", async () => {
+        const ok = await JONE.ui.confirm({
+          title: "Deactivate this account?",
+          message: fullName + " will lose dashboard access immediately. Their history is kept.",
+          confirmText: "Deactivate", danger: true,
+        });
+        if (!ok) return;
+        await setStaffActive(deactivate, profile, false, opts);
+      });
+    }
+    const activate = panel.querySelector("[data-sp-activate]");
+    if (activate) {
+      activate.addEventListener("click", () => setStaffActive(activate, profile, true, opts));
+    }
+    const closeBtn = panel.querySelector("[data-sp-close]");
+    if (closeBtn) closeBtn.addEventListener("click", closePanel);
+    return profile;
+  }
+
+  function row(label, value) {
+    return '<div class="profile-row"><dt>' + JONE.esc(label) + "</dt><dd>" +
+      JONE.esc(value == null || value === "" ? "—" : String(value)) + "</dd></div>";
+  }
+  function stat(label, value) {
+    return '<div class="profile-stat"><span class="profile-stat-value">' +
+      JONE.esc(value == null ? "—" : String(value)) + "</span><span class=\"profile-stat-label\">" +
+      JONE.esc(label) + "</span></div>";
+  }
+
+  async function setStaffActive(btn, profile, active, opts) {
+    if (!JONE.guardSubmit(btn)) return;
+    try {
+      await window.API.update("users", profile.id, { is_active: active });
+      JONE.ui.toast(active ? "Account reactivated." : "Account deactivated.", "success");
+      closePanel();
+      if (opts && opts.onChanged) opts.onChanged();
+    } catch (err) {
+      JONE.releaseGuard(btn);
+      JONE.ui.toast((err && err.message) || "The account couldn't be updated.", "error");
+    }
+  }
+
+  /** Edit a staff account (admin only). Reuses formModal so validation and
+      backend field errors behave exactly like the rest of the console. */
+  function editStaffModal(profile) {
+    return formModal({
+      title: "Edit staff account",
+      submitText: "Save changes",
+      values: profile,
+      fields: [
+        { name: "first_name", label: "First name", type: "text", required: true },
+        { name: "last_name", label: "Last name", type: "text", required: true },
+        { name: "phone", label: "Phone", type: "tel" },
+        {
+          name: "role", label: "Role", type: "select", required: true,
+          options: [
+            { value: "ADMIN", label: "Admin" },
+            { value: "MANAGER", label: "Manager" },
+            { value: "RECEPTIONIST", label: "Receptionist" },
+          ],
+        },
+      ],
+      onSubmit: async (values) => {
+        await window.API.update("users", profile.id, values);
+        return { message: "Staff account updated." };
+      },
+    });
+  }
+
+  /* ======================================================================
+     VIEW ROOMS — the room-type "View Rooms" action.
+     Reuses GET /api/admin/rooms/?room_type={id} (staff may read) so no new
+     endpoint is needed; the list is the backend's own inventory.
+     ====================================================================== */
+  async function roomTypeRoomsModal(roomType, opts = {}) {
+    const rt = roomType || {};
+    openPanel("Rooms — " + (rt.name || "Room type"),
+      '<div class="loading-block"><div class="spinner" role="status"></div><p class="muted">Loading rooms…</p></div>');
+    let rooms = [];
+    try {
+      const res = await window.API.list("rooms", {
+        room_type: rt.id || rt.slug, page_size: 200,
+      });
+      rooms = window.API.normalizeList(res.data, res.pagination).items ||
+        (res.data && res.data.results) || res.data || [];
+    } catch (err) {
+      closePanel();
+      JONE.ui.toast((err && err.message) || "The rooms for this room type couldn't be loaded.", "error");
+      return;
+    }
+    const body = rooms.length
+      ? '<div class="room-board">' + rooms.map((r) => {
+          const status = String(r.status || "").toLowerCase().replace(/_/g, " ");
+          const hk = r.housekeeping_status ? String(r.housekeeping_status).toLowerCase().replace(/_/g, " ") : "";
+          return '<div class="room-tile">' +
+            '<div class="room-no">' + JONE.esc(r.room_number) + "</div>" +
+            '<div class="room-type">' + (r.floor ? "Floor " + JONE.esc(r.floor) : "") + "</div>" +
+            statusPill(r.status || "unknown", status.toUpperCase()) +
+            (hk ? '<div class="room-type" style="margin-top:0.3rem;">Housekeeping: ' + JONE.esc(hk) + "</div>" : "") +
+            (r.is_active ? "" : '<div class="room-type" style="color:var(--color-danger);">Retired</div>') +
+            "</div>";
+        }).join("") + "</div>"
+      : '<div class="empty-state"><span data-icon="bed"></span><h3>No rooms yet</h3>' +
+        "<p>No physical rooms have been added to this room type yet.</p></div>";
+    openPanel("Rooms — " + (rt.name || "Room type"),
+      '<p class="muted" style="margin-bottom:0.9rem;">' + rooms.length + " room" +
+      (rooms.length === 1 ? "" : "s") + " in " + JONE.esc(rt.name || "this type") + ".</p>" + body,
+      '<button class="btn btn-sm btn-ghost" data-rt-rooms-close>Close</button>', "modal-lg");
+    const panel = lastPanel;
+    const closeBtn = panel && panel.querySelector("[data-rt-rooms-close]");
+    if (closeBtn) closeBtn.addEventListener("click", closePanel);
+    if (panel) JONE.icons.inject(panel);
+  }
+
+  /* ======================================================================
+     GUEST PROFILE MODAL — complete guest record + stay history.
+     Uses GET /api/admin/guests/{id}/ (role-aware: the ID number is masked
+     for receptionists by the backend; the frontend never un-masks it).
+     ====================================================================== */
+  async function guestProfileModal(guestId, opts = {}) {
+    opts = opts || {};
+    openPanel("Guest profile", '<div class="loading-block"><div class="spinner" role="status"></div></div>');
+    let g;
+    try {
+      const res = await window.API.getOne("guests", guestId);
+      g = (res && res.data) || {};
+    } catch (err) {
+      closePanel();
+      JONE.ui.toast((err && err.message) || "This guest profile couldn't be loaded.", "error");
+      return null;
+    }
+    const name = g.full_name || ([g.first_name, g.last_name].filter(Boolean).join(" ") || "Guest");
+    const location = [g.city, g.state, g.country].filter(Boolean).join(", ");
+    const history = g.bookings || [];
+    const body =
+      '<div class="profile-card">' +
+        '<div class="profile-identity">' +
+          '<div class="profile-photo profile-photo-fallback">' + JONE.esc(JONE.initials(name)) + "</div>" +
+          '<div class="profile-identity-text"><h3>' + JONE.esc(name) + "</h3>" +
+            '<p class="muted">' + JONE.esc([g.email, g.phone].filter(Boolean).join(" · ") || "—") + "</p>" +
+            '<div class="profile-tags">' +
+              statusPill("checked_in", (g.bookings_count != null ? g.bookings_count : history.length) +
+                " booking" + ((g.bookings_count != null ? g.bookings_count : history.length) === 1 ? "" : "s")) +
+              (g.has_account ? statusPill("confirmed", "HAS ACCOUNT") : statusPill("pending", "NO ACCOUNT")) +
+            "</div>" +
+          "</div>" +
+        "</div>" +
+        '<dl class="profile-grid">' +
+          row("Email", g.email) +
+          row("Phone", g.phone) +
+          row("Address", [g.address, location].filter(Boolean).join(", ")) +
+          row("ID type", g.identification_type_label || g.identification_type) +
+          row("ID number", g.identification_number || "—") +
+          row("Guest since", g.created_at ? JONE.formatDate(g.created_at, "mid") : "—") +
+          row("Last booking", g.last_booking_at ? JONE.formatDateTime(g.last_booking_at) : "—") +
+          row("Special requests", g.special_requests) +
+          row("Total paid", money(g.total_spent, "NGN")) +
+          row("Outstanding", money(g.outstanding_balance, "NGN")) +
+        "</dl>" +
+      "</div>" +
+      '<h4 class="profile-section-title">Booking &amp; stay history</h4>' +
+      (history.length
+        ? '<div class="table-wrap"><table class="table"><thead><tr>' +
+            "<th>Reference</th><th>Room</th><th>Stay</th><th>Total</th><th>Paid</th><th>Status</th>" +
+          "</tr></thead><tbody>" + history.map((b) =>
+            "<tr>" +
+              '<td><a href="booking-details.html?ref=' + encodeURIComponent(b.booking_reference) + '">' +
+                JONE.esc(b.booking_reference) + "</a></td>" +
+              "<td>" + JONE.esc((b.room_numbers && b.room_numbers.length)
+                ? b.room_numbers.join(", ") : (b.room_type_name || "—")) +
+                (b.room_type_name ? '<div class="caption">' + JONE.esc(b.room_type_name) + "</div>" : "") +
+              "</td>" +
+              "<td>" + JONE.esc([
+                b.check_in ? JONE.formatDate(b.check_in, "mid") : "",
+                b.check_out ? JONE.formatDate(b.check_out, "mid") : "",
+              ].filter(Boolean).join(" → ")) +
+              (b.nights ? '<div class="caption">' + b.nights + " night" + (b.nights === 1 ? "" : "s") + "</div>" : "") +
+              "</td>" +
+              '<td class="num">' + JONE.esc(money(b.total_amount, b.currency) || "—") + "</td>" +
+              '<td class="num">' + JONE.esc(money(b.amount_paid, b.currency) || "₦0.00") + "</td>" +
+              "<td>" + statusPill(b.status) + "</td>" +
+            "</tr>").join("") + "</tbody></table></div>"
+        : '<div class="empty-state"><span data-icon="calendar"></span><h3>No bookings yet</h3>' +
+          "<p>This guest has no recorded stays.</p></div>");
+    openPanel(name, body, '<button class="btn btn-sm btn-ghost" data-gp-close>Close</button>', "modal-lg");
+    const panel = lastPanel;
+    const closeBtn = panel && panel.querySelector("[data-gp-close]");
+    if (closeBtn) closeBtn.addEventListener("click", closePanel);
+    if (panel) JONE.icons.inject(panel);
+    return g;
+  }
+
+  /* ======================================================================
+     Minimal generic panel host for the read-only dialogs above.
+     Uses the same .modal markup + focus handling as formModal so the look,
+     the escape/backdrop behaviour and mobile rendering stay identical.
+     ====================================================================== */
+  let lastPanel = null;
+  function closePanel() {
+    if (panelHost) {
+      panelHost.remove();
+      panelHost = null;
+      lastPanel = null;
+      document.body.classList.remove("modal-open");
+      document.removeEventListener("keydown", panelKeydown, true);
+    }
+  }
+  let panelHost = null;
+  function panelKeydown(e) { if (e.key === "Escape") closePanel(); }
+
+  function openPanel(title, html, actionsHTML, sizeClass) {
+    closePanel();
+    panelHost = document.createElement("div");
+    panelHost.className = "modal open";
+    panelHost.innerHTML =
+      '<div class="modal-backdrop" data-panel-close></div>' +
+      '<div class="modal-panel ' + (sizeClass || "") + '" role="dialog" aria-modal="true" aria-label="' +
+      JONE.esc(title) + '">' +
+        '<div class="modal-head"><h3 style="font-size:var(--fs-md);">' + JONE.esc(title) + "</h3>" +
+        '<button class="btn-icon btn-ghost modal-close" type="button" data-panel-close aria-label="Close">' +
+        JONE.icons.get("x") + "</button></div>" +
+        '<div class="modal-body" data-panel-body>' + html + "</div>" +
+        (actionsHTML ? '<div class="modal-foot" data-panel-foot>' + actionsHTML + "</div>" : "") +
+      "</div>";
+    document.body.appendChild(panelHost);
+    document.body.classList.add("modal-open");
+    lastPanel = panelHost.querySelector(".modal-panel");
+    panelHost.querySelectorAll("[data-panel-close]").forEach((n) =>
+      n.addEventListener("click", closePanel));
+    document.addEventListener("keydown", panelKeydown, true);
+    const closeBtn = panelHost.querySelector(".modal-close");
+    if (closeBtn) closeBtn.focus({ preventScroll: true });
+    JONE.icons.inject(panelHost);
+    return lastPanel;
+  }
+
   window.JONE = window.JONE || {};
   window.JONE.dashboard = {
     renderSidebar, renderUser, setupSidebar, renderTopbarBell, renderBottomNav,
-    notifBadge, statusPill, boot, topbar, NAV, badge, DATA, formModal
+    notifBadge, statusPill, boot, topbar, NAV, badge, DATA, formModal,
+    // Operational components
+    currentRole, hasRole, canManageRooms, canManageStaff, money,
+    paymentModal, staffProfileModal, editStaffModal, roomTypeRoomsModal,
+    guestProfileModal, openPanel, closePanel,
   };
 })();

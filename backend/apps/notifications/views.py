@@ -7,7 +7,11 @@ from rest_framework.views import APIView
 from apps.core.responses import success_response
 
 from .models import Notification
-from .serializers import NotificationSerializer, UnreadCountSerializer
+from .serializers import (
+    NotificationDetailSerializer,
+    NotificationSerializer,
+    UnreadCountSerializer,
+)
 from .services import unread_count
 
 
@@ -29,6 +33,32 @@ class NotificationListView(generics.ListAPIView):
         response = self.get_paginated_response(serializer.data)
         response.data["data"] = {"unread_count": unread_count(request.user), "notifications": response.data["data"]}
         return response
+
+
+@extend_schema(tags=["Notifications"], summary="Read one notification (owns only)")
+class NotificationDetailView(generics.RetrieveAPIView):
+    """Full notification for `notification-details.html`.
+
+    A user can only ever read their OWN notification — the queryset is scoped
+    to the recipient, so someone else's id is a 404, never a leak. Opening the
+    detail marks it read (the response carries the fresh unread count so the
+    sidebar badge can update without another request).
+    """
+
+    permission_classes = [IsAuthenticated]
+    serializer_class = NotificationDetailSerializer
+
+    def get_queryset(self):
+        return Notification.objects.filter(recipient=self.request.user)
+
+    def retrieve(self, request, *args, **kwargs):
+        notification = self.get_object()
+        data = self.get_serializer(notification).data
+        if not notification.is_read:
+            Notification.objects.filter(pk=notification.pk, is_read=False).update(is_read=True)
+            data["is_read"] = True
+        data["unread_count"] = unread_count(request.user)
+        return success_response(data)
 
 
 @extend_schema(tags=["Notifications"], summary="Unread notification count")

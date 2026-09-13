@@ -48,9 +48,9 @@
 
 <section class="panel">
   <div class="filter-bar">
-    <div class="field"><label class="field-label" for="bk-q">Search</label><input class="input" id="bk-q" data-filter="q" placeholder="Ref, guest, phone, email"></div>
+    <div class="field"><label class="field-label" for="bk-q">Search</label><input class="input" id="bk-q" data-filter="q" placeholder="Ref, guest, phone, email, room no., receipt ref"></div>
     <div class="field"><label class="field-label" for="bk-status">Status</label><select class="select" id="bk-status" data-filter="status"><option value="">All</option><option>confirmed</option><option>pending</option><option>cancelled</option><option>checked_in</option><option>checked_out</option></select></div>
-    <div class="field"><label class="field-label" for="bk-pay">Payment</label><select class="select" id="bk-pay" data-filter="payment_status"><option value="">All</option><option>paid</option><option>partial</option><option>unpaid</option></select></div>
+    <div class="field"><label class="field-label" for="bk-pay">Payment</label><select class="select" id="bk-pay" data-filter="payment_status"><option value="">All</option><option value="PAID">Paid</option><option value="PARTIALLY_PAID">Partially paid</option><option value="UNPAID">Unpaid</option></select></div>
     <div class="field"><label class="field-label" for="bk-date">From</label><input class="input" type="date" id="bk-date" data-filter="from" data-allow-past></div>
     <div class="filter-actions"><button class="btn btn-sm" data-new-booking>New booking</button></div>
   </div>
@@ -97,27 +97,60 @@
     return b.room_type_name || "—";
   }
 
+  // Row cache so a recorded payment can refresh ONE row in place instead of
+  // re-downloading the whole bookings list.
+  var rowIndex = {};
+
+  function actionCell(b){
+    var due = Number(b.amount_due || 0);
+    var canPay = b.status === "CONFIRMED" || b.status === "PENDING" || b.status === "CHECKED_IN";
+    var payBtn = (canPay && due > 0)
+      ? '<button class="btn btn-sm btn-accent" data-pay="' + JONE.esc(b.id) + '">' +
+        '<span data-icon="wallet" data-size="14"></span> Record payment</button>'
+      : "";
+    return '<div class="row-actions">' + payBtn +
+      '<a class="btn btn-sm btn-outline" href="booking-details.html?ref='+encodeURIComponent(refOf(b))+'">View</a>' +
+      '</div>';
+  }
+
   function render(list){
     if(!tbody) return;
-    if(!list.length){
-      tbody.innerHTML = '<tr><td colspan="9"><div class="empty-state"><span data-icon="search"></span><h3>No bookings found</h3><p>Adjust your search or filters.</p></div></td></tr>';
-      JONE.icons.inject(tbody); return;
-    }
-    tbody.innerHTML = list.map(function(b){
-      var ref = refOf(b);
-      return '<tr>'+
-        '<td><a class="nav-link" href="booking-details.html?ref='+encodeURIComponent(ref)+'">'+JONE.esc(ref)+'</a></td>'+
-        '<td class="hide-sm">'+JONE.esc(b.guest_name||"—")+'</td>'+
-        '<td class="hide-sm">'+JONE.esc(roomLabel(b))+'</td>'+
-        '<td>'+JONE.esc(b.check_in?JONE.formatDate(b.check_in,"mid"):"—")+'</td>'+
-        '<td class="hide-sm">'+JONE.esc(b.check_out?JONE.formatDate(b.check_out,"mid"):"—")+'</td>'+
-        '<td>'+JONE.dashboard.statusPill(b.status)+'</td>'+
-        '<td class="hide-sm">'+JONE.dashboard.statusPill(b.payment_status)+'</td>'+
-        '<td class="hide-sm num">'+JONE.esc(JONE.formatNaira(b.total_amount))+'</td>'+
-        '<td><a class="btn btn-sm btn-outline" href="booking-details.html?ref='+encodeURIComponent(ref)+'">View</a></td>'+
-      '</tr>';
-    }).join("");
-    JONE.icons.inject(tbody);
+    renderRows(list || []);
+  }
+
+  /* Update a single row from the authoritative booking snapshot returned by
+     the payments endpoint — no table reload, no extra requests. */
+  function refreshRow(id, fresh){
+    var row = tbody && tbody.querySelector('[data-booking-row="'+String(id)+'"]');
+    if(!row || !fresh) return;
+    var merged = Object.assign({}, rowIndex[String(id)] || {}, fresh);
+    rowIndex[String(id)] = merged;
+    var cells = row.children;
+    if(cells[5]) cells[5].innerHTML = JONE.dashboard.statusPill(merged.status);
+    if(cells[6]) cells[6].innerHTML = JONE.dashboard.statusPill(merged.payment_status);
+    if(cells[7]) cells[7].innerHTML = JONE.esc(JONE.formatNaira(merged.total_amount)) +
+      '<div class="caption">Due '+JONE.esc(JONE.formatNaira(merged.amount_due||0))+'</div>';
+    if(cells[8]) cells[8].innerHTML = actionCell(merged);
+    JONE.icons.inject(row);
+  }
+
+  /* One delegated handler covers every row (and every future re-render). */
+  if (tbody) tbody.addEventListener("click", function(e){
+    var btn = e.target.closest && e.target.closest("[data-pay]");
+    if(!btn) return;
+    var id = btn.getAttribute("data-pay");
+    var booking = rowIndex[id];
+    if(!booking) return;
+    openPaymentFor(booking, id);
+  });
+
+  function openPaymentFor(booking, rowId){
+    JONE.dashboard.paymentModal(booking, {
+      onRecorded: function(fresh){
+        refreshRow(rowId || booking.id, fresh);
+        if (JONE.dashboard.notifBadge) JONE.dashboard.notifBadge.refresh();
+      }
+    });
   }
 
   function filters(){
@@ -158,6 +191,7 @@
 
   var newBtn = document.querySelector("[data-new-booking]");
   if (newBtn) newBtn.addEventListener("click", async function(){
+    var created = null;
     if (!roomTypes.length) await loadTypes();
     var today = JONE.hotelTodayISO();
     var tomorrow = new Date(Date.now() + 86400000).toISOString().slice(0,10);
@@ -182,7 +216,7 @@
         { name: "guest_email", label: "Guest email", type: "email", required: true },
         { name: "guest_phone", label: "Guest phone", required: true }
       ],
-      onSubmit: function(v){
+      onSubmit: async function(v){
         var payload = {
           room_type: v.room_type,
           check_in: v.check_in,
@@ -197,21 +231,105 @@
           guest: { first_name: v.guest_first_name, last_name: v.guest_last_name, email: v.guest_email, phone: v.guest_phone }
         };
         if (v.offer_code) payload.offer_code = v.offer_code;
-        return window.API.create("bookings", payload).then(function(res){
-          var ref = res && res.data && res.data.booking_reference;
-          JONE.ui.toast("Booking " + (ref || "") + " created.", "success");
-        });
+        var res = await window.API.create("bookings", payload);
+        created = (res && res.data) || null;
+        return res;
       }
     });
-    if (out) load();
+
+    /* The create response IS the authoritative booking detail (guest, room
+       assignments, totals, balance) — so the new row is added immediately and
+       the payment dialog opens right away. NO page reload and NO bookings-list
+       reload happens before the payment step. */
+    if (!created) return;
+    var ref = created.booking_reference;
+    JONE.ui.toast("Booking " + (ref || "") + " created.", "success");
+    prependRow(created);
+
+    var due = Number(created.amount_due || 0);
+    if (created.status !== "CANCELLED" && due > 0) {
+      if (created.room_substitution) {
+        JONE.ui.toast("Room " + created.room_substitution.requested_room_number +
+          " was taken — Room " + created.room_substitution.assigned_room_number +
+          " was reserved instead.", "warning");
+      }
+      await JONE.dashboard.paymentModal(created, {
+        onRecorded: function(fresh){ refreshRow(created.id, fresh); }
+      });
+    }
+    // One authoritative refresh AFTER the payment step (the row may have
+    // changed status server-side, e.g. PENDING → CONFIRMED on full payment).
+    load();
   });
+
+  /* Insert a freshly created booking as the first row WITHOUT reloading the
+     table: the create response already carries every field the row renders. */
+  function prependRow(b){
+    if(!tbody || !b) return;
+    var existing = tbody.querySelector('[data-booking-row="'+String(b.id)+'"]');
+    if(existing) return;
+    rowIndex[String(b.id)] = normalizeDetail(b);
+    var empty = tbody.querySelector('[data-tbody-empty], .empty-state');
+    if(empty) tbody.innerHTML = "";
+    tbody.insertAdjacentHTML("afterbegin", rowHTML(rowIndex[String(b.id)]));
+    JONE.icons.inject(tbody.firstElementChild);
+  }
+
+  /* The create/detail response nests the guest and the room assignments; the
+     table row wants the flat list shape. Mapping happens here, never in a
+     second API call. */
+  function normalizeDetail(b){
+    var g = b.guest || {};
+    return {
+      id: b.id,
+      booking_reference: b.booking_reference,
+      guest_name: g.full_name || [g.first_name, g.last_name].filter(Boolean).join(" ") || b.guest_name || "—",
+      guest_phone: g.phone || b.guest_phone || "",
+      guest_email: g.email || b.guest_email || "",
+      room_type_name: b.room_type_name,
+      room_numbers: (b.room_assignments || []).map(function(a){ return a.room_number; }).filter(Boolean),
+      check_in: b.check_in, check_out: b.check_out,
+      status: b.status, payment_status: b.payment_status,
+      total_amount: b.total_amount, amount_paid: b.amount_paid, amount_due: b.amount_due,
+      currency: b.currency,
+    };
+  }
+
+  function rowHTML(b){
+    var ref = refOf(b);
+    return '<tr data-booking-row="'+JONE.esc(b.id)+'">'+
+      '<td><a class="nav-link" href="booking-details.html?ref='+encodeURIComponent(ref)+'">'+JONE.esc(ref)+'</a>'+
+        '<div class="caption hide-md">'+JONE.esc(b.guest_name||"—")+'</div></td>'+
+      '<td class="hide-sm">'+JONE.esc(b.guest_name||"—")+'<div class="caption">'+JONE.esc(b.guest_phone||b.guest_email||"")+'</div></td>'+
+      '<td class="hide-sm">'+JONE.esc(roomLabel(b))+'</td>'+
+      '<td>'+JONE.esc(b.check_in?JONE.formatDate(b.check_in,"mid"):"—")+'</td>'+
+      '<td class="hide-sm">'+JONE.esc(b.check_out?JONE.formatDate(b.check_out,"mid"):"—")+'</td>'+
+      '<td>'+JONE.dashboard.statusPill(b.status)+'</td>'+
+      '<td class="hide-sm">'+JONE.dashboard.statusPill(b.payment_status)+'</td>'+
+      '<td class="hide-sm num">'+JONE.esc(JONE.formatNaira(b.total_amount))+
+        '<div class="caption">Due '+JONE.esc(JONE.formatNaira(b.amount_due||0))+'</div></td>'+
+      '<td>'+actionCell(b)+'</td>'+
+    '</tr>';
+  }
+
+  function renderRows(list){
+    rowIndex = {};
+    list.forEach(function(b){ rowIndex[String(b.id)] = b; });
+    tbody.innerHTML = list.map(rowHTML).join("");
+    JONE.icons.inject(tbody);
+  }
 
   async function load(){
     DATA.loading(tbody);
     try {
       var res = await window.API.list("bookings", filters());
       var list = window.API.normalizeList(res.data, res.pagination).items;
-      render(list || []);
+      if(!(list||[]).length){
+        DATA.empty(tbody, "search", "No bookings found", "Adjust your search or filters.", 9);
+        rowIndex = {};
+        return;
+      }
+      renderRows(list);
     } catch(err){
       DATA.error(tbody, "Bookings couldn't be loaded", (err && err.message) || "Please try again in a moment.", 9);
     }

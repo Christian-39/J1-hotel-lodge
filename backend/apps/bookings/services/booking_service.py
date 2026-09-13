@@ -199,7 +199,17 @@ def upsert_guest(*, user=None, guest_data=None) -> Guest:
 @transaction.atomic
 def create_booking(*, room_type_value, check_in, check_out, rooms, adults, children,
                    offer_code=None, special_requests="", user=None, guest_data=None,
-                   source=Booking.Source.WEBSITE, require_payment=True, actor=None, request=None) -> Booking:
+                   source=Booking.Source.WEBSITE, require_payment=True, actor=None,
+                   request=None, room_id=None) -> Booking:
+    """Create a reservation.
+
+    ``room_id`` requests one EXACT physical room ("Book this room — Room 203").
+    The backend never trusts it blindly: the room must belong to the requested
+    room type, be in service and be free for the stay. When it is not, a
+    deterministic substitute is selected by the availability engine and
+    exposed to the caller as ``booking.room_substitution`` so the guest can be
+    told — a room is never swapped silently.
+    """
     is_staff = bool(actor and actor.is_staff_member)
     settings_obj = HotelSettings.get_settings()
 
@@ -226,15 +236,79 @@ def create_booking(*, room_type_value, check_in, check_out, rooms, adults, child
     free_rooms = list(
         availability.available_rooms_queryset(
             room_type=room_type, check_in=check_in, check_out=check_out, for_update=True
-        )[:rooms]
+        )
     )
-    if len(free_rooms) < rooms:
+    substitution = None
+
+    # --- Exact physical room requested ("Book this room") -------------------
+    requested_room = None
+    if room_id:
+        requested_room = (
+            Room.objects.filter(pk=room_id, is_active=True, room_type=room_type)
+            .exclude(status__in=availability.OPERATIONALLY_BLOCKED)
+            .first()
+        )
+        if requested_room is None:
+            raise RoomUnavailableError(
+                "That room is not available for the selected dates. "
+                "Please choose another room."
+            )
+        if requested_room in free_rooms:
+            # Happy path: the exact room the guest clicked is still free.
+            free_rooms = [requested_room] + [r for r in free_rooms if r.pk != requested_room.pk]
+        else:
+            substitute = availability.find_substitute_room(
+                room_type=room_type,
+                check_in=check_in,
+                check_out=check_out,
+                guests=int(adults or 1) + int(children or 0),
+                exclude_room_ids=[requested_room.pk],
+            )
+            if substitute is None:
+                raise RoomUnavailableError(
+                    f"Room {requested_room.room_number} is no longer available for your "
+                    f"selected dates and no equivalent room of the same type could be "
+                    f"held. Please choose different dates or another room type."
+                )
+            if substitute["price_changed"]:
+                # Never change what the guest owes without their consent.
+                raise RoomUnavailableError(
+                    f"Room {requested_room.room_number} is no longer available for your "
+                    f"selected dates. Please choose another room."
+                )
+            alt_type = substitute["room_type"]
+            if alt_type.pk != room_type.pk:
+                # Cross-type relocation (identical nightly rate) — re-lock the
+                # new type and re-price so the snapshot stays consistent.
+                room_type = RoomType.objects.select_for_update().get(pk=alt_type.pk)
+                quote = calculate_quote(
+                    room_type=room_type, check_in=check_in, check_out=check_out, rooms=rooms,
+                    adults=adults, children=children, offer_code=offer_code,
+                    settings_obj=settings_obj, for_staff=is_staff,
+                )
+            free_rooms = [substitute["room"]] + [
+                r for r in free_rooms if r.pk != substitute["room"].pk
+            ]
+            substitution = {
+                "requested_room_id": requested_room.pk,
+                "requested_room_number": requested_room.room_number,
+                "assigned_room_id": substitute["room"].pk,
+                "assigned_room_number": substitute["room"].room_number,
+                "room_type": room_type.name,
+                "room_type_id": room_type.pk,
+                "price_changed": False,
+                "reason": substitute["reason"],
+            }
+
+    chosen_rooms = free_rooms[:rooms]
+    if len(chosen_rooms) < rooms:
         remaining = availability.available_room_count(
             room_type=room_type, check_in=check_in, check_out=check_out
         )
         raise RoomUnavailableError(
             f"Only {remaining} room(s) of this type remain for the selected dates."
         )
+    free_rooms = chosen_rooms
 
     guest = upsert_guest(user=user, guest_data=guest_data)
 
@@ -274,6 +348,9 @@ def create_booking(*, room_type_value, check_in, check_out, rooms, adults, child
             for room in free_rooms
         ]
     )
+    # Transient (not persisted) hand-off to the API layer: when the exact room
+    # the guest picked could not be held, callers MUST surface this to them.
+    booking.room_substitution = substitution
 
     log_action(
         actor=actor or user,
@@ -283,6 +360,14 @@ def create_booking(*, room_type_value, check_in, check_out, rooms, adults, child
             "reference": booking.booking_reference,
             "source": booking.source,
             "total": str(booking.total_amount),
+            "rooms": [r.room_number for r in free_rooms],
+            **({
+                "room_substitution": {
+                    "requested": substitution["requested_room_number"],
+                    "assigned": substitution["assigned_room_number"],
+                    "reason": substitution["reason"],
+                }
+            } if substitution else {}),
         },
         request=request,
         summary=f"Booking {booking.booking_reference} created ({booking.source})",

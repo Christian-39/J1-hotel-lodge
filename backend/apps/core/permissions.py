@@ -51,6 +51,29 @@ class IsStaffReadOnlyManagerWrite(BasePermission):
         return request.user.role in MANAGER_ROLES
 
 
+class CanViewStaffProfile(BasePermission):
+    """Who may open another person's staff profile card.
+
+    * ADMIN — every account (and may edit them via the users endpoints).
+    * MANAGER — read-only view of every staff account.
+    * RECEPTIONIST — their own profile only.
+
+    Role claims from the client are never consulted; the row in the database
+    decides. This is the READ half of staff management — every mutation still
+    goes through :class:`IsAdminRole`.
+    """
+
+    message = "You do not have permission to view this staff profile."
+
+    def has_permission(self, request, view):
+        if not (_active(request.user) and request.user.role in STAFF_ROLES):
+            return False
+        if request.user.role in MANAGER_ROLES:
+            return True
+        # Receptionists may only ever look at themselves.
+        return str(view.kwargs.get("pk") or "") == str(request.user.pk)
+
+
 class IsOwnerOrStaff(BasePermission):
     """Object-level access: a guest may only touch their own records.
 

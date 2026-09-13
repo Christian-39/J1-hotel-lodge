@@ -34,6 +34,7 @@
         <button class="btn-icon btn-outline dash-menu-toggle" aria-label="Open menu" data-icon="menu" data-size="22"></button>
         <div class="dash-title" data-dash-title>
           <h1>Room Types &amp; Amenities</h1>
+          <p>What guests browse, and what they can book</p>
         </div>
       </div>
       <div class="dash-topbar-right">
@@ -46,6 +47,13 @@
     </div>
     <div class="dash-content">
 
+<div class="kpi-grid rt-kpis" data-rt-summary>
+  <div class="kpi"><div class="kpi-label">Room types</div><div class="kpi-value" data-rt-stat="total">—</div></div>
+  <div class="kpi"><div class="kpi-label">Active</div><div class="kpi-value" data-rt-stat="active">—</div></div>
+  <div class="kpi"><div class="kpi-label">Physical rooms</div><div class="kpi-value" data-rt-stat="rooms">—</div></div>
+  <div class="kpi"><div class="kpi-label">Amenities</div><div class="kpi-value" data-rt-stat="amenities">—</div></div>
+</div>
+
 <section class="panel">
   <div class="panel-head">
     <h2>Room types</h2>
@@ -54,8 +62,9 @@
     </div>
   </div>
   <div class="panel-body">
+    <p class="panel-note">Room types are what guests browse and book. Each type is backed by physical rooms — use <strong>View rooms</strong> to inspect the individual room numbers behind a type.</p>
     <div class="table-wrap">
-      <table class="table">
+      <table class="table rt-table">
         <thead>
           <tr>
             <th>Cover</th><th>Type</th><th class="num">Rate / night</th><th class="num">Sleeps</th><th class="hide-sm">Beds</th><th class="hide-sm num">Rooms</th><th>Images</th><th class="hide-sm">Featured</th><th>Status</th><th class="num">Actions</th>
@@ -141,19 +150,32 @@
   function typeRow(t){
     var beds = (t.bed_count||1) + " \u00D7 " + JONE.esc(t.bed_type||"bed");
     var imgs = (t.images||[]).filter(function(i){ return i.is_active!==false; }).length;
-    var acts =
-      '<div style="display:flex;gap:0.35rem;justify-content:flex-end;">' +
-      '<button class="btn btn-sm btn-outline" data-rt-imgs="' + t.id + '" type="button" title="Manage images"><span data-icon="image" data-size="13"></span> <span class="hide-sm">Images</span></button>' +
-      '<button class="btn btn-sm btn-outline" data-rt-edit="' + t.id + '" type="button" title="Edit"><span data-icon="edit" data-size="13"></span> <span class="hide-sm">Edit</span></button>' +
-      '<button class="btn btn-sm btn-outline" data-rt-del="' + t.id + '" type="button" title="Deactivate"><span data-icon="trash" data-size="13"></span></button>' +
+    // Write actions (Edit / Images / Deactivate) need MANAGER or ADMIN — the
+    // backend enforces that with IsStaffReadOnlyManagerWrite. Hiding them for
+    // receptionists is a UX courtesy only, never the actual gate.
+    var canWrite = JONE.dashboard.canManageRooms();
+    var acts = '<div class="row-actions row-actions-end">' +
+      '<button class="btn btn-sm btn-outline" data-rt-rooms="' + t.id + '" type="button" title="View the physical rooms in this type">' +
+        '<span data-icon="bed" data-size="13"></span> <span class="hide-sm">View rooms</span></button>' +
+      (canWrite
+        ? '<button class="btn btn-sm btn-outline" data-rt-imgs="' + t.id + '" type="button" title="Manage images">' +
+            '<span data-icon="image" data-size="13"></span> <span class="hide-sm">Images</span></button>' +
+          '<button class="btn btn-sm btn-outline" data-rt-edit="' + t.id + '" type="button" title="Edit">' +
+            '<span data-icon="edit" data-size="13"></span> <span class="hide-sm">Edit</span></button>' +
+          '<button class="btn btn-sm btn-ghost" data-rt-del="' + t.id + '" type="button" title="Deactivate">' +
+            '<span data-icon="trash" data-size="13"></span></button>'
+        : "") +
       '</div>';
     var cover = coverUrl(t);
     var coverCell = cover
       ? '<img class="rt-thumb" src="' + JONE.esc(cover) + '" alt="" loading="lazy">'
       : '<span class="rt-thumb-empty" title="No image"><span data-icon="image" data-size="15"></span></span>';
-    return '<tr' + (t.is_active===false ? ' style="opacity:0.55;"' : '') + '>' +
+    var slugLine = t.slug ? '<div class="caption nowrap-ellipsis">/rooms/' + JONE.esc(t.slug) + '</div>' : "";
+    return '<tr' + (t.is_active===false ? ' class="is-muted"' : '') + '>' +
       '<td>' + coverCell + '</td>' +
-      '<td><strong>' + JONE.esc(t.name) + '</strong>' + (t.short_description ? '<div class="caption">' + JONE.esc(t.short_description) + '</div>' : '') + '</td>' +
+      '<td class="rt-name-cell"><strong>' + JONE.esc(t.name) + '</strong>' +
+        (t.short_description ? '<div class="rt-clamp">' + JONE.esc(t.short_description) + '</div>' : "") +
+        slugLine + '</td>' +
       '<td class="num">' + money(t.base_price) + '</td>' +
       '<td class="num">' + JONE.esc(t.max_guests||"\u2014") + '</td>' +
       '<td class="hide-sm">' + beds + '</td>' +
@@ -184,6 +206,23 @@
     ab.innerHTML = amenities.length ? amenities.map(amenityRow).join("") :
       '<tr><td colspan="4"><div class="empty-state"><h3>No amenities</h3><p>Add Wi-Fi, air conditioning, TV&hellip; as needed.</p></div></td></tr>';
     JONE.icons.inject(tb); JONE.icons.inject(ab);
+    renderSummary();
+  }
+
+  /* Header counters — derived from the same backend rows, never invented. */
+  function renderSummary(){
+    var box = document.querySelector("[data-rt-summary]");
+    if(!box) return;
+    var stats = {
+      total: types.length,
+      active: types.filter(function(t){ return t.is_active !== false; }).length,
+      rooms: types.reduce(function(sum, t){ return sum + (Number(t.room_count) || 0); }, 0),
+      amenities: amenities.length,
+    };
+    Object.keys(stats).forEach(function(k){
+      var el = box.querySelector('[data-rt-stat="' + k + '"]');
+      if (el) el.textContent = stats[k];
+    });
   }
 
   function errRow(tb, err, cols){
@@ -407,7 +446,19 @@
 
   document.addEventListener("click", function(e){
     var add = e.target.closest("[data-rt-add]");
-    if(add){ openTypeModal(null); return; }
+    if(add){
+      if(!JONE.dashboard.canManageRooms()){
+        JONE.ui.toast("Only managers and administrators can create room types.", "warning");
+        return;
+      }
+      openTypeModal(null); return;
+    }
+    var viewRooms = e.target.closest("[data-rt-rooms]");
+    if(viewRooms){
+      var t0 = types.filter(function(x){ return String(x.id)===viewRooms.getAttribute("data-rt-rooms"); })[0];
+      if(t0) JONE.dashboard.roomTypeRoomsModal(t0);
+      return;
+    }
     var edit = e.target.closest("[data-rt-edit]");
     if(edit){
       var t = types.filter(function(x){ return String(x.id)===edit.getAttribute("data-rt-edit"); })[0];
@@ -435,7 +486,13 @@
       return;
     }
     var amAdd = e.target.closest("[data-am-add]");
-    if(amAdd){ openAmenityModal(null); return; }
+    if(amAdd){
+      if(!JONE.dashboard.canManageRooms()){
+        JONE.ui.toast("Only managers and administrators can manage amenities.", "warning");
+        return;
+      }
+      openAmenityModal(null); return;
+    }
     var amEdit = e.target.closest("[data-am-edit]");
     if(amEdit){
       var a = amenities.filter(function(x){ return String(x.id)===amEdit.getAttribute("data-am-edit"); })[0];
@@ -456,6 +513,17 @@
       });
     }
   });
+
+  /* Receptionists may READ the catalog but not change it: hide the write
+     controls entirely (the backend still enforces IsStaffReadOnlyManagerWrite,
+     so this is presentation, not the security boundary). */
+  (function applyPermissions(){
+    if (JONE.dashboard.canManageRooms()) return;
+    var addBtn = document.querySelector("[data-rt-add]");
+    if (addBtn) addBtn.remove();
+    var amAddBtn = document.querySelector("[data-am-add]");
+    if (amAddBtn) amAddBtn.remove();
+  })();
 
   loadTypes();
   loadAmenities();

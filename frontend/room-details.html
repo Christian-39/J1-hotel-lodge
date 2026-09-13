@@ -83,12 +83,24 @@
           </div>
         </div>
 
+          <!-- Choose an exact room: each card carries the physical room's
+               STABLE id, so "Book this room — Room 203" really means that
+               room. The backend re-checks availability when the booking is
+               created and picks an equivalent room if that one was taken. -->
+          <div class="review-section" id="room-picker-block" hidden>
+            <h3 class="h4" style="margin-bottom:0.35rem;">Choose your exact room</h3>
+            <p class="caption" style="margin-bottom:0.9rem;">Pick a specific room number, or leave it to us and we'll assign the best available room of this type.</p>
+            <div class="room-picker" id="room-picker" role="radiogroup" aria-label="Choose a room"></div>
+            <p class="caption" id="room-picker-state"></p>
+          </div>
+
         <aside class="booking-summary no-print">
           <div class="booking-summary-head"><h3 id="room-sum-name">Room</h3><div style="color:rgba(255,255,255,0.75);font-size:var(--fs-sm);">per night</div></div>
           <div class="booking-summary-body">
             <div class="summary-row"><span class="label">From</span><span class="value" id="room-sum-price">--</span></div>
             <div class="summary-row"><span class="label">Capacity</span><span class="value" id="room-sum-cap">--</span></div>
             <div class="summary-row"><span class="label">Bed</span><span class="value" id="room-sum-bed">--</span></div>
+            <div class="summary-row" id="room-sum-room-row" hidden><span class="label">Room</span><span class="value" id="room-sum-room">Any available</span></div>
             <a class="btn btn-accent btn-block" id="room-book" href="booking.html">Book this room</a>
             <p class="caption center">Prices exclude applicable taxes. Check availability for your dates.</p>
           </div>
@@ -269,12 +281,117 @@
       if (!nm) return "";
       return '<span style="display:inline-flex;align-items:center;gap:0.5rem;color:var(--color-text-muted);"><span data-icon="check" data-size="16" class="text-success"></span>' + JONE.esc(nm) + '</span>';
     }).join(""));
+    selectedRoomId = null;
+    selectedRoomNumber = null;
     var book = document.querySelector("#room-book");
-    if (book) book.href = "booking.html?room=" + encodeURIComponent(r.slug || r.id || slug || "");
+    if (book) book.href = bookingHref(r);
     JONE.icons.inject(document);
     buildThumbs(r);
     setHero(r)
     document.title = (r.name || "Room") + " | J-ONE Hotel & Lodge";
+    loadPhysicalRooms(r);
+  }
+
+  /* ------------------ Exact physical rooms of this type -------------------
+     GET /api/rooms/{slug}/rooms/ (verified) returns
+     [{ id, room_number, floor, available|null }]. `id` is the physical room's
+     stable id — the same value the booking endpoint accepts as `room_id`.
+     Availability is only meaningful once dates exist, so we pass the dates
+     the guest already chose (if any) and otherwise simply list the rooms. */
+  var roomTypeRef = null;
+  var selectedRoomId = null;
+  var selectedRoomNumber = null;
+
+  /* Two distinct values travel to the booking flow and must not be confused:
+       room     = the ROOM TYPE (slug) — decides what gets auto-selected
+       room_id  = the PHYSICAL room's stable id
+       room_no  = its number, so the flow can SHOW "Room 201" instead of a
+                  vague "your chosen room"
+     All three are re-validated by the backend when the booking is created. */
+  function bookingHref(r) {
+    var q = "booking.html?room=" + encodeURIComponent((r && (r.slug || r.id)) || slug || "");
+    if (selectedRoomId) {
+      q += "&room_id=" + encodeURIComponent(selectedRoomId);
+      if (selectedRoomNumber) q += "&room_no=" + encodeURIComponent(selectedRoomNumber);
+    }
+    return q;
+  }
+
+  function syncBookButton() {
+    var book = document.querySelector("#room-book");
+    if (book) book.href = bookingHref(roomTypeRef);
+    var row = document.getElementById("room-sum-room-row");
+    var label = document.getElementById("room-sum-room");
+    if (row && label) {
+      row.hidden = !selectedRoomId;
+      if (selectedRoomId) label.textContent = selectedRoomNumber ? ("Room " + selectedRoomNumber) : "Selected";
+    }
+  }
+
+  async function loadPhysicalRooms(r) {
+    roomTypeRef = r;
+    var block = document.getElementById("room-picker-block");
+    var holder = document.getElementById("room-picker");
+    var state = document.getElementById("room-picker-state");
+    if (!block || !holder) return;
+    holder.innerHTML = '<div class="room-picker-skeleton" aria-hidden="true"></div>';
+    block.hidden = false;
+    if (state) state.textContent = "Checking which rooms can be held…";
+
+    var draft = JONE.storage.get(JONE.APP_CONFIG.STORAGE.BOOKING, {}) || {};
+    var params = {};
+    if (draft.check_in && draft.check_out) {
+      params.check_in = draft.check_in;
+      params.check_out = draft.check_out;
+    }
+
+    try {
+      var res = await window.API.getRoomTypeRooms(r.slug || r.id, params);
+      var rooms = res.data || [];
+      if (!rooms.length) { block.hidden = true; if (state) state.textContent = ""; return; }
+      holder.innerHTML = rooms.map(function (room) {
+        var unavailable = room.available === false;
+        return '<label class="room-chip' + (unavailable ? " is-disabled" : "") + '"' +
+          (unavailable ? ' aria-disabled="true"' : ' role="radio" tabindex="0" aria-checked="false"') +
+          ' data-room-id="' + JONE.esc(room.id) + '" data-room-number="' + JONE.esc(room.room_number) + '">' +
+          '<span class="room-chip-no">' + JONE.esc(room.room_number) + "</span>" +
+          '<span class="room-chip-meta">' + (room.floor ? "Floor " + JONE.esc(room.floor) : "&nbsp;") + "</span>" +
+          '<span class="room-chip-state">' +
+            (room.available === true ? "Available"
+              : room.available === false ? "Booked for these dates" : "Select") +
+          "</span>" +
+        "</label>";
+      }).join("");
+      if (state) {
+        state.textContent = params.check_in
+          ? "Availability shown for " + JONE.formatDate(params.check_in, "mid") + " → " + JONE.formatDate(params.check_out, "mid") + "."
+          : "Choose your dates on the next step — the hotel confirms this exact room is free before taking payment.";
+      }
+
+      holder.querySelectorAll("[data-room-id]").forEach(function (chip) {
+        if (chip.getAttribute("aria-disabled") === "true") return;
+        function choose() {
+          holder.querySelectorAll("[data-room-id]").forEach(function (c) {
+            c.classList.remove("is-selected");
+            c.setAttribute("aria-checked", "false");
+          });
+          chip.classList.add("is-selected");
+          chip.setAttribute("aria-checked", "true");
+          selectedRoomId = chip.getAttribute("data-room-id");
+          selectedRoomNumber = chip.getAttribute("data-room-number");
+          syncBookButton();
+        }
+        chip.addEventListener("click", choose);
+        chip.addEventListener("keydown", function (e) {
+          if (e.key === "Enter" || e.key === " ") { e.preventDefault(); choose(); }
+        });
+      });
+    } catch (err) {
+      // No invented room numbers: if the hotel hasn't published individual
+      // rooms for this type the guest simply books the room type as before.
+      block.hidden = true;
+      if (state) state.textContent = "";
+    }
   }
 
   async function load() {

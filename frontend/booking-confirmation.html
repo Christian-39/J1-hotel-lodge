@@ -56,6 +56,7 @@
     <!-- PAYMENT STEP -->
     <section id="payment-screen" class="pay-shell" style="display:none;">
       <div class="card card-pad">
+        <div id="substitution-notice" hidden style="margin-bottom:1.25rem;"></div>
         <h2 style="font-size:var(--fs-xl);margin-bottom:0.35rem;">Secure payment</h2>
         <p class="muted" style="margin-bottom:1.5rem;font-size:var(--fs-sm);">Review your stay, then pay securely to confirm your reservation.</p>
         <div class="review-card" style="background:var(--color-surface-alt);padding:1.25rem;margin-bottom:1.5rem;">
@@ -64,9 +65,9 @@
           <div class="summary-row"><span class="label">Check-out</span><span class="value" data-p-co>--</span></div>
           <div class="summary-row total"><span class="label">Total</span><span class="value" data-p-total>--</span></div>
         </div>
-        <div class="notice info" style="margin-bottom:1.5rem;">
+        <div class="notice info" id="payment-security-notice" style="margin-bottom:1.5rem;">
           <span data-icon="lock" data-size="18"></span>
-          <span>You'll be redirected to Paystack to complete payment securely. Your card details are never stored by us.</span>
+          <span data-payment-security-text>You'll be redirected to Paystack to complete payment securely. Your card details are never stored by us.</span>
         </div>
         <button class="btn btn-accent btn-lg btn-block" id="pay-btn" type="button">Pay Now</button>
         <div class="pay-secure-badge center" style="justify-content:center;width:100%;">
@@ -84,6 +85,7 @@
     <!-- SUCCESS -->
     <section id="success-screen" style="display:none;">
       <div class="confirm-hero">
+        <div id="substitution-notice-success" hidden style="margin:0 auto 1.25rem;max-width:520px;text-align:left;"></div>
         <div class="confirm-icon-circle"><span data-icon="check" data-size="42"></span></div>
         <h1>Booking confirmed</h1>
         <p>Your reservation has been successfully confirmed. A confirmation has been sent to your email.</p>
@@ -232,7 +234,10 @@
   var criteria = {
     check_in: p.get("check_in"), check_out: p.get("check_out"),
     adults: p.get("adults") || 1, children: p.get("children") || 0,
-    room: p.get("room"), room_name: p.get("room_name")
+    room: p.get("room"), room_name: p.get("room_name"),
+    // Exact physical room the guest selected ("Book this room — Room 203").
+    // Advisory: the server re-checks it and may substitute an equivalent room.
+    room_id: p.get("room_id") || "", room_no: p.get("room_no") || ""
   };
   var S = JONE.APP_CONFIG.STORAGE.BOOKING;
   // The authoritative booking (backend response) — memory + one storage copy
@@ -258,6 +263,15 @@
   function setColl(sel, val){ var n=document.querySelector(sel); if(n) n.textContent=val; }
 
   /* ------------------------- receipt / folio ------------------------- */
+  /* The room(s) the backend actually assigned — never the room type name
+     alone once a physical room exists. */
+  function roomSummary(b) {
+    b = b || {};
+    var nums = (b.room_assignments || []).map(function (a) { return a.room_number; }).filter(Boolean);
+    if (nums.length) return b.room_type_name ? (nums.join(", ") + " (" + b.room_type_name + ")") : nums.join(", ");
+    return b.room_type_name || criteria.room_name || criteria.room || "—";
+  }
+
   function fillReceipt(source) {
     var b = source || booking || {};
     var guest = b.guest || {};
@@ -270,7 +284,7 @@
     var rows = [
       ["Booking reference", ref],
       ["Guest", guest.full_name || ((guest.first_name || "") + " " + (guest.last_name || "")).trim() || "Guest"],
-      ["Room", b.room_type_name || criteria.room_name || criteria.room || "—"],
+      ["Room", roomSummary(b)],
       ["Check-in", JONE.formatDate(b.check_in || criteria.check_in)],
       ["Check-out", JONE.formatDate(b.check_out || criteria.check_out)],
       ["Nights", (b.nights != null ? b.nights : "—")],
@@ -304,6 +318,7 @@
   function renderSuccessView(opts) {
     opts = opts || {};
     show("success-screen");
+    showSubstitutionNotice(booking);
     // Advance the stepper: Payment completed -> Confirmation active.
     stepper.update(6);
     fillReceipt();
@@ -346,9 +361,49 @@
     }
   }
 
+  /* ---------- "Your exact room was taken" — always tell the guest ------------
+     The backend decides the replacement (same room type, same rate) and
+     returns it as `room_substitution`. A room is NEVER switched silently. */
+  function showSubstitutionNotice(b) {
+    var sub = b && b.room_substitution;
+    // The substitution is transient (it belongs to the create response), so it
+    // is remembered per booking reference — the guest sees it again after the
+    // payment redirect instead of wondering which room they got.
+    if (sub && b.booking_reference) {
+      try {
+        var all = JONE.storage.get(S + ".substitutions", {}) || {};
+        all[b.booking_reference] = sub;
+        JONE.storage.set(S + ".substitutions", all);
+      } catch (_) {}
+    } else if (b && b.booking_reference) {
+      try {
+        var saved = JONE.storage.get(S + ".substitutions", {}) || {};
+        sub = saved[b.booking_reference] || null;
+      } catch (_) { sub = null; }
+    }
+    if (!sub) return;
+    var html =
+      '<div class="notice warning" role="status">' +
+        '<span data-icon="alertTriangle" data-size="18"></span>' +
+        "<span><strong>Room " + JONE.esc(sub.requested_room_number || "you selected") +
+        " was no longer available.</strong> We reserved " +
+        "<strong>Room " + JONE.esc(sub.assigned_room_number || "an equivalent room") + "</strong> " +
+        "for you instead — " + JONE.esc(sub.reason || "the same room type at the same rate.") +
+        (sub.price_changed ? "" : " Your total is unchanged.") + "</span>" +
+      "</div>";
+    ["substitution-notice", "substitution-notice-success"].forEach(function (id) {
+      var holder = document.getElementById(id);
+      if (!holder) return;
+      holder.innerHTML = html;
+      holder.hidden = false;
+      JONE.icons.inject(holder);
+    });
+  }
+
   /* ------------------------- payment (create + init) ------------------------- */
   function fillPaymentSummary() {
-    setColl("[data-p-room]", (booking && booking.room_type_name) || criteria.room_name || criteria.room || "--");
+    setColl("[data-p-room]", booking ? roomSummary(booking)
+      : (criteria.room_name || criteria.room || "--") + (criteria.room_no ? " · Room " + criteria.room_no : ""));
     setColl("[data-p-ci]", JONE.formatDate((booking && booking.check_in) || criteria.check_in, "mid"));
     setColl("[data-p-co]", JONE.formatDate((booking && booking.check_out) || criteria.check_out, "mid"));
     if (booking && booking.total_amount != null) {
@@ -394,16 +449,22 @@
         // Step 1 — create the booking. The backend validates availability and
         // computes every amount; we send criteria + guest contact only.
         var draft = JONE.storage.get(S, {}) || {};
-        var res = await window.API.createBooking({
+        var payload = {
           room_type: criteria.room,
           check_in: criteria.check_in, check_out: criteria.check_out,
           rooms: 1, adults: Number(criteria.adults) || 1, children: Number(criteria.children) || 0,
           offer_code: draft.offer_code || undefined,
           guest: draft.guest || undefined
-        });
+        };
+        // "Book this room" — the exact physical room. The backend re-checks
+        // availability and may assign an equivalent room instead; when it does
+        // it reports `room_substitution` and we tell the guest (never silent).
+        if (criteria.room_id) payload.room_id = Number(criteria.room_id);
+        var res = await window.API.createBooking(payload);
         booking = res.data || {};
         bookingRef = booking.booking_reference || bookingRef;
         fillPaymentSummary();
+        showSubstitutionNotice(booking);
       }
       // Step 2 — nothing due? The booking itself is the confirmation.
       if (Number(booking.amount_due || 0) <= 0 || booking.can_pay === false) {
@@ -429,7 +490,7 @@
       var p2 = document.querySelector("#failure-screen .confirm-hero p");
       var msg;
       if (err && err.status === 409) {
-        msg = "The room you selected is no longer available for those dates. Please choose another room.";
+        msg = "The room you selected is no longer available for those dates and no equivalent room could be held automatically. Please choose another room or different dates.";
       } else if (err && err.status === 0) {
         msg = "We can't reach the booking service right now. Please try again in a moment, or contact the hotel.";
       } else {
@@ -455,9 +516,18 @@
         var res = await window.API.getBooking(bookingRef);
         booking = res.data || {};
         fillPaymentSummary();
+        // Returning from the payment provider with a balance still outstanding
+        // lands on the payment screen — the guest must still be told that the
+        // room they picked was substituted (read back from the per-reference
+        // memory written when the booking was created).
+        showSubstitutionNotice(booking);
         if (booking.can_pay && Number(booking.amount_due || 0) > 0) {
           // Outstanding balance — offer to pay (backend-decided).
-          var notice = document.querySelector("#payment-screen .notice span:last-child");
+          // Target the security notice BY ID: a generic
+          // "#payment-screen .notice span:last-child" selector matched the
+          // substitution notice as soon as one was rendered, overwriting the
+          // "your room was replaced" message with the balance text.
+          var notice = document.querySelector("#payment-security-notice [data-payment-security-text]");
           if (notice) notice.textContent = "This booking has an outstanding balance of " + JONE.formatNaira(booking.amount_due) + ". You'll be redirected to Paystack to pay securely.";
           show("payment-screen");
           stepper.update(5);

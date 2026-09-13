@@ -40,6 +40,53 @@ def _admin_booking_queryset():
     )
 
 
+def apply_booking_search(queryset, search):
+    """Operational "find it from any scrap of information" search.
+
+    Staff should not need to know which column holds the value, so one term is
+    matched against every identifier a receptionist would realistically type:
+    booking reference, guest name (single token OR full name across first +
+    last), email, phone, physical room number, room type, and the references of
+    any payment/receipt recorded against the booking.
+
+    Matching is case-insensitive and partial. Multi-word input is ANDed across
+    the guest's name parts so "john doe" finds John Doe without also matching
+    every guest whose surname is Doe.
+    """
+    if not search:
+        return queryset
+    term = str(search).strip()
+    if not term:
+        return queryset
+
+    base = (
+        Q(booking_reference__icontains=term)
+        | Q(guest__first_name__icontains=term)
+        | Q(guest__last_name__icontains=term)
+        | Q(guest__email__icontains=term)
+        | Q(guest__phone__icontains=term)
+        | Q(room_type__name__icontains=term)
+        | Q(room_type__slug__icontains=term)
+        | Q(room_assignments__room__room_number__icontains=term)
+        | Q(payments__reference__icontains=term)
+        | Q(payments__transaction_id__icontains=term)
+    )
+    tokens = [t for t in term.split() if t]
+    if len(tokens) > 1:
+        # "amina yusuf" → every token must appear somewhere in the guest's
+        # name. ORed with the whole-string match so a free-text value such as
+        # an address is never lost when the term happens to contain a space.
+        name_q = Q()
+        for token in tokens:
+            name_q &= (Q(guest__first_name__icontains=token) | Q(guest__last_name__icontains=token))
+        queryset = queryset.filter(base | name_q)
+    else:
+        queryset = queryset.filter(base)
+
+    # The payment/assignment joins can match a booking more than once.
+    return queryset.distinct()
+
+
 @extend_schema(tags=["Admin · Bookings"])
 class AdminBookingListCreateView(generics.ListCreateAPIView):
     permission_classes = [IsStaffRole]
@@ -69,14 +116,7 @@ class AdminBookingListCreateView(generics.ListCreateAPIView):
             qs = qs.filter(check_in=check_in_on)
         if check_out_on := params.get("check_out"):
             qs = qs.filter(check_out=check_out_on)
-        if search := params.get("search"):
-            qs = qs.filter(
-                Q(booking_reference__icontains=search)
-                | Q(guest__first_name__icontains=search)
-                | Q(guest__last_name__icontains=search)
-                | Q(guest__email__icontains=search)
-                | Q(guest__phone__icontains=search)
-            )
+        qs = apply_booking_search(qs, params.get("search"))
         ordering = params.get("ordering", "-created_at")
         allowed = {"created_at", "-created_at", "check_in", "-check_in", "check_out", "-check_out", "total_amount", "-total_amount"}
         if ordering in allowed:
@@ -102,13 +142,18 @@ class AdminBookingListCreateView(generics.ListCreateAPIView):
             require_payment=data["status"] == Booking.Status.PENDING,
             actor=request.user,
             request=request,
+            room_id=data.get("room_id"),
         )
         if data.get("internal_notes"):
             booking.internal_notes = data["internal_notes"]
             booking.save(update_fields=["internal_notes", "updated_at"])
         logger.info("Staff %s created manual booking %s", request.user.id, booking.booking_reference)
+        payload = AdminBookingDetailSerializer(booking, context={"request": request}).data
+        substitution = getattr(booking, "room_substitution", None)
+        if substitution:
+            payload["room_substitution"] = substitution
         return success_response(
-            AdminBookingDetailSerializer(booking, context={"request": request}).data,
+            payload,
             message="Booking created.",
             status=status.HTTP_201_CREATED,
         )
@@ -273,7 +318,19 @@ class AdminGuestDetailView(generics.RetrieveUpdateAPIView):
         return AdminGuestUpdateSerializer if self.request.method == "PATCH" else AdminGuestDetailSerializer
 
     def get_queryset(self):
-        return Guest.objects.prefetch_related("bookings__room_type")
+        return (
+            Guest.objects.prefetch_related(
+                Prefetch(
+                    "bookings",
+                    queryset=Booking.objects.select_related("room_type").prefetch_related(
+                        Prefetch(
+                            "room_assignments",
+                            queryset=BookingRoom.objects.select_related("room"),
+                        )
+                    ),
+                )
+            )
+        )
 
     def retrieve(self, request, *args, **kwargs):
         return success_response(self.get_serializer(self.get_object(), context={"request": request}).data)

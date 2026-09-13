@@ -99,10 +99,14 @@
 <script src="../js/dashboard.js"></script>
 <script>
   JONE.ui.initChrome();
-  JONE.dashboard.boot("manager");
+  // boot() redirects receptionists to 403.html. If a navigation is ever
+  // blocked (or the redirect races), the page must still never request or
+  // render financial data — the backend is the real gate, this is the belt.
+  var __reportsAllowed = JONE.dashboard.boot("manager");
   document.querySelector("[data-logout]") && document.querySelector("[data-logout]").addEventListener("click", function(){ window.Auth.logout(); });
 
 (function(){
+  if (!__reportsAllowed) return;
   var DATA=JONE.dashboard.DATA;
   var mt=document.querySelector("[data-tbody=report-methods]");
   var bt=document.querySelector("[data-tbody=report-bookings]");

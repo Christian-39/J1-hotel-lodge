@@ -160,6 +160,61 @@ class AdminUserListSerializer(serializers.ModelSerializer):
         return getattr(obj, "bookings_count", None)
 
 
+class AdminStaffProfileSerializer(serializers.ModelSerializer):
+    """Complete, non-credential staff profile for the staff profile modal.
+
+    Everything here is already stored on the account (or derived with cheap
+    aggregate counts) — nothing is invented. Password hashes, tokens and any
+    other credential material are deliberately absent.
+    """
+
+    full_name = serializers.CharField(read_only=True)
+    profile_image_url = serializers.SerializerMethodField()
+    role_label = serializers.SerializerMethodField()
+    is_admin = serializers.BooleanField(read_only=True)
+    is_staff_member = serializers.BooleanField(read_only=True)
+    stats = serializers.SerializerMethodField()
+    can_manage = serializers.SerializerMethodField()
+
+    class Meta:
+        model = User
+        fields = [
+            "id", "email", "first_name", "last_name", "full_name", "phone", "role",
+            "role_label", "profile_image_url", "is_active", "email_verified",
+            "is_staff", "is_admin", "is_staff_member", "date_joined", "last_login",
+            "updated_at", "stats", "can_manage",
+        ]
+        read_only_fields = fields
+
+    def get_profile_image_url(self, obj):
+        return absolute_media_url(obj.profile_image, self.context.get("request"))
+
+    def get_role_label(self, obj):
+        return obj.get_role_display()
+
+    def get_can_manage(self, obj):
+        request = self.context.get("request")
+        user = getattr(request, "user", None)
+        return bool(user and user.is_authenticated and user.role == User.Role.ADMIN)
+
+    def get_stats(self, obj):
+        from django.db.models import Count, Max
+
+        from apps.audit.models import AuditLog
+
+        payments = obj.payments_made.aggregate(count=Count("id"), last=Max("paid_at"))
+        audit = AuditLog.objects.filter(actor=obj).aggregate(
+            count=Count("id"), last=Max("created_at")
+        )
+        return {
+            "bookings_created": obj.bookings_created.count(),
+            "payments_recorded": payments["count"] or 0,
+            "last_payment_at": payments["last"].isoformat() if payments["last"] else None,
+            "actions_logged": audit["count"] or 0,
+            "last_action_at": audit["last"].isoformat() if audit["last"] else None,
+        }
+
+
 class AdminUserCreateSerializer(serializers.ModelSerializer):
     """Administrator-created staff accounts (roles above GUEST)."""
 

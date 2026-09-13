@@ -47,12 +47,31 @@
     <div class="dash-content">
 
 <section class="panel">
-  <div class="panel-head"><h2>Today's departures</h2></div>
+  <div class="panel-head">
+    <h2>Check out</h2>
+    <div class="panel-actions"><span class="caption" data-co-summary></span></div>
+  </div>
+
+  <!-- Prominent, debounced, SERVER-SIDE search: the backend matches the room
+       number, booking reference, guest name, phone or email — the page never
+       downloads the full bookings list to look for one guest. -->
+  <div class="co-search">
+    <div class="co-search-field">
+      <span class="co-search-icon" data-icon="search" data-size="20"></span>
+      <input class="input co-search-input" id="co-q" type="search" autocomplete="off"
+             placeholder="Search by room number, booking reference, guest name, phone or email…"
+             aria-label="Find a guest to check out"
+             aria-describedby="co-q-help">
+      <button class="btn-icon btn-ghost co-search-clear" id="co-clear" type="button"
+              aria-label="Clear search" hidden><span data-icon="x" data-size="18"></span></button>
+    </div>
+    <p class="co-search-help" id="co-q-help">
+      Type a room number (e.g. <b>203</b>), a reference (e.g. <b>J1-…</b>) or a guest name. Results come straight from the server.
+    </p>
+  </div>
+
   <div class="panel-body no-pad">
-    <div class="table-wrap"><table class="table">
-      <thead><tr><th>Reference</th><th>Guest</th><th class="hide-sm">Room</th><th>Total</th><th class="hide-sm">Paid</th><th>Balance</th><th></th></tr></thead>
-      <tbody data-tbody="checkout"></tbody>
-    </table></div>
+    <div data-co-results></div>
   </div>
 </section>
     </div>
@@ -74,54 +93,206 @@
   document.querySelector("[data-logout]") && document.querySelector("[data-logout]").addEventListener("click", function(){ window.Auth.logout(); });
 
 (function(){
-  var DATA=JONE.dashboard.DATA;
-  var tbody=document.querySelector("[data-tbody=checkout]");
-  var departures=[];
+  "use strict";
+  var DATA = JONE.dashboard.DATA;
+  var results = document.querySelector("[data-co-results]");
+  var summary = document.querySelector("[data-co-summary]");
+  var input = document.getElementById("co-q");
+  var clearBtn = document.getElementById("co-clear");
+  var found = [];
 
-  /* Verified /api/admin/bookings/ rows. In-house guests to check out today:
-     status=CHECKED_IN (optionally check_out=today). The check-out action is
-     POST /api/admin/bookings/{ref}/check-out/ and may require
-     { allow_balance_due: true } when a balance remains. */
+  /* Verified /api/admin/bookings/ row (AdminBookingListSerializer):
+     { id, booking_reference, guest_name, guest_phone, guest_email,
+       room_type_name, room_numbers[], check_in, check_out, nights,
+       number_of_rooms, number_of_guests, total_amount, amount_paid,
+       amount_due, currency, status, payment_status, source, created_at }
+
+     The checkout desk only ever needs bookings that CAN be checked out, so
+     the server is asked for `status=CHECKED_IN,CONFIRMED` plus a `search`
+     term — one small request per keystroke (debounced), never the whole
+     table. Check-out itself is POST /api/admin/bookings/{ref}/check-out/ and
+     needs { allow_balance_due: true } when a balance remains. */
+
+  var DEBOUNCE_MS = 300;
+  var requestSeq = 0;   // ignore out-of-order responses
+
   function refOf(b){ return b.booking_reference || b.id; }
   function roomLabel(b){ return (b.room_numbers && b.room_numbers.length) ? b.room_numbers.join(", ") : (b.room_type_name || "—"); }
-
-  function render(list){
-    tbody.innerHTML=list.map(function(b){
-      var ref=refOf(b);
-      var due=Number(b.amount_due||0);
-      return '<tr><td>'+JONE.esc(ref)+'</td><td>'+JONE.esc(b.guest_name||"—")+'</td><td class="hide-sm">'+JONE.esc(roomLabel(b))+'</td><td class="num">'+JONE.esc(JONE.formatNaira(b.total_amount))+'</td><td class="hide-sm num">'+JONE.esc(JONE.formatNaira(b.amount_paid))+'</td><td class="num '+(due>0?"text-danger":"text-success")+'">'+JONE.esc(JONE.formatNaira(due))+'</td><td><button class="btn btn-sm btn-accent" data-checkout-btn="'+encodeURIComponent(ref)+'"'+(due>0?' data-due="1"':'')+'>Check out</button></td></tr>';
-    }).join("") || '<tr><td colspan="7"><div class="empty-state"><span data-icon="logOut"></span><h3>No guests in-house</h3></div></td></tr>';
-    JONE.icons.inject(tbody);
+  function nightsLabel(b){
+    var n = b.nights != null ? b.nights : JONE.nightsBetween(b.check_in, b.check_out);
+    return n ? n + (n === 1 ? " night" : " nights") : "—";
   }
 
-  async function load(){
-    DATA.loading(tbody);
-    try{
-      var res=await window.API.list("bookings",{ status:"CHECKED_IN", ordering:"check_out", page_size:50 });
-      var list=window.API.normalizeList?window.API.normalizeList(res.data,res.pagination).items:((res.data&&res.data.results)||res.data||[]);
-      departures=list||[];
-      if(!departures.length){ DATA.empty(tbody,"logOut","No guests in-house","Checked-in guests appear here until they check out.",7); return; }
-      render(departures);
-    }catch(err){ DATA.error(tbody,"Departures couldn't be loaded",(err&&err.message)||"Please try again in a moment.",7); }
+  function moneyCell(label, value, cls){
+    return '<div class="co-fact"><span class="co-fact-label">' + JONE.esc(label) + "</span>" +
+      '<span class="co-fact-value num ' + (cls || "") + '">' + JONE.esc(JONE.formatNaira(value || 0)) + "</span></div>";
   }
-  load();
 
+  function card(b){
+    var due = Number(b.amount_due || 0);
+    var ref = refOf(b);
+    var inHouse = String(b.status).toUpperCase() === "CHECKED_IN";
+    var actions = inHouse
+      ? '<button class="btn btn-block btn-accent" data-checkout-btn="' + JONE.esc(ref) + '"' +
+        (due > 0 ? ' data-due="1"' : "") + '>' +
+        '<span data-icon="logOut" data-size="16"></span> Check out' +
+        (due > 0 ? " (balance " + JONE.esc(JONE.formatNaira(due)) + ")" : "") + "</button>"
+      : '<button class="btn btn-block btn-outline" data-checkin-btn="' + JONE.esc(ref) + '">' +
+        '<span data-icon="logOut" data-size="16"></span> Check in first</button>';
+    return '<article class="co-card">' +
+      '<header class="co-card-head">' +
+        '<div class="co-card-who">' +
+          '<h3>' + JONE.esc(b.guest_name || "Guest") + "</h3>" +
+          '<p class="co-card-contact">' + JONE.esc([b.guest_phone, b.guest_email].filter(Boolean).join(" · ") || "—") + "</p>" +
+        "</div>" +
+        '<div class="co-card-tags">' +
+          JONE.dashboard.statusPill(b.status) +
+          JONE.dashboard.statusPill(b.payment_status) +
+        "</div>" +
+      "</header>" +
+      '<dl class="co-card-facts">' +
+        '<div class="co-fact"><span class="co-fact-label">Room</span><span class="co-fact-value">' +
+          JONE.esc(roomLabel(b)) +
+          (b.room_type_name ? '<span class="co-fact-sub">' + JONE.esc(b.room_type_name) + "</span>" : "") +
+        "</span></div>" +
+        '<div class="co-fact"><span class="co-fact-label">Booking ref</span><span class="co-fact-value">' +
+          '<a href="booking-details.html?ref=' + encodeURIComponent(ref) + '">' + JONE.esc(ref) + "</a></span></div>" +
+        '<div class="co-fact"><span class="co-fact-label">Check-in</span><span class="co-fact-value">' +
+          JONE.esc(b.check_in ? JONE.formatDate(b.check_in, "mid") : "—") + "</span></div>" +
+        '<div class="co-fact"><span class="co-fact-label">Check-out</span><span class="co-fact-value">' +
+          JONE.esc(b.check_out ? JONE.formatDate(b.check_out, "mid") : "—") +
+          '<span class="co-fact-sub">' + JONE.esc(nightsLabel(b)) + "</span></span></div>" +
+      "</dl>" +
+      '<div class="co-card-money">' +
+        moneyCell("Total", b.total_amount) +
+        moneyCell("Paid", b.amount_paid) +
+        moneyCell("Outstanding", due, due > 0 ? "text-danger" : "text-success") +
+      "</div>" +
+      '<footer class="co-card-actions">' +
+        actions +
+        (due > 0 ? '<button class="btn btn-block btn-outline" data-pay-btn="' + JONE.esc(b.id) + '">' +
+          '<span data-icon="wallet" data-size="16"></span> Record payment</button>' : "") +
+        '<a class="btn btn-block btn-ghost" href="booking-details.html?ref=' + encodeURIComponent(ref) + '">' +
+          '<span data-icon="fileText" data-size="16"></span> Full booking</a>' +
+      "</footer>" +
+    "</article>";
+  }
+
+  function renderList(list, term){
+    found = list || [];
+    if (!found.length) {
+      results.innerHTML = '<div class="empty-state" style="margin:1rem;">' +
+        '<span data-icon="search" data-size="34"></span><h3>No guest matches “' + JONE.esc(term || "") + '”</h3>' +
+        "<p>Check the room number, booking reference, guest name, phone or email and try again.</p></div>";
+      JONE.icons.inject(results);
+      if (summary) summary.textContent = "";
+      return;
+    }
+    results.innerHTML = '<div class="co-grid">' + found.map(card).join("") + "</div>";
+    JONE.icons.inject(results);
+    if (summary) {
+      summary.textContent = found.length + (found.length === 1 ? " guest" : " guests") +
+        (term ? ' matching “' + term + '”' : " in-house or arriving");
+    }
+  }
+
+  function serverSearch(term){
+    // One targeted request; the backend does the matching.
+    return term
+      ? window.API.searchCheckout(term.trim())
+      : window.API.list("bookings", { status: "CHECKED_IN", ordering: "check_out", page_size: 25 });
+  }
+
+  async function load(term){
+    var seq = ++requestSeq;
+    results.innerHTML = '<div class="loading-block"><div class="spinner" role="status"></div>' +
+      '<p class="muted">Searching…</p></div>';
+    try {
+      var res = await serverSearch(term);
+      if (seq !== requestSeq) return;              // a newer search superseded this one
+      var list = window.API.normalizeList
+        ? window.API.normalizeList(res.data, res.pagination).items
+        : ((res.data && res.data.results) || res.data || []);
+      renderList(list, term);
+    } catch (err) {
+      if (seq !== requestSeq) return;
+      DATA.error(results, "Search failed", (err && err.message) || "Please try again in a moment.", 1, false);
+    }
+  }
+
+  var debouncedLoad = JONE.debounce(function(){ load(input ? input.value.trim() : ""); }, DEBOUNCE_MS);
+
+  if (input) {
+    input.addEventListener("input", function(){
+      if (clearBtn) clearBtn.hidden = !input.value;
+      if (!input.value.trim()) { load(""); return; }
+      debouncedLoad();
+    });
+    input.addEventListener("keydown", function(e){
+      if (e.key === "Enter") { e.preventDefault(); load(input.value.trim()); }
+    });
+    // A room number handed over from another page (?q=203) runs immediately.
+    var pre = new URLSearchParams(location.search).get("q");
+    if (pre) { input.value = pre; if (clearBtn) clearBtn.hidden = false; }
+    load(pre || "");
+  }
+  if (clearBtn) clearBtn.addEventListener("click", function(){
+    if (input) input.value = "";
+    clearBtn.hidden = true;
+    if (input) input.focus();
+    load("");
+  });
+
+  /* ------------------------------- Actions ------------------------------- */
   document.addEventListener("click", async function(e){
-    var btn=e.target.closest("[data-checkout-btn]");
-    if(!btn) return;
-    var ref=decodeURIComponent(btn.getAttribute("data-checkout-btn"));
-    var hasDue=btn.getAttribute("data-due")==="1";
-    if(hasDue && !window.confirm("This booking still has an unpaid balance. Check out anyway?")) return;
-    if(!JONE.guardSubmit(btn)) return;
-    try{
-      btn.disabled=true;
+    var payBtn = e.target.closest && e.target.closest("[data-pay-btn]");
+    if (payBtn) {
+      var booking = null;
+      for (var i = 0; i < found.length; i++) if (String(found[i].id) === String(payBtn.getAttribute("data-pay-btn"))) booking = found[i];
+      if (!booking) return;
+      JONE.dashboard.paymentModal(booking, {
+        onRecorded: function(){ load(input ? input.value.trim() : ""); }
+      });
+      return;
+    }
+
+    var inBtn = e.target.closest && e.target.closest("[data-checkin-btn]");
+    if (inBtn) {
+      var inRef = inBtn.getAttribute("data-checkin-btn");
+      if (!JONE.guardSubmit(inBtn)) return;
+      try {
+        await window.API.checkInBooking(inRef);
+        JONE.ui.toast("Guest checked in (" + inRef + ").", "success");
+        load(input ? input.value.trim() : "");
+      } catch (err) {
+        JONE.releaseGuard(inBtn);
+        JONE.ui.toast((err && err.message) || "Couldn't check this guest in.", "error");
+      }
+      return;
+    }
+
+    var btn = e.target.closest && e.target.closest("[data-checkout-btn]");
+    if (!btn) return;
+    var ref = btn.getAttribute("data-checkout-btn");
+    var hasDue = btn.getAttribute("data-due") === "1";
+    if (hasDue) {
+      var ok = await JONE.ui.confirm({
+        title: "Check out with an outstanding balance?",
+        message: "This booking still has an unpaid balance. The balance stays on the record and can be settled separately.",
+        confirmText: "Check out anyway", danger: true,
+      });
+      if (!ok) return;
+    }
+    if (!JONE.guardSubmit(btn)) return;
+    try {
+      btn.disabled = true;
       await window.API.checkOutBooking(ref, hasDue ? { allow_balance_due: true } : {});
-      JONE.ui.toast("Guest checked out ("+ref+").","success");
-      load();
-    }catch(err){
+      JONE.ui.toast("Guest checked out (" + ref + ").", "success");
+      load(input ? input.value.trim() : "");
+    } catch (err) {
       JONE.releaseGuard(btn);
-      btn.disabled=false;
-      JONE.ui.toast(err && (err.message || "Couldn't check out this guest. Please try again."),"error");
+      btn.disabled = false;
+      JONE.ui.toast((err && err.message) || "Couldn't check out this guest. Please try again.", "error");
     }
   });
 })();

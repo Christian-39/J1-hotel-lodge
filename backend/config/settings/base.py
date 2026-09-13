@@ -5,6 +5,8 @@ Everything environment-specific (secrets, hosts, databases, vendors) comes
 from environment variables via python-decouple. See .env.example.
 """
 import logging
+import os
+import re
 from datetime import timedelta
 from pathlib import Path
 
@@ -199,22 +201,98 @@ STATICFILES_DIRS = [
 # BACKBLAZE B2 / S3 COMPATIBLE STORAGE
 # ============================================
 
+B2_S3_BACKEND = "storages.backends.s3boto3.S3Boto3Storage"
+DEFAULT_B2_ENDPOINT = "https://s3.us-east-005.backblazeb2.com"
+DEFAULT_B2_REGION = "us-east-005"
+
+
+def b2_region_from_endpoint(endpoint):
+    """``https://s3.us-west-004.backblazeb2.com`` -> ``us-west-004``.
+
+    B2 signs every request against the region in the endpoint. Falling back to
+    botocore's default (us-east-1) makes B2 answer ``403 SignatureDoesNotMatch``
+    even when the keys are correct.
+    """
+    match = re.search(r"s3\.([^./]+)\.backblazeb2\.com", endpoint or "")
+    return match.group(1) if match else ""
+
+
+def configure_b2_media_storage(storages_map):
+    """Point ``storages_map["default"]`` at Backblaze B2 when it is configured.
+
+    Returns ``{"enabled": bool, "settings": {...}}`` — ``settings`` holds the
+    ``AWS_*`` values django-storages reads, including the ``botocore`` client
+    config that keeps B2 happy:
+
+      * checksums are only calculated ``when_required`` — botocore >= 1.36
+        otherwise sends ``x-amz-sdk-checksum-algorithm`` on every PutObject and
+        B2 answers ``400 InvalidArgument``, which is exactly the failure that
+        made uploads silently stop reaching the bucket;
+      * ``s3v4`` signatures with virtual-host addressing, as B2 requires.
+
+    When the credentials are absent the map is left untouched so local/dev
+    environments keep whatever backend they were given.
+    """
+    key_id = os.environ.get("BACKBLAZE_KEY_ID", "").strip()
+    app_key = os.environ.get("BACKBLAZE_APPLICATION_KEY", "").strip()
+    bucket = os.environ.get("BACKBLAZE_BUCKET_NAME", "").strip()
+    if not (key_id and app_key and bucket):
+        return {"enabled": False, "settings": {}}
+
+    endpoint = (os.environ.get("BACKBLAZE_ENDPOINT", "") or "").strip() or DEFAULT_B2_ENDPOINT
+    # boto3 builds a malformed URL when the scheme is missing, and an http://
+    # endpoint would send the application key in the clear — always https.
+    if not re.match(r"^https?://", endpoint):
+        endpoint = "https://" + endpoint
+    endpoint = re.sub(r"^http://", "https://", endpoint)
+    region = ((os.environ.get("BACKBLAZE_REGION", "") or "").strip()
+              or b2_region_from_endpoint(endpoint) or DEFAULT_B2_REGION)
+
+    settings_out = {
+        "AWS_ACCESS_KEY_ID": key_id,
+        "AWS_SECRET_ACCESS_KEY": app_key,
+        "AWS_STORAGE_BUCKET_NAME": bucket,
+        "AWS_S3_REGION_NAME": region,
+        "AWS_S3_ENDPOINT_URL": endpoint,
+        "AWS_S3_ADDRESSING_STYLE": "virtual",
+        "AWS_S3_SIGNATURE_VERSION": "s3v4",
+        "AWS_QUERYSTRING_AUTH": False,          # public media bucket — never sign URLs
+        "AWS_DEFAULT_ACL": "public-read",
+        "AWS_S3_FILE_OVERWRITE": True,
+        "AWS_S3_CLIENT_CONFIG": BotocoreConfig(
+            signature_version="s3v4",
+            s3={"addressing_style": "virtual"},
+            request_checksum_calculation="when_required",
+            response_checksum_validation="when_required",
+        ),
+    }
+    storages_map.setdefault("default", {})["BACKEND"] = B2_S3_BACKEND
+    return {"enabled": True, "settings": settings_out}
+
+
 # Use S3Boto3Storage directly — same as your Gadgets Store
 STORAGES = {
     "default": {
-        "BACKEND": "storages.backends.s3boto3.S3Boto3Storage",
+        "BACKEND": B2_S3_BACKEND,
     },
     "staticfiles": {
         "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",
     },
 }
 
+_B2_MEDIA = configure_b2_media_storage(STORAGES)
+_B2_SETTINGS = _B2_MEDIA["settings"]
+
 # B2 Credentials (from Railway env vars)
 AWS_ACCESS_KEY_ID = config("BACKBLAZE_KEY_ID")
 AWS_SECRET_ACCESS_KEY = config("BACKBLAZE_APPLICATION_KEY")
 AWS_STORAGE_BUCKET_NAME = config("BACKBLAZE_BUCKET_NAME")
-AWS_S3_REGION_NAME = config("BACKBLAZE_REGION", default="us-east-005")
-AWS_S3_ENDPOINT_URL = config("BACKBLAZE_ENDPOINT", default="https://s3.us-east-005.backblazeb2.com")
+AWS_S3_REGION_NAME = _B2_SETTINGS.get("AWS_S3_REGION_NAME") or config(
+    "BACKBLAZE_REGION", default=DEFAULT_B2_REGION
+)
+AWS_S3_ENDPOINT_URL = _B2_SETTINGS.get("AWS_S3_ENDPOINT_URL") or config(
+    "BACKBLAZE_ENDPOINT", default=DEFAULT_B2_ENDPOINT
+)
 
 # CRITICAL B2 Settings
 AWS_S3_ADDRESSING_STYLE = "virtual"
@@ -222,6 +300,14 @@ AWS_S3_SIGNATURE_VERSION = "s3v4"
 AWS_QUERYSTRING_AUTH = False
 AWS_DEFAULT_ACL = "public-read"
 AWS_S3_FILE_OVERWRITE = True
+# The botocore client config computed above (falls back to the same safe
+# defaults when B2 is not configured in this environment).
+AWS_S3_CLIENT_CONFIG = _B2_SETTINGS.get("AWS_S3_CLIENT_CONFIG") or BotocoreConfig(
+    signature_version="s3v4",
+    s3={"addressing_style": "virtual"},
+    request_checksum_calculation="when_required",
+    response_checksum_validation="when_required",
+)
 
 # Media URL
 MEDIA_URL = f"https://{AWS_STORAGE_BUCKET_NAME}.s3.{AWS_S3_REGION_NAME}.backblazeb2.com/"

@@ -8,11 +8,12 @@ from rest_framework.response import Response
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 
 from apps.audit.services import log_action
-from apps.core.permissions import IsAdminRole
+from apps.core.permissions import CanViewStaffProfile, IsAdminRole
 from apps.core.responses import success_response
 
 from .models import User
 from .serializers import (
+    AdminStaffProfileSerializer,
     AdminUserCreateSerializer,
     AdminUserListSerializer,
     AdminUserUpdateSerializer,
@@ -32,6 +33,14 @@ class AdminUserQuerysetMixin:
         role = params.get("role")
         if role:
             qs = qs.filter(role=role.upper())
+        # `role__in=ADMIN,MANAGER,RECEPTIONIST` — lets the staff console ask for
+        # "every staff account, whatever its role" without listing guest
+        # accounts. Additive: an absent parameter changes nothing.
+        roles_in = params.get("role__in") or params.get("roles")
+        if roles_in:
+            wanted = [r.strip().upper() for r in str(roles_in).split(",") if r.strip()]
+            if wanted:
+                qs = qs.filter(role__in=wanted)
         is_active = params.get("is_active")
         if is_active is not None and is_active != "":
             qs = qs.filter(is_active=is_active.lower() in ("1", "true", "yes"))
@@ -114,3 +123,35 @@ class AdminUserDetailView(AdminUserQuerysetMixin, generics.RetrieveUpdateAPIView
         return success_response(
             AdminUserListSerializer(instance, context={"request": request}).data, message="User updated."
         )
+
+
+@extend_schema(tags=["Admin · Users"], summary="Staff profile card (photo, role, activity)")
+class AdminStaffProfileView(generics.RetrieveAPIView):
+    """Read-only profile card used by the staff profile modal.
+
+    Access is decided entirely by :class:`CanViewStaffProfile` (admins and
+    managers see every account, receptionists only themselves). Mutations stay
+    on the ADMIN-only ``/api/admin/users/{id}/`` endpoint.
+    """
+
+    permission_classes = [CanViewStaffProfile]
+    serializer_class = AdminStaffProfileSerializer
+    http_method_names = ["get", "head", "options"]
+
+    def get_queryset(self):
+        return (
+            User.objects.all()
+            .select_related()
+            .prefetch_related("guest_profile")
+            .order_by("-date_joined")
+        )
+
+    def retrieve(self, request, *args, **kwargs):
+        instance = self.get_object()
+        data = self.get_serializer(instance, context={"request": request}).data
+        # Cheap, honest operational context: how many bookings this account has
+        # as a hotel guest (staff accounts are usually 0).
+        data["guest_bookings_count"] = (
+            instance.guest_profile.bookings.count() if hasattr(instance, "guest_profile") else 0
+        )
+        return success_response(data)

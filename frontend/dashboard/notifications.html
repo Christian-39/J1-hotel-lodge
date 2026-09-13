@@ -97,7 +97,15 @@
   function render(notifs, unreadCount){
     setUnread(unreadCount!=null?unreadCount:notifs.filter(unread).length);
     list.innerHTML=notifs.map(function(n){
-      return '<div class="notif-item'+(unread(n)?" unread":"")+'" data-notif-id="'+JONE.esc(n.id)+'" role="button" tabindex="0"><span class="notif-icon"><span data-icon="'+icon(n)+'" data-size="18"></span></span><div class="notif-body"><p class="notif-title">'+JONE.esc(n.title||"")+'</p><p>'+JONE.esc(n.message||"")+'</p><div class="notif-meta">'+JONE.esc(n.created_at?JONE.formatDateTime(n.created_at):"")+'</div></div></div>';
+      return '<div class="notif-item'+(unread(n)?" unread":"")+'" data-notif-id="'+JONE.esc(n.id)+'" role="button" tabindex="0">' +
+        '<span class="notif-icon"><span data-icon="'+icon(n)+'" data-size="18"></span></span>' +
+        '<div class="notif-body"><p class="notif-title">'+JONE.esc(n.title||"")+'</p>' +
+        '<p>'+JONE.esc(n.message||"")+'</p>' +
+        '<div class="notif-meta">'+JONE.esc(n.created_at?JONE.formatDateTime(n.created_at):"")+'</div>' +
+        (unread(n) ? '<span class="badge badge-accent notif-unread-dot">Unread</span>' : "") +
+        '</div>' +
+        '<span class="notif-chevron" data-icon="chevronRight" data-size="18"></span>' +
+        '</div>';
     }).join("") || '<div class="empty-state" style="margin:1.5rem;"><span data-icon="bell"></span><h3>You are all caught up</h3></div>';
     JONE.icons.inject(list);
   }
@@ -143,13 +151,32 @@
     try{
       var res=await window.API.markNotificationRead(id);
       item.classList.remove("unread");
+      var dot=item.querySelector(".notif-unread-dot");
+      if(dot) dot.remove();
       var count=res&&res.data&&res.data.unread_count;
       if(count!=null) setUnread(Number(count));
     }catch(_){ /* keep unread; next load refreshes honestly */ }
   }
-  list.addEventListener("click", function(e){ markOne(e.target.closest("[data-notif-id]")); });
+
+  /* Opening a notification goes to its details page, which loads the FULL
+     record server-side (GET /api/notifications/{id}/), marks it read and shows
+     the related record. Ownership is enforced by the backend — another user's
+     id simply 404s. */
+  function openOne(item){
+    var id=item.getAttribute("data-notif-id");
+    location.href="notification-details.html?id="+encodeURIComponent(id);
+  }
+  list.addEventListener("click", function(e){
+    var item=e.target.closest("[data-notif-id]");
+    if(!item) return;
+    markOne(item);
+    openOne(item);
+  });
   list.addEventListener("keydown", function(e){
-    if(e.key==="Enter"||e.key===" "){ var it=e.target.closest("[data-notif-id]"); if(it){ e.preventDefault(); markOne(it); } }
+    if(e.key==="Enter"||e.key===" "){
+      var it=e.target.closest("[data-notif-id]");
+      if(it){ e.preventDefault(); markOne(it); openOne(it); }
+    }
   });
 })();
 

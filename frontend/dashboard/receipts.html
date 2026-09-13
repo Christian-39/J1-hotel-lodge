@@ -48,7 +48,7 @@
 
 <section class="panel">
   <div class="filter-bar">
-    <div class="field"><label class="field-label" for="rc-q">Search</label><input class="input" id="rc-q" placeholder="Booking ref, receipt no."></div>
+    <div class="field"><label class="field-label" for="rc-q">Search</label><input class="input" id="rc-q" placeholder="Receipt no., booking ref, guest, room no."></div>
   </div>
   <div class="panel-body no-pad">
     <div class="table-wrap"><table class="table">
@@ -93,13 +93,23 @@
   async function load(){
     DATA.loading(tbody);
     try{
-      var res=await window.API.list("receipts",{ status:"SUCCESS", page_size:50 });
+      // `search` is applied SERVER-SIDE by /api/admin/payments/ (it matches the
+      // payment reference, booking reference, guest name, booking ref and
+      // transaction id) — the page never filters the list locally.
+      var params={ status:"SUCCESS", page_size:50 };
+      var qEl=document.getElementById("rc-q");
+      if(qEl && qEl.value.trim()) params.search=qEl.value.trim();
+      var res=await window.API.list("receipts", params);
       var list=window.API.normalizeList?window.API.normalizeList(res.data,res.pagination).items:((res.data&&res.data.results)||res.data||[]);
       if(!(list||[]).length){ DATA.empty(tbody,"receipt","No receipts yet","Receipts generated for confirmed payments will appear here.",6); return; }
       render(list);
     }catch(err){ DATA.error(tbody,"Receipts couldn't be loaded",(err&&err.message)||"Please try again in a moment.",6); }
   }
   load();
+
+  // Debounced server-side search (no request per keystroke).
+  var rcq=document.getElementById("rc-q");
+  if(rcq) rcq.addEventListener("input", JONE.debounce(load, 300));
 })();
 
 </script>

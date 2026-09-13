@@ -269,6 +269,10 @@ body.drawer-open .dash-main { overflow: hidden; }
 .status-reserved, .status-pending, .status-partial, .status-partially_paid, .status-cleaning, .status-unpaid, .status-in_progress, .status-new { color: var(--color-warning); background: var(--color-warning-bg); }
 .status-occupied, .status-attention, .status-out_of_service { color: var(--color-info); background: var(--color-info-bg); }
 .status-maintenance, .status-unavailable, .status-cancelled, .status-failed, .status-no_show, .status-expired, .status-refunded, .status-noshow, .status-inactive, .status-closed, .status-resolved, .status-dirty { color: var(--color-danger); background: var(--color-danger-bg); }
+/* Notification read-state (never communicated by colour alone — the pill also
+   carries the words "Read" / "Unread"). */
+.status-read { color: var(--color-success); background: var(--color-success-bg); }
+.status-unread { color: var(--color-info); background: var(--color-info-bg); }
 
 /* --------------------------- Availability calendar ----------------------- */
 .avo-scroller { overflow-x: auto; max-width: 100%; }
@@ -485,4 +489,414 @@ body.drawer-open .dash-main { overflow: hidden; }
   .dash-main { height: auto; overflow: visible; }
   .dash-sidebar, .dash-topbar, .dash-bottom-nav, .dash-sidebar-backdrop { display: none !important; }
   body.has-bottom-nav .dash-content { padding-bottom: 0; }
+}
+/* ==========================================================================
+   OVERFLOW SAFETY — long values must wrap or clamp, never widen the page.
+   Applies to every dashboard table, card and detail list.
+   ========================================================================== */
+.table td, .table th { overflow-wrap: anywhere; word-break: break-word; }
+.table td a, .table td code { overflow-wrap: anywhere; }
+
+.nowrap-ellipsis {
+  display: block; max-width: 100%;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+/* Two-line clamp for room-type blurbs and long descriptions. */
+.rt-clamp {
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  overflow: hidden; overflow-wrap: anywhere;
+}
+tr.is-muted { opacity: 0.55; }
+.panel-note {
+  margin: 0 0 var(--sp-4);
+  font-size: var(--fs-sm);
+  color: var(--color-text-muted);
+  overflow-wrap: anywhere;
+}
+
+/* Compact, wrapping action clusters inside table cells. */
+.row-actions { display: flex; flex-wrap: wrap; gap: 0.35rem; align-items: center; }
+.row-actions-end { justify-content: flex-end; }
+@media (max-width: 560px) {
+  .row-actions { width: 100%; }
+  .row-actions .btn, .row-actions a.btn { flex: 1 1 auto; justify-content: center; }
+  .row-actions-end { justify-content: stretch; }
+}
+
+/* Hide on DESKTOP, show on mobile (the mirror of .hide-sm). */
+@media (min-width: 721px) { .hide-md { display: none !important; } }
+
+/* Staff cell in the staff table — avatar + name/email, never overflowing. */
+.staff-cell { display: flex; align-items: center; gap: 0.6rem; min-width: 0; }
+.staff-cell-text { min-width: 0; }
+.staff-cell-text strong,
+.staff-cell-text small { display: block; overflow-wrap: anywhere; }
+.staff-cell-text small { font-size: var(--fs-xs); color: var(--color-text-muted); }
+
+/* --------------------------- Staff table layout ---------------------------
+   Desktop: a real table whose columns can never be pushed wider by long
+   names, emails or phone numbers. Every cell clips with an ellipsis and keeps
+   the full value in a title attribute, so nothing overlaps the actions.
+   ≤720px: the SAME rows are restacked as staff cards (a miniature 5-column
+   table on a phone is unreadable). One DOM, no duplicated markup. */
+.table-staff { table-layout: fixed; }
+.table-staff td { min-width: 0; }
+.table-staff td[data-label] { overflow-wrap: anywhere; }
+.table-staff td[data-label="Staff"] { padding-right: 0.5rem; }
+.table-staff td[data-label="Staff"] .staff-cell-text strong,
+.table-staff td[data-label="Staff"] .staff-cell-text small {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.table-staff td[data-label="Role"],
+.table-staff td[data-label="Status"],
+.table-staff td[data-label="Last login"] {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.table-staff td[data-label="Actions"] { padding-left: 0.5rem; }
+.table-staff td[data-label="Actions"] .row-actions { justify-content: flex-end; }
+/* Icon-only on desktop; the visible label appears in card mode below. */
+.table-staff .btn-label { display: none; }
+
+@media (max-width: 720px) {
+  /* The generic "let wide tables scroll" rule (`.table-wrap .table`
+     min-width: 600px) must not apply once the rows become cards, or every
+     card would be 600px wide inside its own horizontal scroller. */
+  .table-wrap .table-staff,
+  .table-staff { table-layout: auto; min-width: 0; }
+  .table-staff thead { display: none; }
+  .table-staff, .table-staff tbody, .table-staff tr, .table-staff td { display: block; width: 100%; }
+  .table-staff tr {
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    background: var(--color-surface);
+    padding: 0.85rem 0.9rem;
+    margin: 0 0.9rem 0.75rem;
+  }
+  .table-staff tbody tr:last-child { margin-bottom: 0.9rem; }
+  .table-staff td { border: 0; padding: 0.2rem 0; min-width: 0; overflow: visible; }
+  .table-staff td[data-label] { white-space: normal; }
+  .table-staff td[data-label]::before {
+    content: attr(data-label);
+    display: block;
+    font-size: 0.66rem;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--color-text-faint);
+  }
+  .table-staff td[data-label="Staff"] { padding-bottom: 0.55rem; }
+  .table-staff td[data-label="Staff"]::before { display: none; }
+  .table-staff td[data-label="Staff"] .staff-cell-text strong,
+  .table-staff td[data-label="Staff"] .staff-cell-text small {
+    white-space: normal; overflow: visible; text-overflow: clip;
+  }
+  /* Role + status + last login sit on one compact meta line. */
+  .table-staff td[data-label="Role"],
+  .table-staff td[data-label="Status"],
+  .table-staff td[data-label="Last login"] {
+    display: inline-block; width: auto; margin-right: 0.75rem;
+  }
+  .table-staff td[data-label="Role"]::before,
+  .table-staff td[data-label="Status"]::before,
+  .table-staff td[data-label="Last login"]::before {
+    display: inline-block; margin-right: 0.35rem;
+  }
+  .table-staff td[data-label="Actions"] { padding-top: 0.6rem; }
+  .table-staff td[data-label="Actions"] .row-actions {
+    justify-content: stretch; gap: 0.4rem;
+  }
+  .table-staff td[data-label="Actions"] .btn { flex: 1 1 0; min-width: 0; }
+  .table-staff .btn-label { display: inline; }
+  .table-staff .btn { justify-content: center; }
+}
+
+/* ------------------------------ Modal footer ------------------------------ */
+.modal-foot {
+  display: flex; align-items: center; justify-content: flex-end; gap: var(--sp-2);
+  flex-wrap: wrap;
+  padding: 0 var(--sp-5) var(--sp-5);
+}
+@media (max-width: 560px) {
+  .modal-foot { flex-direction: column-reverse; align-items: stretch; }
+  .modal-foot .btn { width: 100%; justify-content: center; }
+}
+
+/* ==========================================================================
+   PAYMENT MODAL — focused "record payment" dialog.
+   The summary sits ABOVE the form so the receptionist confirms the guest and
+   the outstanding balance before typing an amount.
+   ========================================================================== */
+.pay-modal-summary {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-surface-alt);
+  padding: var(--sp-4);
+  margin: 0 var(--sp-5) var(--sp-4);
+}
+.pay-modal-hero { text-align: center; padding-bottom: var(--sp-3); border-bottom: 1px solid var(--color-border); }
+.pay-modal-hero-label {
+  display: block; font-size: var(--fs-xs); letter-spacing: var(--tracking-wider);
+  text-transform: uppercase; color: var(--color-text-muted);
+}
+.pay-modal-hero-amount {
+  display: block; margin-top: 0.25rem;
+  font-size: var(--fs-2xl); font-weight: 600; letter-spacing: -0.02em;
+  color: var(--color-heading);
+}
+.pay-modal-facts {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(min(160px, 100%), 1fr));
+  gap: 0.5rem 1.25rem; margin: var(--sp-3) 0 0;
+}
+.pay-modal-fact { min-width: 0; display: flex; justify-content: space-between; gap: 0.75rem; padding: 0.2rem 0; }
+.pay-modal-fact dt { color: var(--color-text-muted); font-size: var(--fs-sm); }
+.pay-modal-fact dd { margin: 0; font-size: var(--fs-sm); font-weight: 600; text-align: right; overflow-wrap: anywhere; }
+
+/* ==========================================================================
+   PROFILE CARDS — staff + guest profile modals.
+   ========================================================================== */
+.profile-card { display: grid; gap: var(--sp-5); }
+.profile-identity { display: flex; align-items: center; gap: var(--sp-4); flex-wrap: wrap; }
+.profile-photo {
+  width: 76px; height: 76px; flex: none;
+  border-radius: 50%; object-fit: cover;
+  border: 1px solid var(--color-border); background: var(--color-surface-alt);
+}
+.profile-photo-fallback {
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--color-accent); color: var(--color-accent-ink);
+  font-weight: 700; font-size: var(--fs-lg);
+}
+.profile-identity-text { min-width: 0; flex: 1 1 200px; }
+.profile-identity-text h3 { font-size: var(--fs-lg); overflow-wrap: anywhere; }
+.profile-identity-text p { margin: 0.15rem 0 0.5rem; overflow-wrap: anywhere; }
+.profile-tags { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+
+.profile-grid, .profile-facts {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr));
+  gap: 0 var(--sp-5); margin: 0;
+}
+.profile-row {
+  display: flex; justify-content: space-between; gap: var(--sp-3);
+  padding: 0.5rem 0; border-bottom: 1px dashed var(--color-border);
+  min-width: 0;
+}
+.profile-row dt { color: var(--color-text-muted); font-size: var(--fs-sm); flex: none; }
+.profile-row dd { margin: 0; font-size: var(--fs-sm); font-weight: 600; text-align: right; overflow-wrap: anywhere; }
+
+.profile-stats {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: var(--sp-3);
+}
+.profile-stat {
+  border: 1px solid var(--color-border); border-radius: var(--radius);
+  padding: var(--sp-3); text-align: center; background: var(--color-surface-alt);
+}
+.profile-stat-value { display: block; font-size: var(--fs-lg); font-weight: 600; overflow-wrap: anywhere; }
+.profile-stat-label { display: block; font-size: var(--fs-xs); color: var(--color-text-muted); margin-top: 0.2rem; }
+
+.profile-section-title { font-size: var(--fs-md); margin: var(--sp-5) 0 var(--sp-3); }
+
+/* ==========================================================================
+   CHECK-OUT SEARCH — prominent, focused, one job.
+   ========================================================================== */
+.co-search { padding: var(--sp-5) 1.25rem var(--sp-4); border-bottom: 1px solid var(--color-border); }
+.co-search-field { position: relative; display: flex; align-items: center; }
+.co-search-icon {
+  position: absolute; left: 0.9rem; color: var(--color-text-faint);
+  display: inline-flex; pointer-events: none;
+}
+.co-search-input {
+  padding: 0.85rem 2.6rem 0.85rem 2.75rem;
+  font-size: var(--fs-md);
+  min-height: 52px;
+}
+.co-search-clear { position: absolute; right: 0.4rem; }
+.co-search-help { margin: 0.6rem 0 0; font-size: var(--fs-sm); color: var(--color-text-muted); }
+.co-search-help b { color: var(--color-text); font-weight: 600; }
+@media (max-width: 560px) {
+  .co-search { padding: var(--sp-4) 0.9rem var(--sp-3); }
+  .co-search-input { font-size: var(--fs-base); }
+}
+
+.co-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(320px, 100%), 1fr)); gap: 1rem; padding: 1rem 1.25rem 1.25rem; }
+.co-card {
+  border: 1px solid var(--color-border); border-radius: var(--radius);
+  background: var(--color-surface); padding: 1rem;
+  display: flex; flex-direction: column; gap: 0.85rem; min-width: 0;
+}
+.co-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 0.75rem; flex-wrap: wrap; }
+.co-card-who { min-width: 0; flex: 1 1 160px; }
+.co-card-who h3 { font-size: var(--fs-md); overflow-wrap: anywhere; }
+.co-card-contact { margin: 0.15rem 0 0; font-size: var(--fs-sm); color: var(--color-text-muted); overflow-wrap: anywhere; }
+.co-card-tags { display: flex; flex-direction: column; gap: 0.3rem; align-items: flex-end; }
+.co-card-facts { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem 1rem; margin: 0; }
+.co-fact { min-width: 0; }
+.co-fact-label { display: block; font-size: 0.68rem; letter-spacing: var(--tracking-wider); text-transform: uppercase; color: var(--color-text-faint); }
+.co-fact-value { display: block; font-size: var(--fs-sm); font-weight: 600; overflow-wrap: anywhere; }
+.co-fact-sub { display: block; font-weight: 400; font-size: var(--fs-xs); color: var(--color-text-muted); }
+.co-card-money {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.5rem;
+  border-top: 1px solid var(--color-border); border-bottom: 1px solid var(--color-border);
+  padding: 0.75rem 0;
+}
+.co-card-actions { display: grid; gap: 0.5rem; }
+@media (max-width: 400px) {
+  .co-card-facts { grid-template-columns: 1fr; }
+  .co-card-money { grid-template-columns: 1fr; }
+}
+
+/* ==========================================================================
+   NOTIFICATION DETAIL
+   ========================================================================== */
+.nd-card { display: grid; gap: var(--sp-5); }
+.nd-head { display: flex; gap: var(--sp-4); align-items: flex-start; flex-wrap: wrap; }
+.nd-icon { width: 46px; height: 46px; }
+.nd-head-text { min-width: 0; flex: 1 1 240px; }
+.nd-head-text h3 { font-size: var(--fs-lg); overflow-wrap: anywhere; }
+.nd-meta { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; margin-top: 0.5rem; }
+.nd-message {
+  font-size: var(--fs-base); line-height: var(--leading-relaxed);
+  padding: var(--sp-4); border-radius: var(--radius);
+  background: var(--color-surface-alt); border: 1px solid var(--color-border);
+  overflow-wrap: anywhere;
+}
+.nd-actions { display: flex; gap: var(--sp-3); flex-wrap: wrap; }
+@media (max-width: 560px) {
+  .nd-actions .btn { width: 100%; justify-content: center; }
+}
+.notif-chevron { align-self: center; color: var(--color-text-faint); flex: none; }
+.notif-unread-dot { margin-top: 0.4rem; display: inline-block; }
+
+/* ==========================================================================
+   ROOM TYPE MANAGEMENT (dashboard/room-details.html)
+   ========================================================================== */
+.rt-kpis { margin-bottom: 0; }
+.rt-name-cell { min-width: 220px; }
+.rt-name-cell .rt-clamp { font-size: var(--fs-xs); color: var(--color-text-muted); margin-top: 0.15rem; }
+
+/* ==========================================================================
+   DIGITAL PAYMENT RECEIPT (dashboard/receipt-details.html)
+   A compact transaction slip, not an A4 report: narrow enough to read on a
+   phone without scrolling, dense enough to fit one printed page. Every figure
+   comes from the server — nothing is recalculated here.
+   ========================================================================== */
+.receipt-sheet {
+  width: 100%;
+  max-width: 420px;          /* phone-narrow slip; centred on desktop */
+  margin: 0 auto;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: clamp(0.9rem, 3.5vw, 1.15rem);
+  box-shadow: var(--shadow-sm);
+  color: var(--color-text);
+  font-size: var(--fs-sm);
+  line-height: 1.35;
+}
+
+/* --- Header --------------------------------------------------------------- */
+.rc-head {
+  display: flex; align-items: center; gap: 0.5rem;
+  padding-bottom: 0.55rem;
+  border-bottom: 2px solid var(--color-primary);
+}
+.rc-logo { width: 26px; height: auto; flex: none; }
+.rc-head-text { flex: 1 1 auto; min-width: 0; }
+.rc-brand {
+  margin: 0; font-size: var(--fs-sm); font-weight: 700;
+  letter-spacing: 0.04em; color: var(--color-heading);
+  overflow-wrap: anywhere;
+}
+.rc-doc-title {
+  margin: 0; font-size: 0.66rem; letter-spacing: 0.12em;
+  /* --color-text-faint fails WCAG AA at this size (3.0:1 / 3.8:1); the muted
+     token stays visually secondary but remains readable in both themes. */
+  text-transform: uppercase; color: var(--color-text-muted);
+}
+.rc-status {
+  flex: none;
+  padding: 0.15rem 0.5rem; border-radius: var(--radius-pill);
+  font-size: 0.6rem; font-weight: 700; letter-spacing: 0.06em;
+  text-transform: uppercase; white-space: nowrap;
+}
+.rc-status-paid { color: var(--color-success); background: var(--color-success-bg); }
+.rc-status-partial { color: var(--color-warning); background: var(--color-warning-bg); }
+.rc-status-unpaid { color: var(--color-danger); background: var(--color-danger-bg); }
+.rc-status-other { color: var(--color-info); background: var(--color-info-bg); }
+
+/* --- The amount ----------------------------------------------------------- */
+.rc-amount {
+  text-align: center;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--color-border);
+}
+.rc-amount-label {
+  margin: 0; font-size: 0.66rem; letter-spacing: 0.12em;
+  text-transform: uppercase; color: var(--color-text-muted);
+}
+.rc-amount-value {
+  margin: 0.15rem 0;
+  /* Prominent but compact — never the 3rem display size that pushed the
+     receipt onto a second page. */
+  font-size: clamp(1.5rem, 7vw, 1.85rem);
+  font-weight: 700; letter-spacing: -0.02em; line-height: 1.15;
+  color: var(--color-heading); overflow-wrap: anywhere;
+}
+.rc-amount-sub { margin: 0; font-size: var(--fs-xs); color: var(--color-text-muted); overflow-wrap: anywhere; }
+
+/* --- Sections of label/value rows ----------------------------------------- */
+.rc-section { padding: 0.4rem 0; border-bottom: 1px solid var(--color-border); }
+.rc-section:last-of-type { border-bottom: 0; }
+.rc-section h3 {
+  margin: 0 0 0.15rem;
+  font-size: 0.66rem; letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--color-text-muted); font-weight: 700;
+}
+.rc-row {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: 0.75rem; padding: 0.09rem 0; min-width: 0;
+}
+.rc-label { color: var(--color-text-muted); flex: 0 0 auto; font-size: var(--fs-sm); }
+.rc-value {
+  font-weight: 600; text-align: right; min-width: 0;
+  overflow-wrap: anywhere; word-break: break-word;
+}
+.rc-money .rc-value, .rc-history .rc-value { font-variant-numeric: tabular-nums; }
+.rc-row-total {
+  margin-top: 0.25rem; padding-top: 0.35rem;
+  border-top: 1px solid var(--color-border);
+  font-weight: 700;
+}
+.rc-row-due .rc-value { color: var(--color-danger); }
+.rc-row-ok .rc-value { color: var(--color-success); }
+
+/* --- Footer --------------------------------------------------------------- */
+.rc-foot {
+  margin-top: 0.5rem; padding-top: 0.45rem;
+  border-top: 1px solid var(--color-border);
+  text-align: center; font-size: var(--fs-xs); color: var(--color-text-muted);
+}
+.rc-foot p { margin: 0; overflow-wrap: anywhere; }
+.rc-foot .rc-muted { color: var(--color-text-muted); }
+
+/* --- Action bar (never part of the printed receipt) ----------------------- */
+.receipt-actions { display: flex; gap: var(--sp-2); flex-wrap: wrap; margin-bottom: 0.9rem; }
+@media (max-width: 720px) {
+  .receipt-actions .btn { flex: 1 1 auto; justify-content: center; }
+}
+@media (max-width: 360px) {
+  .rc-row { gap: 0.5rem; }
+  .receipt-actions .btn { flex: 1 1 100%; }
+}
+
+/* --- Print: one compact page, receipt only -------------------------------- */
+@media print {
+  .receipt-actions, .no-print { display: none !important; }
+  .receipt-sheet {
+    box-shadow: none; border: 0; padding: 0;
+    max-width: 100%; width: 100%; margin: 0;
+    font-size: 9.5pt;
+  }
+  .rc-section, .rc-amount, .rc-foot { break-inside: avoid; }
+  .rc-row { break-inside: avoid; }
+  @page { margin: 8mm; }
 }

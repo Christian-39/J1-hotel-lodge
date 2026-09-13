@@ -32,12 +32,18 @@ class EnquiryCreateView(APIView):
             logger.info("Honeypot enquiry dropped from %s", request.META.get("REMOTE_ADDR"))
         else:
             enquiry = serializer.save(ip_address=request.META.get("REMOTE_ADDR"))
-            notify_staff(
-                type="ENQUIRY_NEW",
-                title=f"New enquiry: {enquiry.subject}",
-                message=f"{enquiry.name} ({enquiry.email}): {enquiry.message[:140]}",
-                link="/dashboard/enquiries.html",
-            )
+            # A staff notification is a side effect, never part of the guest's
+            # outcome: if fan-out fails for any reason the enquiry the guest
+            # actually sent is already committed and must not be rolled back.
+            try:
+                notify_staff(
+                    type="ENQUIRY_NEW",
+                    title=f"New enquiry: {enquiry.subject}",
+                    message=f"{enquiry.name} ({enquiry.email}): {enquiry.message[:140]}",
+                    link="/dashboard/enquiries.html",
+                )
+            except Exception:
+                logger.exception("Enquiry #%s saved but staff notification failed", enquiry.pk)
             logger.info("New enquiry #%s from %s", enquiry.pk, enquiry.email)
         return success_response(
             message="Thank you for your message. The hotel team will respond shortly.",

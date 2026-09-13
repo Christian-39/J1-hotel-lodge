@@ -8,6 +8,7 @@ from rest_framework.views import APIView
 from apps.bookings.services import booking_service
 from apps.core.permissions import IsStaffRole
 from apps.core.responses import success_response
+from apps.core.utils import money
 
 from .models import Payment
 from .serializers import PaymentSerializer, RecordOfflinePaymentSerializer
@@ -87,8 +88,37 @@ class AdminRecordOfflinePaymentView(APIView):
             notes=data.get("notes", ""),
             request=request,
         )
+        # The payment modal must be able to refresh itself from THIS response
+        # alone — no second round-trip and never a full bookings-table reload.
+        booking.refresh_from_db()
+        payload = PaymentSerializer(payment).data
+        payload["booking"] = {
+            "id": booking.pk,
+            "booking_reference": booking.booking_reference,
+            "status": booking.status,
+            "payment_status": booking.payment_status,
+            "currency": booking.currency,
+            "total_amount": money(booking.total_amount),
+            "amount_paid": money(booking.amount_paid),
+            "amount_due": money(booking.amount_due),
+            "guest_name": booking.guest.full_name,
+            "guest_email": booking.guest.email,
+            "guest_phone": booking.guest.phone,
+            "room_type_name": booking.room_type.name,
+            "room_numbers": [
+                a.room.room_number
+                for a in booking.room_assignments.select_related("room")
+                .order_by("room__room_number")
+            ],
+            "check_in": booking.check_in.isoformat(),
+            "check_out": booking.check_out.isoformat(),
+            "nights": booking.nights,
+            "number_of_guests": booking.number_of_guests,
+        }
+        payload["receipt_reference"] = payment.reference
+        payload["has_receipt"] = True
         return success_response(
-            PaymentSerializer(payment).data,
+            payload,
             message="Payment recorded.",
             status=status.HTTP_201_CREATED,
         )
