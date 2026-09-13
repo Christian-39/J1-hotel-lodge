@@ -4,11 +4,13 @@ Base settings for the J-ONE HOTEL & LODGE backend.
 Everything environment-specific (secrets, hosts, databases, vendors) comes
 from environment variables via python-decouple. See .env.example.
 """
+import logging
 import os
 import re
 from datetime import timedelta
 from pathlib import Path
 
+from botocore.config import Config as BotocoreConfig
 from corsheaders.defaults import default_headers
 from decouple import Csv, config
 
@@ -188,16 +190,18 @@ USE_TZ = True
 # ---------------------------------------------------------------------------
 # Static & media files
 # ---------------------------------------------------------------------------
+
 STATIC_URL = "/static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
-MEDIA_URL = "/media/"
-MEDIA_ROOT = BASE_DIR / "media"
+STATICFILES_DIRS = [
+    BASE_DIR / "static",
+]
 
-DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
-# ---------------------------------------------------------------------------
-# Backblaze B2 (S3-compatible) media storage
-# ---------------------------------------------------------------------------
+# ============================================
+# BACKBLAZE B2 / S3 COMPATIBLE STORAGE
+# ============================================
+
 B2_S3_BACKEND = "storages.backends.s3boto3.S3Boto3Storage"
 DEFAULT_B2_ENDPOINT = "https://s3.us-east-005.backblazeb2.com"
 DEFAULT_B2_REGION = "us-east-005"
@@ -223,14 +227,13 @@ def configure_b2_media_storage(storages_map):
 
       * checksums are only calculated ``when_required`` — botocore >= 1.36
         otherwise sends ``x-amz-sdk-checksum-algorithm`` on every PutObject and
-        B2 answers ``400 InvalidArgument``;
+        B2 answers ``400 InvalidArgument``, which is exactly the failure that
+        made uploads silently stop reaching the bucket;
       * ``s3v4`` signatures with virtual-host addressing, as B2 requires.
 
     When the credentials are absent the map is left untouched so local/dev
     environments keep whatever backend they were given.
     """
-    from botocore.config import Config as BotocoreConfig
-
     key_id = os.environ.get("BACKBLAZE_KEY_ID", "").strip()
     app_key = os.environ.get("BACKBLAZE_APPLICATION_KEY", "").strip()
     bucket = os.environ.get("BACKBLAZE_BUCKET_NAME", "").strip()
@@ -255,8 +258,8 @@ def configure_b2_media_storage(storages_map):
         "AWS_S3_ADDRESSING_STYLE": "virtual",
         "AWS_S3_SIGNATURE_VERSION": "s3v4",
         "AWS_QUERYSTRING_AUTH": False,          # public media bucket — never sign URLs
-        "AWS_DEFAULT_ACL": None,
-        "AWS_S3_FILE_OVERWRITE": False,
+        "AWS_DEFAULT_ACL": "public-read",
+        "AWS_S3_FILE_OVERWRITE": True,
         "AWS_S3_CLIENT_CONFIG": BotocoreConfig(
             signature_version="s3v4",
             s3={"addressing_style": "virtual"},
@@ -264,11 +267,51 @@ def configure_b2_media_storage(storages_map):
             response_checksum_validation="when_required",
         ),
     }
-    custom_domain = (os.environ.get("MEDIA_CUSTOM_DOMAIN", "") or "").strip()
-    if custom_domain:
-        settings_out["AWS_S3_CUSTOM_DOMAIN"] = custom_domain
     storages_map.setdefault("default", {})["BACKEND"] = B2_S3_BACKEND
     return {"enabled": True, "settings": settings_out}
+
+
+# Use S3Boto3Storage directly — same as your Gadgets Store
+STORAGES = {
+    "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+    "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
+}
+
+_B2_MEDIA = configure_b2_media_storage(STORAGES)
+_B2_SETTINGS = _B2_MEDIA["settings"]
+
+# B2 Credentials (from Railway env vars)
+AWS_ACCESS_KEY_ID = config("BACKBLAZE_KEY_ID", default="")
+AWS_SECRET_ACCESS_KEY = config("BACKBLAZE_APPLICATION_KEY", default="")
+AWS_STORAGE_BUCKET_NAME = config("BACKBLAZE_BUCKET_NAME", default="")
+AWS_S3_REGION_NAME = _B2_SETTINGS.get("AWS_S3_REGION_NAME") or config(
+    "BACKBLAZE_REGION", default=DEFAULT_B2_REGION
+)
+AWS_S3_ENDPOINT_URL = _B2_SETTINGS.get("AWS_S3_ENDPOINT_URL") or config(
+    "BACKBLAZE_ENDPOINT", default=DEFAULT_B2_ENDPOINT
+)
+
+# CRITICAL B2 Settings
+AWS_S3_ADDRESSING_STYLE = "virtual"
+AWS_S3_SIGNATURE_VERSION = "s3v4"
+AWS_QUERYSTRING_AUTH = False
+AWS_DEFAULT_ACL = "public-read"
+AWS_S3_FILE_OVERWRITE = True
+# The botocore client config computed above (falls back to the same safe
+# defaults when B2 is not configured in this environment).
+AWS_S3_CLIENT_CONFIG = _B2_SETTINGS.get("AWS_S3_CLIENT_CONFIG") or BotocoreConfig(
+    signature_version="s3v4",
+    s3={"addressing_style": "virtual"},
+    request_checksum_calculation="when_required",
+    response_checksum_validation="when_required",
+)
+
+# Media URL
+MEDIA_URL = (
+    f"https://{AWS_STORAGE_BUCKET_NAME}.s3.{AWS_S3_REGION_NAME}.backblazeb2.com/"
+    if _B2_MEDIA["enabled"] else "/media/"
+)
+MEDIA_ROOT = BASE_DIR / "media"
 
 # ---------------------------------------------------------------------------
 # CORS (development allows everything; production must list exact origins)
@@ -276,15 +319,7 @@ def configure_b2_media_storage(storages_map):
 CORS_ALLOWED_ORIGINS = config("CORS_ALLOWED_ORIGINS", default="", cast=Csv())
 CSRF_TRUSTED_ORIGINS = config("CSRF_TRUSTED_ORIGINS", default="", cast=Csv())
 CORS_ALLOW_CREDENTIALS = False  # JWT travels in Authorization headers, not cookies
-
-# The guest checkout flow authenticates with a booking-scoped bearer token in
-# the custom X-Guest-Access-Token header (see apps.bookings / apps.payments).
-# Browsers reject the CORS preflight for ANY request carrying that header
-# unless it is explicitly allowed here — django-cors-headers' default list
-# only covers accept/authorization/content-type/etc.
-CORS_ALLOW_HEADERS = list(default_headers) + [
-    "x-guest-access-token",
-]
+CORS_ALLOW_HEADERS = (*default_headers, "x-guest-access-token")
 
 # ---------------------------------------------------------------------------
 # Application configuration
@@ -295,7 +330,6 @@ PAYMENT_CALLBACK_URL = (
 )
 
 PAYSTACK_SECRET_KEY = config("PAYSTACK_SECRET_KEY", default="")
-PAYSTACK_PUBLIC_KEY = config("PAYSTACK_PUBLIC_KEY", default="")
 # Webhook signature validation uses the secret key per Paystack documentation.
 
 MAX_UPLOAD_MB = config("MAX_UPLOAD_MB", default=5, cast=int)

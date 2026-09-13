@@ -61,24 +61,21 @@ CSRF_COOKIE_SECURE = True
 X_FRAME_OPTIONS = "DENY"
 
 # --- Static files via WhiteNoise --------------------------------------------
-STORAGES = {
-    "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
-    "staticfiles": {"BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage"},
+# Preserve the base-selected media backend (B2 when configured, local
+# otherwise); only production static files are replaced by WhiteNoise.
+STORAGES["staticfiles"] = {
+    "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage"
 }
 
-# --- Media files on Backblaze B2 (S3-compatible) -----------------------------
-# One implementation: configure_b2_media_storage() in base.py (unit-tested).
-_b2_media = configure_b2_media_storage(STORAGES)  # noqa: F405
-if _b2_media["enabled"]:
-    INSTALLED_APPS += ["storages"]  # noqa: F405
-    globals().update(_b2_media["settings"])
-else:
-    import logging
-
-    logging.getLogger("apps").warning(
-        "Backblaze B2 is not fully configured; media files will use local disk. "
-        "Configure BACKBLAZE_* environment variables for durable media storage."
+# A deployed Paystack callback must be public HTTPS, never a development host.
+from django.core.exceptions import ImproperlyConfigured
+from urllib.parse import urlparse
+_callback = urlparse(PAYMENT_CALLBACK_URL)
+if _callback.scheme != "https" or _callback.hostname in {"localhost", "127.0.0.1", None}:
+    raise ImproperlyConfigured(
+        "PAYMENT_CALLBACK_URL (or FRONTEND_URL fallback) must be a public HTTPS URL in production."
     )
+
 
 # --- Redis-backed cache (throttles, settings cache, hot public content) ------
 CACHES = {
