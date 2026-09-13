@@ -94,6 +94,8 @@
 
       <!-- Receipt/folio sheet -->
       <div class="receipt-sheet" id="receipt-sheet" style="margin-top:2rem;">
+        <img class="receipt-watermark" src="assets/icons/logo-watermark.svg" alt="" aria-hidden="true">
+        <div class="receipt-content">
         <div class="receipt-brand">
           <img src="assets/icons/logo-official.svg" alt="J-ONE Hotel &amp; Lodge" height="44">
           <div style="font-weight:600;font-size:1.05rem;letter-spacing:0.09em;">J-ONE HOTEL &amp; LODGE</div>
@@ -103,6 +105,7 @@
           <tbody id="receipt-body"></tbody>
         </table>
         <div class="receipt-foot">Thank you for staying with us. For assistance, contact <span data-contact-phone>+234 803 211 2874</span>.</div>
+        </div>
       </div>
 
       <div class="confirm-actions">
@@ -244,6 +247,9 @@
   // so the folio survives the payment redirect.
   var booking = null;
   var quote = null;
+  var guestToken = sessionStorage.getItem("jone.guest_access_token") || p.get("token") || "";
+  if (guestToken) sessionStorage.setItem("jone.guest_access_token", guestToken);
+  function guestOpts() { return window.API.guestAccessOpts(guestToken); }
 
   /* ------------------------------ Stepper -------------------------------- */
   // Payment is step 5; confirmation is step 6. Both live on this page.
@@ -347,7 +353,7 @@
         if (!window.confirm("Cancel this booking? This cannot be undone.")) return;
         if (!JONE.guardSubmit(btn)) return;
         try {
-          var res = await window.API.cancelBooking(b.booking_reference);
+          var res = await window.API.cancelBooking(b.booking_reference, "", guestOpts());
           booking = res.data || booking;
           JONE.ui.toast("Booking cancelled.", "success");
           btn.remove();
@@ -421,7 +427,7 @@
 
   async function redirectToPayment() {
     // Initialize via the backend; we never build provider URLs ourselves.
-    var payRes = await window.API.initPayment(booking.booking_reference);
+    var payRes = await window.API.initPayment(booking.booking_reference, guestOpts());
     var pay = payRes.data || {};
     var authUrl = pay.authorization_url || pay.payment_url;
     if (authUrl) {
@@ -462,6 +468,7 @@
         if (criteria.room_id) payload.room_id = Number(criteria.room_id);
         var res = await window.API.createBooking(payload);
         booking = res.data || {};
+        if (booking.guest_access_token) { guestToken = booking.guest_access_token; sessionStorage.setItem("jone.guest_access_token", guestToken); }
         bookingRef = booking.booking_reference || bookingRef;
         fillPaymentSummary();
         showSubstitutionNotice(booking);
@@ -513,7 +520,7 @@
       // Guest checkout: no login wall here; guests returning from the
       // payment provider must land straight on their booking.
       try {
-        var res = await window.API.getBooking(bookingRef);
+        var res = await window.API.getBooking(bookingRef, guestOpts());
         booking = res.data || {};
         fillPaymentSummary();
         // Returning from the payment provider with a balance still outstanding

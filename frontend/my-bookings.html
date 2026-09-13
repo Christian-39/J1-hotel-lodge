@@ -74,15 +74,24 @@
 <main id="main">
   <section class="page-hero">
     <div class="container">
-      <span class="eyebrow">Your account</span>
-      <h1>Your stays</h1>
-      <p>Every booking you&rsquo;ve made with us &mdash; references, balances and receipts in one place.</p>
+      <span class="eyebrow">Secure booking access</span>
+      <h1>Find your booking</h1>
+      <p>Use the booking reference and secure access token from your confirmation email. No account is required.</p>
     </div>
   </section>
 
   <section class="section">
     <div class="container" style="max-width:880px;">
-      <div class="filter-tabs" id="stay-filters" role="tablist" aria-label="Filter bookings" style="display:flex;gap:0.4rem;flex-wrap:wrap;margin-bottom:1.5rem;">
+      <form id="booking-lookup" class="card card-pad" style="margin-bottom:1.5rem;" novalidate>
+        <div class="form-grid form-grid-2">
+          <div class="field"><label class="field-label" for="booking-reference">Booking reference</label><input class="input" id="booking-reference" required placeholder="J1-20260913-0001" autocomplete="off"></div>
+          <div class="field"><label class="field-label" for="booking-token">Secure access token</label><input class="input" id="booking-token" required placeholder="From your confirmation email" autocomplete="off"></div>
+        </div>
+        <button class="btn btn-accent" type="submit">Find booking</button>
+        <p class="caption" style="margin-top:.75rem;">Your token is private. Booking references alone cannot reveal booking details.</p>
+      </form>
+
+      <div class="filter-tabs" id="stay-filters" role="tablist" aria-label="Filter bookings" style="display:none;gap:0.4rem;flex-wrap:wrap;margin-bottom:1.5rem;">
         <button class="btn btn-sm btn-outline is-active" type="button" data-stay="">All</button>
         <button class="btn btn-sm btn-outline" type="button" data-stay="CONFIRMED">Upcoming</button>
         <button class="btn btn-sm btn-outline" type="button" data-stay="CHECKED_IN">In house</button>
@@ -201,11 +210,10 @@
   var errEl = document.getElementById("stays-error");
   var current = "";
 
-  // Auth gate: this view is for signed-in guests.
-  if (!window.Auth.isAuthenticated()) {
-    location.replace("/login.html?next=" + encodeURIComponent("/my-bookings.html"));
-    return;
-  }
+  var accessToken = sessionStorage.getItem("jone.guest_access_token") || "";
+  var accessRef = "";
+  function accessOpts() { return window.API.guestAccessOpts(accessToken); }
+  if (accessToken) document.getElementById("booking-token").value = accessToken;
 
   var STATUS = {
     PENDING:     { label: "Pending",        cls: "badge-warning" },
@@ -276,23 +284,26 @@
   }
 
   async function load(){
+    if (!accessRef || !accessToken) return;
     errEl.style.display = "none";
-    listEl.innerHTML = '<div class="loading-block"><div class="spinner" role="status"></div><p class="muted">Loading your stays&hellip;</p></div>';
+    listEl.innerHTML = '<div class="loading-block"><div class="spinner" role="status"></div><p class="muted">Loading your booking&hellip;</p></div>';
     try {
-      var params = { page_size: 50 };
-      if (current) params.status = current;
-      var res = await window.API.myBookings(params);
-      var items = window.API.normalizeList(res.data, res.pagination).items;
-      render(items || []);
+      var res = await window.API.getBooking(accessRef, accessOpts());
+      render([res.data || {}]);
     } catch (err) {
       listEl.innerHTML = "";
-      errEl.innerHTML = '<div class="empty-state"><span data-icon="alertTriangle" data-size="38"></span>' +
-        '<h3>Your stays couldn&rsquo;t be loaded</h3><p>' + ((err && err.message) || "Please refresh the page.") + '</p>' +
-        '<button class="btn btn-outline" type="button" data-retry>Try again</button></div>';
-      errEl.style.display = "";
-      JONE.icons.inject(errEl);
+      errEl.innerHTML = '<div class="empty-state"><span data-icon="alertTriangle" data-size="38"></span><h3>Booking unavailable</h3><p>' + ((err && err.message) || "The reference or secure token is invalid or expired.") + '</p></div>';
+      errEl.style.display = ""; JONE.icons.inject(errEl);
     }
   }
+
+  document.getElementById("booking-lookup").addEventListener("submit", function(e){
+    e.preventDefault();
+    accessRef = document.getElementById("booking-reference").value.trim();
+    accessToken = document.getElementById("booking-token").value.trim();
+    if (accessToken) sessionStorage.setItem("jone.guest_access_token", accessToken);
+    load();
+  });
 
   document.getElementById("stay-filters").addEventListener("click", function (e) {
     var btn = e.target.closest("[data-stay]");
@@ -339,7 +350,6 @@
     });
   });
 
-  load();
 })();
 </script>
 </body>

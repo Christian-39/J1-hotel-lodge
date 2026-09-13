@@ -55,6 +55,7 @@
 </div>
 
 <article class="receipt-sheet" id="receipt" data-receipt>
+      <img class="receipt-watermark" src="../assets/icons/logo-watermark.svg" alt="" aria-hidden="true">
   <div class="loading-block"><div class="spinner" role="status"></div><p class="muted">Loading receipt&hellip;</p></div>
 </article>
     </div>
@@ -289,6 +290,9 @@
     if (!data) return;
     var css = [
       "body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;margin:0 auto;padding:16px;color:#1c1c1c;max-width:420px;font-size:13px;line-height:1.45;}",
+      ".receipt-sheet{position:relative;overflow:hidden;}",
+      ".receipt-sheet:before{content:\"\";position:absolute;inset:50% auto auto 50%;transform:translate(-50%,-50%);width:72%;height:72%;background:url('../assets/icons/logo-watermark.svg') center/contain no-repeat;opacity:.075;pointer-events:none;}",
+      ".receipt-sheet>*{position:relative;z-index:1;}",
       ".rc-head{display:flex;align-items:center;gap:8px;padding-bottom:8px;border-bottom:2px solid #1c1c1c;}",
       ".rc-logo{width:24px;height:auto;} .rc-head-text{flex:1;min-width:0;}",
       ".rc-brand{margin:0;font-weight:700;letter-spacing:.04em;font-size:13px;}",

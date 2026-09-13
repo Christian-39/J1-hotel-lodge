@@ -210,3 +210,17 @@ Backblaze B2 bucket     (user media)
 The contract ships as `/api/` today (single consistent version). Any future
 breaking change will be introduced as `/api/v2/` while `/api/` keeps working,
 so the independently hosted frontend can migrate deliberately.
+
+## Guest checkout and secure booking access
+
+Hotel customers are not website users. `User` accounts are for authenticated
+staff (ADMIN, MANAGER, and RECEPTIONIST); the legacy `GUEST` choice is retained
+only so existing rows can be migrated safely and cannot sign in. Public
+checkout creates or reuses a standalone `Guest` and links the reservation
+through `Booking.guest`.
+
+A booking response and its email contain a cryptographically random,
+90-day guest access token. Only a SHA-256 digest is stored on the booking.
+Guest detail, receipt, cancellation, payment initialization, and payment
+verification require the token in `X-Guest-Access-Token`; a booking reference
+alone is never sufficient. Staff continue to use JWT and staff permissions.

@@ -43,7 +43,7 @@ class User(AbstractBaseUser, PermissionsMixin, TimeStampedModel):
     first_name = models.CharField(max_length=100)
     last_name = models.CharField(max_length=100)
     phone = models.CharField(max_length=20, blank=True, default="")
-    role = models.CharField(max_length=20, choices=Role.choices, default=Role.GUEST, db_index=True)
+    role = models.CharField(max_length=20, choices=Role.choices, default=Role.RECEPTIONIST, db_index=True)
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)  # Django admin access only
     email_verified = models.BooleanField(default=False)

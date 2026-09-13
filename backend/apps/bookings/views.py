@@ -139,8 +139,12 @@ class QuoteView(APIView):
 class MyBookingsView(generics.ListCreateAPIView):
     """GET: my bookings (paginated). POST: create a pending booking."""
 
-    permission_classes = [IsAuthenticated]
     serializer_class = BookingListSerializer
+
+    def get_permissions(self):
+        # Public checkout creates a standalone Guest. Listing is intentionally
+        # not a public operation; secure lookup uses the bearer token below.
+        return [AllowAny()] if self.request.method == "POST" else [IsAuthenticated()]
 
     def get_queryset(self):
         qs = (
@@ -172,12 +176,14 @@ class MyBookingsView(generics.ListCreateAPIView):
             children=data["children"],
             offer_code=data.get("offer_code") or None,
             special_requests=data.get("special_requests", ""),
-            user=request.user,
+            user=request.user if request.user.is_authenticated else None,
             guest_data=data.get("guest") or None,
             request=request,
             room_id=data.get("room_id"),
         )
         payload = BookingDetailSerializer(booking, context={"request": request}).data
+        payload["guest_access_token"] = getattr(booking, "guest_access_token", None)
+        payload["guest_access_expires_at"] = booking.guest_access_expires_at.isoformat() if booking.guest_access_expires_at else None
         substitution = getattr(booking, "room_substitution", None)
         if substitution:
             # Never switch rooms silently — the guest is told on the
@@ -193,7 +199,7 @@ class MyBookingsView(generics.ListCreateAPIView):
 class _OwnedBookingMixin:
     """Resolve a booking by pk or reference + enforce object ownership."""
 
-    permission_classes = [IsAuthenticated, IsOwnerOrStaff]
+    permission_classes = [AllowAny]
 
     def get_booking(self):
         lookup = self.kwargs["lookup"]
@@ -206,8 +212,16 @@ class _OwnedBookingMixin:
             .first()
         )
         if booking is None:
-            raise NotFound()
-        self.check_object_permissions(self.request, booking)
+            raise NotFound("Booking not found.")
+        user = self.request.user
+        if user.is_authenticated and getattr(user, "is_staff_member", False):
+            pass
+        elif user.is_authenticated and booking.guest.user_id == user.id:
+            pass  # legacy linked accounts remain readable during migration
+        else:
+            token = self.request.headers.get("X-Guest-Access-Token", "")
+            if not booking.guest_token_matches(token):
+                raise NotFound("Booking not found.")
         return booking_service.refresh_expired_pending(booking)
 
 
@@ -233,7 +247,7 @@ class BookingCancelView(_OwnedBookingMixin, APIView):
         booking = booking_service.cancel_booking(
             booking,
             reason=serializer.validated_data.get("reason", ""),
-            by_user=request.user,
+            by_user=request.user if request.user.is_authenticated else None,
             staff=False,
             request=request,
         )

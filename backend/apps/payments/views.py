@@ -26,7 +26,7 @@ logger = logging.getLogger("apps")
 
 @extend_schema(tags=["Payments"], summary="Initialize a Paystack payment for a booking")
 class InitializePaymentView(APIView):
-    permission_classes = [IsAuthenticated, IsOwnerOrStaff]
+    permission_classes = [AllowAny]
     serializer_class = InitializePaymentSerializer
     throttle_classes = [ScopedRateThrottle]
     throttle_scope = "payment_init"
@@ -39,11 +39,12 @@ class InitializePaymentView(APIView):
         )
         if booking is None:
             from rest_framework.exceptions import NotFound
-
             raise NotFound("Booking not found.")
-        self.check_object_permissions(request, booking)
+        if not (request.user.is_authenticated and (getattr(request.user, "is_staff_member", False) or booking.guest.user_id == request.user.id)):
+            if not booking.guest_token_matches(request.headers.get("X-Guest-Access-Token", "")):
+                raise NotFound("Booking not found.")
         payload = payment_service.initialize_booking_payment(
-            booking=booking, user=request.user, request=request
+            booking=booking, user=request.user if request.user.is_authenticated else None, request=request
         )
         return success_response(payload, message="Payment initialized.",
                                 status=status.HTTP_201_CREATED)
@@ -51,7 +52,7 @@ class InitializePaymentView(APIView):
 
 @extend_schema(tags=["Payments"], summary="Verify a transaction server-side (idempotent)")
 class VerifyPaymentView(APIView):
-    permission_classes = [IsAuthenticated, IsOwnerOrStaff]
+    permission_classes = [AllowAny]
     serializer_class = InitializePaymentSerializer  # response shape documented in contract
     throttle_classes = [ScopedRateThrottle]
     throttle_scope = "payment_verify"
@@ -64,7 +65,11 @@ class VerifyPaymentView(APIView):
             from rest_framework.exceptions import NotFound
 
             raise NotFound("Payment not found.")
-        self.check_object_permissions(request, payment.booking)
+        booking = payment.booking
+        if not (request.user.is_authenticated and (getattr(request.user, "is_staff_member", False) or booking.guest.user_id == request.user.id)):
+            if not booking.guest_token_matches(request.headers.get("X-Guest-Access-Token", "")):
+                from rest_framework.exceptions import NotFound
+                raise NotFound("Payment not found.")
         result = payment_service.process_verification(reference=reference, request=request)
         return success_response(result, message="Payment verified.")
 

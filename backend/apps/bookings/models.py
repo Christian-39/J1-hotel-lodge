@@ -11,6 +11,8 @@ Design notes
   creation (a frontend-supplied total is never trusted).
 """
 from decimal import Decimal
+import hashlib
+import secrets
 
 from django.conf import settings
 from django.core.validators import MinValueValidator
@@ -127,6 +129,9 @@ class Booking(TimeStampedModel):
 
     expires_at = models.DateTimeField(null=True, blank=True,
                                       help_text="While PENDING, inventory is held until this time.")
+    guest_access_token_hash = models.CharField(max_length=128, blank=True, default="", db_index=True,
+                                              help_text="Hash of the unguessable token used for guest self-service access.")
+    guest_access_expires_at = models.DateTimeField(null=True, blank=True)
     cancelled_at = models.DateTimeField(null=True, blank=True)
     checked_in_at = models.DateTimeField(null=True, blank=True)
     checked_out_at = models.DateTimeField(null=True, blank=True)
@@ -143,6 +148,26 @@ class Booking(TimeStampedModel):
 
     def __str__(self):
         return f"Booking {self.booking_reference} ({self.get_status_display()})"
+
+    @staticmethod
+    def hash_guest_access_token(token):
+        return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+    def issue_guest_access_token(self):
+        """Return a one-time generated bearer token; only its hash is stored."""
+        token = secrets.token_urlsafe(32)
+        self.guest_access_token_hash = self.hash_guest_access_token(token)
+        from django.utils import timezone
+        from datetime import timedelta
+        self.guest_access_expires_at = timezone.now() + timedelta(days=90)
+        self.save(update_fields=["guest_access_token_hash", "guest_access_expires_at", "updated_at"])
+        return token
+
+    def guest_token_matches(self, token):
+        from django.utils import timezone
+        return bool(token and self.guest_access_token_hash and
+                    self.guest_access_expires_at and self.guest_access_expires_at > timezone.now() and
+                    secrets.compare_digest(self.guest_access_token_hash, self.hash_guest_access_token(token)))
 
     # --- Convenience properties ---------------------------------------------
     @property

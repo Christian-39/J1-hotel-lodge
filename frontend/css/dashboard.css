@@ -779,6 +779,13 @@ tr.is-muted { opacity: 0.55; }
    phone without scrolling, dense enough to fit one printed page. Every figure
    comes from the server — nothing is recalculated here.
    ========================================================================== */
+/* Official J-ONE receipt watermark: a real image layer prints reliably and never captures pointer events. */
+.receipt-sheet { position: relative; isolation: isolate; overflow: hidden; }
+.receipt-sheet::before { content: ""; position: absolute; z-index: 0; inset: 50% auto auto 50%; width: min(72%, 360px); height: 72%; transform: translate(-50%, -50%); background: url("../assets/icons/logo-watermark.svg") center / contain no-repeat; opacity: .075; pointer-events: none; }
+.receipt-watermark { position: absolute; z-index: 0; inset: 50% auto auto 50%; width: min(72%, 360px); height: auto; transform: translate(-50%, -50%); opacity: .075; pointer-events: none; user-select: none; }
+.receipt-content, .receipt-sheet > *:not(.receipt-watermark) { position: relative; z-index: 1; }
+@media print { .receipt-watermark { display: block !important; opacity: .075; } .receipt-sheet { overflow: visible; } }
+
 .receipt-sheet {
   width: 100%;
   max-width: 420px;          /* phone-narrow slip; centred on desktop */

@@ -160,13 +160,6 @@
     return res.data;
   }
 
-  async function register(payload) {
-    const res = await window.API.register(payload);
-    storeSession(res.data);
-    setAPITokenProvider();
-    return res.data;
-  }
-
   async function logout() {
     const cred = getSessionCred();
     try { await window.API.logout(cred ? cred.refresh : null); } catch (_) {}
@@ -227,46 +220,10 @@
     });
   }
 
-  function bindRegisterForm(formSel, opts = {}) {
-    const form = document.querySelector(formSel);
-    if (!form) return;
-    form.addEventListener("submit", async (e) => {
-      e.preventDefault();
-      const btn = form.querySelector("[type=submit]");
-      if (!JONE.guardSubmit(btn)) return;
-      const fd = new FormData(form);
-      const payload = {
-        email: String(fd.get("email") || "").trim(),
-        first_name: String(fd.get("first_name") || "").trim(),
-        last_name: String(fd.get("last_name") || "").trim(),
-        phone: String(fd.get("phone") || "").trim(),
-        password: fd.get("password") || "",
-        password_confirm: fd.get("password_confirm") || ""
-      };
-      try {
-        await register(payload);
-        JONE.ui.toast("Account created. Welcome to J-ONE HOTEL & LODGE.", "success");
-        const params = new URLSearchParams(location.search);
-        const next = params.get("next");
-        location.href = next || "index.html";
-      } catch (err) {
-        JONE.releaseGuard(btn);
-        let msg = err.message || "Registration failed. Please try again.";
-        if (err.data && err.data.errors) {
-          const first = Object.values(err.data.errors).flat()[0];
-          if (first) msg = String(first);
-        }
-        JONE.ui.toast(msg, "error");
-        const errBox = form.querySelector("[data-form-error]");
-        if (errBox) { errBox.textContent = msg; errBox.style.display = "block"; }
-      }
-    });
-  }
-
   window.Auth = {
-    ROLES, state, login, register, logout, guard, hasRole, can,
+    ROLES, state, login, logout, guard, hasRole, can,
     isAuthenticated, restore, refreshProfile, onUnauthorized,
-    bindLoginForm, bindRegisterForm, clearSession, refreshAccess,
+    bindLoginForm, clearSession, refreshAccess,
     isStaffRole
   };
   window.JONE = window.JONE || {};

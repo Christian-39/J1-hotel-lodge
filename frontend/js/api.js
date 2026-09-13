@@ -302,12 +302,13 @@ const API = (() => {
 
   /* Create booking (auth required). The backend validates availability and
      computes every amount; the response is the authoritative booking detail. */
-  function createBooking(payload, opts = {}) { return post("/api/bookings/", payload, opts); }
+  function createBooking(payload, opts = {}) { return post("/api/bookings/", payload, { auth: false, ...opts }); }
 
   /* My bookings (auth required, paginated, ?status= filter supported). */
   function myBookings(params, opts = {}) { return get("/api/bookings/", { params, ...opts }); }
 
   /* Booking detail by id or booking_reference (auth + owner). */
+  function guestAccessOpts(token) { return token ? { auth: false, headers: { "X-Guest-Access-Token": token } } : {}; }
   function getBooking(lookup, opts = {}) { return get(`/api/bookings/${encodeURIComponent(lookup)}/`, opts); }
 
   /* Cancel a booking (auth + owner). Body: { reason? }. */
@@ -335,7 +336,6 @@ const API = (() => {
   /* ------------------------------ AUTH ------------------------------------- */
 
   function login(payload, opts = {}) { return post("/api/auth/login/", payload, { auth: false, ...opts }); }
-  function register(payload, opts = {}) { return post("/api/auth/register/", payload, { auth: false, ...opts }); }
   function logout(refreshToken, opts = {}) {
     return post("/api/auth/logout/", refreshToken ? { refresh: refreshToken } : {}, { auth: false, ...opts });
   }
@@ -468,11 +468,11 @@ const API = (() => {
     getHotelInfo, getPolicies, getRooms, getRoom, checkAvailability,
     getOffers, getFacilities, getGallery, submitEnquiry,
     // Booking flow (guest)
-    quoteBooking, createBooking, myBookings, getBooking, cancelBooking, getBookingReceipt,
+    quoteBooking, createBooking, myBookings, getBooking, guestAccessOpts, cancelBooking, getBookingReceipt,
     // Payments
     initPayment, verifyPayment,
     // Auth
-    login, register, logout, me, refreshTokenCall,
+    login, logout, me, refreshTokenCall,
     // Notifications
     getNotifications, getUnreadCount, markNotificationRead, markAllNotificationsRead, getNotification,
     // Staff resources + actions

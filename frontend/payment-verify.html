@@ -93,16 +93,14 @@ JONE.ui.initChrome();
     return;
   }
 
-  // The verify endpoint requires the booking owner to be signed in.
-  if (!window.Auth.isAuthenticated()) {
-    location.replace("/login.html?next=" + encodeURIComponent(location.pathname + location.search));
-    return;
-  }
+  var guestToken = sessionStorage.getItem("jone.guest_access_token") || params.get("token") || "";
+  if (guestToken) sessionStorage.setItem("jone.guest_access_token", guestToken);
+  function guestOpts() { return guestToken ? window.API.guestAccessOpts(guestToken) : {}; }
 
   async function verify() {
     show(elLoading);
     try {
-      var res = await window.API.verifyPayment(reference);
+      var res = await window.API.verifyPayment(reference, guestOpts());
       var d = (res && res.data) || {};
       var paymentStatus = String(d.payment_status || "").toUpperCase();
       if (paymentStatus === "PAID" || paymentStatus === "PARTIALLY_PAID") {

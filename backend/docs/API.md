@@ -148,3 +148,8 @@ booking create 30/h · availability 240/h · payment init 20/h · payment verify
 **paystack webhook 300/min** (per IP; deliberately generous so legitimate Paystack
 retries/bursts are never dropped, while abuse floods are blunted)
 (per user for authenticated scopes, per IP otherwise).
+
+
+## Guest checkout authentication
+
+`POST /api/auth/register/` is intentionally disabled with `410 GUEST_ACCOUNT_NOT_REQUIRED`; normal guests do not create `User` accounts. `POST /api/bookings/` is public and accepts the nested guest contact record. Its response contains a one-time raw guest access token; the booking stores only its digest. Send that token as `X-Guest-Access-Token` with booking detail, receipt, cancellation, payment initialization, and payment verification requests. Booking references alone return not found.

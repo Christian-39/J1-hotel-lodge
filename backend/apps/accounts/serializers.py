@@ -72,6 +72,8 @@ class JOneTokenObtainPairSerializer(TokenObtainPairSerializer):
 
     def validate(self, attrs):
         data = super().validate(attrs)
+        if not self.user.is_staff_member:
+            raise serializers.ValidationError("Staff sign-in is for hotel staff accounts only.")
         data["user"] = UserSerializer(self.user, context=self.context).data
         return data
 
@@ -236,7 +238,7 @@ class AdminUserCreateSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         # is_staff grants Django-admin access for privileged roles only.
-        role = validated_data.get("role", User.Role.GUEST)
+        role = validated_data.get("role", User.Role.RECEPTIONIST)
         validated_data["is_staff"] = role in (User.Role.ADMIN,)
         return User.objects.create_user(**validated_data)
 

@@ -60,8 +60,10 @@ def get_booking_by_reference_or_id(lookup):
     return booking
 
 
-def guest_booking_link(booking):
-    return f"{GUEST_BOOKING_LINK}?ref={booking.booking_reference}"
+def guest_booking_link(booking, token=None):
+    link = f"{GUEST_BOOKING_LINK}?ref={booking.booking_reference}"
+    token = token or getattr(booking, "guest_access_token", None)
+    return link + (f"&token={token}" if token else "")
 
 
 def staff_booking_link(booking):
@@ -342,6 +344,8 @@ def create_booking(*, room_type_value, check_in, check_out, rooms, adults, child
         ),
         created_by=actor if is_staff or (user and user.is_staff_member) else None,
     )
+    # The raw token is returned only once to the guest; only its digest is stored.
+    booking.guest_access_token = booking.issue_guest_access_token()
     BookingRoom.objects.bulk_create(
         [
             BookingRoom(booking=booking, room=room, check_in=check_in, check_out=check_out)
@@ -408,7 +412,7 @@ def create_booking(*, room_type_value, check_in, check_out, rooms, adults, child
                         f"Dates: {booking.check_in} → {booking.check_out} ({booking.nights} night(s))\n"
                         f"Total: {booking.currency} {booking.total_amount}\n"
                         f"Amount required to confirm: {booking.currency} {booking.required_payment}\n\n"
-                        f"Complete payment here: {guest_booking_link(booking)}\n\n"
+                        f"Secure booking access and payment: {guest_booking_link(booking)}\n\n"
                         f"{hotel.hotel_name} · {hotel.phone}"
                     ),
                     recipients=[booking.guest.email],
@@ -443,6 +447,7 @@ def _send_confirmation_email(booking, hotel=None):
             f"Total: {booking.currency} {booking.total_amount}\n"
             f"Paid: {booking.currency} {booking.amount_paid}\n"
             f"Balance due at hotel: {booking.currency} {booking.amount_due}\n\n"
+            f"Secure booking access and receipt: {guest_booking_link(booking)}\n\n"
             f"{hotel.hotel_name}\n{hotel.address}\n{hotel.phone} · {hotel.email}"
         ),
         recipients=[booking.guest.email],

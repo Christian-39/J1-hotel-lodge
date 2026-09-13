@@ -20,7 +20,7 @@
         <img src="assets/icons/logo-official.svg" alt="J-ONE Hotel &amp; Lodge" width="22" height="38" style="margin:0 auto;display:block;">
       </a>
       <h1 style="font-size:var(--fs-xl);margin-top:1rem;">Sign in</h1>
-      <p class="muted">Staff console &amp; guest bookings.</p>
+      <p class="muted">Hotel staff access only.</p>
     </div>
 
     <div class="card card-pad">
@@ -44,9 +44,7 @@
         <div class="field-error" data-form-error style="display:none;color:var(--color-danger);margin-bottom:1rem;"></div>
         <button class="btn btn-block" type="submit">Sign in</button>
       </form>
-      <p class="caption center" style="margin-top:1.5rem;">
-        New guest? <a href="register.html">Create an account</a> to book &amp; manage stays.
-      </p>
+      <p class="caption center" style="margin-top:1.5rem;">Guests can book and pay without creating an account.</p>
       <p class="caption center" style="margin-top:0.75rem;">
         <a href="index.html">&larr; Back to website</a>
       </p>
@@ -66,10 +64,10 @@
 <script src="js/navigation.js"></script>
 <script>
   JONE.ui.initChrome();
-  // Already signed in? Skip the form (staff → console, guests → home).
+  // Already signed in? Staff accounts go directly to the console.
   if (window.Auth.isAuthenticated()) {
     window.Auth.restore();
-    location.replace(window.Auth.isStaffRole() ? "dashboard/index.html" : "index.html");
+    location.replace("dashboard/index.html");
   } else {
     window.Auth.bindLoginForm("#login-form");
   }

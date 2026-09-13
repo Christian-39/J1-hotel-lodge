@@ -91,3 +91,11 @@ between beat runs as well.
 Staff create bookings via `POST /api/admin/bookings/` with mandatory guest
 fields. `status=CONFIRMED` skips the online-payment hold entirely (guest pays
 at the hotel); `status=PENDING` keeps an expiry hold like a web booking.
+
+## Account-free guest access
+
+The public flow never redirects a guest to staff login. After checkout, the
+backend returns a secure guest access token and emails a link containing it.
+The token is stored only in the browser session for the payment redirect and
+is required alongside the booking reference for later lookup. Receipts use
+the official J-ONE watermark in both browser and print/PDF views.
