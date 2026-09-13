@@ -210,15 +210,10 @@
   var errEl = document.getElementById("stays-error");
   var current = "";
 
-  var lookupParams = new URLSearchParams(location.search);
-  var accessToken = lookupParams.get("token") || sessionStorage.getItem("jone.guest_access_token") || "";
-  var accessRef = lookupParams.get("ref") || "";
+  var accessToken = sessionStorage.getItem("jone.guest_access_token") || "";
+  var accessRef = "";
   function accessOpts() { return window.API.guestAccessOpts(accessToken); }
-  if (accessToken) {
-    sessionStorage.setItem("jone.guest_access_token", accessToken);
-    document.getElementById("booking-token").value = accessToken;
-  }
-  if (accessRef) document.getElementById("booking-reference").value = accessRef;
+  if (accessToken) document.getElementById("booking-token").value = accessToken;
 
   var STATUS = {
     PENDING:     { label: "Pending",        cls: "badge-warning" },
@@ -309,7 +304,6 @@
     if (accessToken) sessionStorage.setItem("jone.guest_access_token", accessToken);
     load();
   });
-  if (accessRef && accessToken) load();
 
   document.getElementById("stay-filters").addEventListener("click", function (e) {
     var btn = e.target.closest("[data-stay]");
