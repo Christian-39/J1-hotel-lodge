@@ -138,11 +138,18 @@ JONE.ui.initChrome();
       }
     } catch (err) {
       setTxt("f-ref", reference);
-      var msg = (err && err.status === 404)
-        ? "We couldn't find this payment reference. Please check the link or contact the hotel."
-        : (err && err.status === 0)
-          ? "We can't reach the payment service right now. Please try again in a moment."
-          : ((err && err.message) || "We couldn't confirm this payment yet.");
+      var msg;
+      if (err && err.status === 404 && !guestToken) {
+        msg = "This payment can't be opened without its secure booking link. Please use the link from your confirmation email, or contact the hotel with your booking reference.";
+      } else if (err && err.status === 404) {
+        msg = "We couldn't find this payment reference, or your booking session has expired. Please use the secure link from your confirmation email or contact the hotel.";
+      } else if (err && err.status === 401) {
+        msg = "Your booking session has expired. Please use the secure link from your confirmation email, or contact the hotel.";
+      } else if (err && err.status === 0) {
+        msg = "We can't reach the payment service right now. Please try again in a moment.";
+      } else {
+        msg = (err && err.message) || "We couldn't confirm this payment yet.";
+      }
       var l3 = document.getElementById("f-line"); if (l3) l3.textContent = msg;
       show(elFailed);
     }

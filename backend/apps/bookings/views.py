@@ -13,10 +13,10 @@ from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 
 from apps.core.exceptions import InvalidDatesError
-from apps.core.permissions import IsOwnerOrStaff
 from apps.core.responses import success_response
 from apps.hotel.models import HotelSettings
 
+from .access import can_access_booking
 from .models import Booking
 from .serializers import (
     AvailabilityQuerySerializer,
@@ -211,17 +211,9 @@ class _OwnedBookingMixin:
             .prefetch_related("room_assignments__room", "payments")
             .first()
         )
-        if booking is None:
+        if booking is None or not can_access_booking(self.request, booking):
+            # 404 (not 403) so booking references alone expose nothing.
             raise NotFound("Booking not found.")
-        user = self.request.user
-        if user.is_authenticated and getattr(user, "is_staff_member", False):
-            pass
-        elif user.is_authenticated and booking.guest.user_id == user.id:
-            pass  # legacy linked accounts remain readable during migration
-        else:
-            token = self.request.headers.get("X-Guest-Access-Token", "")
-            if not booking.guest_token_matches(token):
-                raise NotFound("Booking not found.")
         return booking_service.refresh_expired_pending(booking)
 
 

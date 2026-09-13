@@ -12,6 +12,7 @@ from rest_framework.views import APIView
 from django.views.decorators.csrf import csrf_exempt
 from django.utils.decorators import method_decorator
 
+from apps.bookings.access import can_access_booking
 from apps.bookings.models import Booking
 from apps.bookings.services import booking_service
 from apps.core.responses import success_response
@@ -36,11 +37,9 @@ class InitializePaymentView(APIView):
         booking = booking_service.get_booking_by_reference_or_id(
             serializer.validated_data["booking_reference"]
         )
-        if booking is None:
+        if booking is None or not can_access_booking(request, booking):
+            # 404 (not 403) so references alone cannot probe other bookings.
             raise NotFound("Booking not found.")
-        if not (request.user.is_authenticated and (getattr(request.user, "is_staff_member", False) or booking.guest.user_id == request.user.id)):
-            if not booking.guest_token_matches(request.headers.get("X-Guest-Access-Token", "")):
-                raise NotFound("Booking not found.")
         payload = payment_service.initialize_booking_payment(
             booking=booking, user=request.user if request.user.is_authenticated else None, request=request
         )
@@ -58,13 +57,10 @@ class VerifyPaymentView(APIView):
     def get(self, request, reference):
         from apps.payments.models import Payment
 
-        payment = Payment.objects.select_related("booking").filter(reference=reference).first()
-        if payment is None:
+        payment = Payment.objects.select_related("booking", "booking__guest").filter(reference=reference).first()
+        if payment is None or not can_access_booking(request, payment.booking):
+            # 404 (not 403) so payment references alone expose nothing.
             raise NotFound("Payment not found.")
-        booking = payment.booking
-        if not (request.user.is_authenticated and (getattr(request.user, "is_staff_member", False) or booking.guest.user_id == request.user.id)):
-            if not booking.guest_token_matches(request.headers.get("X-Guest-Access-Token", "")):
-                raise NotFound("Payment not found.")
         result = payment_service.process_verification(reference=reference, request=request)
         return success_response(result, message="Payment verified.")
 

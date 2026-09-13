@@ -21,11 +21,11 @@ services:
       - key: DJANGO_DEBUG
         value: "False"
       - key: DJANGO_ALLOWED_HOSTS
-        sync: false          # e.g. jone-hotel-api.onrender.com
+        sync: false          # e.g. j1-hotel-lodge-backend.onrender.com
       - key: FRONTEND_URL
-        sync: false          # e.g. https://www.jonehotel.com
+        sync: false          # e.g. https://jonehotel.vercel.app
       - key: CORS_ALLOWED_ORIGINS
-        sync: false          # e.g. https://www.jonehotel.com
+        sync: false          # e.g. https://jonehotel.vercel.app
       - key: CSRF_TRUSTED_ORIGINS
         sync: false
       - key: REDIS_URL

@@ -4,9 +4,12 @@ Base settings for the J-ONE HOTEL & LODGE backend.
 Everything environment-specific (secrets, hosts, databases, vendors) comes
 from environment variables via python-decouple. See .env.example.
 """
+import os
+import re
 from datetime import timedelta
 from pathlib import Path
 
+from corsheaders.defaults import default_headers
 from decouple import Csv, config
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -193,11 +196,95 @@ MEDIA_ROOT = BASE_DIR / "media"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 # ---------------------------------------------------------------------------
+# Backblaze B2 (S3-compatible) media storage
+# ---------------------------------------------------------------------------
+B2_S3_BACKEND = "storages.backends.s3boto3.S3Boto3Storage"
+DEFAULT_B2_ENDPOINT = "https://s3.us-east-005.backblazeb2.com"
+DEFAULT_B2_REGION = "us-east-005"
+
+
+def b2_region_from_endpoint(endpoint):
+    """``https://s3.us-west-004.backblazeb2.com`` -> ``us-west-004``.
+
+    B2 signs every request against the region in the endpoint. Falling back to
+    botocore's default (us-east-1) makes B2 answer ``403 SignatureDoesNotMatch``
+    even when the keys are correct.
+    """
+    match = re.search(r"s3\.([^./]+)\.backblazeb2\.com", endpoint or "")
+    return match.group(1) if match else ""
+
+
+def configure_b2_media_storage(storages_map):
+    """Point ``storages_map["default"]`` at Backblaze B2 when it is configured.
+
+    Returns ``{"enabled": bool, "settings": {...}}`` — ``settings`` holds the
+    ``AWS_*`` values django-storages reads, including the ``botocore`` client
+    config that keeps B2 happy:
+
+      * checksums are only calculated ``when_required`` — botocore >= 1.36
+        otherwise sends ``x-amz-sdk-checksum-algorithm`` on every PutObject and
+        B2 answers ``400 InvalidArgument``;
+      * ``s3v4`` signatures with virtual-host addressing, as B2 requires.
+
+    When the credentials are absent the map is left untouched so local/dev
+    environments keep whatever backend they were given.
+    """
+    from botocore.config import Config as BotocoreConfig
+
+    key_id = os.environ.get("BACKBLAZE_KEY_ID", "").strip()
+    app_key = os.environ.get("BACKBLAZE_APPLICATION_KEY", "").strip()
+    bucket = os.environ.get("BACKBLAZE_BUCKET_NAME", "").strip()
+    if not (key_id and app_key and bucket):
+        return {"enabled": False, "settings": {}}
+
+    endpoint = (os.environ.get("BACKBLAZE_ENDPOINT", "") or "").strip() or DEFAULT_B2_ENDPOINT
+    # boto3 builds a malformed URL when the scheme is missing, and an http://
+    # endpoint would send the application key in the clear — always https.
+    if not re.match(r"^https?://", endpoint):
+        endpoint = "https://" + endpoint
+    endpoint = re.sub(r"^http://", "https://", endpoint)
+    region = ((os.environ.get("BACKBLAZE_REGION", "") or "").strip()
+              or b2_region_from_endpoint(endpoint) or DEFAULT_B2_REGION)
+
+    settings_out = {
+        "AWS_ACCESS_KEY_ID": key_id,
+        "AWS_SECRET_ACCESS_KEY": app_key,
+        "AWS_STORAGE_BUCKET_NAME": bucket,
+        "AWS_S3_REGION_NAME": region,
+        "AWS_S3_ENDPOINT_URL": endpoint,
+        "AWS_S3_ADDRESSING_STYLE": "virtual",
+        "AWS_S3_SIGNATURE_VERSION": "s3v4",
+        "AWS_QUERYSTRING_AUTH": False,          # public media bucket — never sign URLs
+        "AWS_DEFAULT_ACL": None,
+        "AWS_S3_FILE_OVERWRITE": False,
+        "AWS_S3_CLIENT_CONFIG": BotocoreConfig(
+            signature_version="s3v4",
+            s3={"addressing_style": "virtual"},
+            request_checksum_calculation="when_required",
+            response_checksum_validation="when_required",
+        ),
+    }
+    custom_domain = (os.environ.get("MEDIA_CUSTOM_DOMAIN", "") or "").strip()
+    if custom_domain:
+        settings_out["AWS_S3_CUSTOM_DOMAIN"] = custom_domain
+    storages_map.setdefault("default", {})["BACKEND"] = B2_S3_BACKEND
+    return {"enabled": True, "settings": settings_out}
+
+# ---------------------------------------------------------------------------
 # CORS (development allows everything; production must list exact origins)
 # ---------------------------------------------------------------------------
 CORS_ALLOWED_ORIGINS = config("CORS_ALLOWED_ORIGINS", default="", cast=Csv())
 CSRF_TRUSTED_ORIGINS = config("CSRF_TRUSTED_ORIGINS", default="", cast=Csv())
 CORS_ALLOW_CREDENTIALS = False  # JWT travels in Authorization headers, not cookies
+
+# The guest checkout flow authenticates with a booking-scoped bearer token in
+# the custom X-Guest-Access-Token header (see apps.bookings / apps.payments).
+# Browsers reject the CORS preflight for ANY request carrying that header
+# unless it is explicitly allowed here — django-cors-headers' default list
+# only covers accept/authorization/content-type/etc.
+CORS_ALLOW_HEADERS = list(default_headers) + [
+    "x-guest-access-token",
+]
 
 # ---------------------------------------------------------------------------
 # Application configuration

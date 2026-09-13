@@ -67,25 +67,11 @@ STORAGES = {
 }
 
 # --- Media files on Backblaze B2 (S3-compatible) -----------------------------
-_b2_key_id = config("BACKBLAZE_KEY_ID", default="")
-_b2_app_key = config("BACKBLAZE_APPLICATION_KEY", default="")
-_b2_bucket = config("BACKBLAZE_BUCKET_NAME", default="")
-_b2_endpoint = config("BACKBLAZE_ENDPOINT", default="")
-
-if all([_b2_key_id, _b2_app_key, _b2_bucket, _b2_endpoint]):
+# One implementation: configure_b2_media_storage() in base.py (unit-tested).
+_b2_media = configure_b2_media_storage(STORAGES)  # noqa: F405
+if _b2_media["enabled"]:
     INSTALLED_APPS += ["storages"]  # noqa: F405
-    AWS_ACCESS_KEY_ID = _b2_key_id
-    AWS_SECRET_ACCESS_KEY = _b2_app_key
-    AWS_STORAGE_BUCKET_NAME = _b2_bucket
-    AWS_S3_ENDPOINT_URL = _b2_endpoint
-    AWS_S3_REGION_NAME = _b2_endpoint.split("s3.")[1].split(".")[0] if "s3." in _b2_endpoint else ""
-    AWS_S3_FILE_OVERWRITE = False
-    AWS_DEFAULT_ACL = None
-    AWS_QUERYSTRING_AUTH = False  # requires a public B2 bucket
-    _custom_domain = config("MEDIA_CUSTOM_DOMAIN", default="")
-    if _custom_domain:
-        AWS_S3_CUSTOM_DOMAIN = _custom_domain
-    STORAGES["default"] = {"BACKEND": "storages.backends.s3boto3.S3Boto3Storage"}
+    globals().update(_b2_media["settings"])
 else:
     import logging
 

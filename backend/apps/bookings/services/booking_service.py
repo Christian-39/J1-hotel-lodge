@@ -61,7 +61,16 @@ def get_booking_by_reference_or_id(lookup):
 
 
 def guest_booking_link(booking, token=None):
-    link = f"{GUEST_BOOKING_LINK}?ref={booking.booking_reference}"
+    """Absolute self-service link for the guest.
+
+    Used in emails, so it must be a full URL (a relative path is dead in an
+    email client). The raw access token is only ever available on the instance
+    right after creation — persisted bookings carry only its hash, so links
+    built later are reference-only and the guest supplies their saved token.
+    """
+    from django.conf import settings
+
+    link = f"{settings.FRONTEND_URL}{GUEST_BOOKING_LINK}?ref={booking.booking_reference}"
     token = token or getattr(booking, "guest_access_token", None)
     return link + (f"&token={token}" if token else "")
 

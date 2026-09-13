@@ -512,6 +512,13 @@
         msg = "The room you selected is no longer available for those dates and no equivalent room could be held automatically. Please choose another room or different dates.";
       } else if (err && err.status === 0) {
         msg = "We can't reach the booking service right now. Please try again in a moment, or contact the hotel.";
+      } else if (err && (err.status === 401 || (err.status === 404 && booking))) {
+        // The booking exists but the backend no longer accepts our guest
+        // credential — the booking session (guest access token) is invalid
+        // or expired, not a missing booking.
+        msg = "Your booking session has expired or is invalid. Please restart the booking, or open the secure link from your confirmation email.";
+      } else if (err && (err.code === "PAYMENT_GATEWAY_ERROR" || err.code === "PAYMENT_NOT_CONFIGURED" || err.status === 502 || err.status === 503)) {
+        msg = "We could not start your payment. Please try again in a moment — your booking is saved and no money has been taken.";
       } else {
         msg = (booking ? "Your booking is saved but payment couldn't be initialized. " : "") + (err.message || "Something went wrong. Please try again.");
       }

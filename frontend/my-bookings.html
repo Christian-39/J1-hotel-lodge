@@ -210,10 +210,24 @@
   var errEl = document.getElementById("stays-error");
   var current = "";
 
-  var accessToken = sessionStorage.getItem("jone.guest_access_token") || "";
-  var accessRef = "";
+  /* Secure email link support: my-bookings.html?ref=J1-...&token=...
+     The confirmation/hold emails link here with the booking reference and the
+     one-time guest access token. Accept both, remember the token for this
+     session, and clean the token out of the address bar/history. */
+  var urlParams = new URLSearchParams(location.search);
+  var urlRef = (urlParams.get("ref") || "").trim();
+  var urlToken = (urlParams.get("token") || "").trim();
+  if (urlToken) {
+    sessionStorage.setItem("jone.guest_access_token", urlToken);
+    if (urlRef) sessionStorage.setItem("jone.guest_access_token." + urlRef, urlToken);
+    try { history.replaceState(null, "", location.pathname + (urlRef ? "?ref=" + encodeURIComponent(urlRef) : "")); } catch (_) {}
+  }
+
+  var accessToken = urlToken || sessionStorage.getItem("jone.guest_access_token") || "";
+  var accessRef = urlRef || "";
   function accessOpts() { return window.API.guestAccessOpts(accessToken); }
   if (accessToken) document.getElementById("booking-token").value = accessToken;
+  if (accessRef) document.getElementById("booking-reference").value = accessRef;
 
   var STATUS = {
     PENDING:     { label: "Pending",        cls: "badge-warning" },
@@ -325,7 +339,7 @@
     if (!btn) return;
     var ref = btn.getAttribute("data-cancel");
     btn.disabled = true;
-    window.API.getBooking(ref).then(function (res) {
+    window.API.getBooking(ref, accessOpts()).then(function (res) {
       var b = res.data || {};
       if (b.can_cancel === false) {
         JONE.ui.toast("This booking can no longer be cancelled online. Please contact the hotel.", "info");
@@ -339,7 +353,7 @@
         danger: true
       }).then(function (yes) {
         if (!yes) { btn.disabled = false; return null; }
-        return window.API.cancelBooking(ref, "Cancelled by guest from My stays").then(function () {
+        return window.API.cancelBooking(ref, "Cancelled by guest from My stays", accessOpts()).then(function () {
           JONE.ui.toast("Booking " + ref + " cancelled.", "success");
           load();
         });
@@ -349,6 +363,9 @@
       btn.disabled = false;
     });
   });
+
+  // Arriving from the secure email link with both credentials? Load at once.
+  if (accessRef && accessToken) load();
 
 })();
 </script>
