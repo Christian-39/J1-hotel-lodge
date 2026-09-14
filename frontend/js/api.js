@@ -295,6 +295,19 @@ const API = (() => {
 
   /* Enquiries / contact (honeypot `website` field must stay blank). */
   function submitEnquiry(payload, opts = {}) { return post("/api/enquiries/", payload, { auth: false, ...opts }); }
+
+  /* ------------------------------ REVIEWS ----------------------------------
+     Guest review flow (verified completed stays only). Both endpoints are
+     POST so the reference/email pair never lands in access logs. Submitted
+     reviews are PRIVATE — there is no public listing endpoint; management is
+     administrator-only under /api/admin/reviews/ (via API.list/getOne/...). */
+  function verifyReviewStay(payload, opts = {}) { return post("/api/reviews/verify/", payload, { auth: false, ...opts }); }
+  function submitReview(payload, opts = {}) { return post("/api/reviews/", payload, { auth: false, ...opts }); }
+  function getReviewStats(opts = {}) {
+    const base = resourceEp("reviews");
+    if (!base) throw notConfigured("reviews");
+    return get(base + "/stats/", opts);
+  }
   function submitCancellationRequest(payload, opts = {}) {
     return post("/api/enquiries/", { ...payload, enquiry_type: "CANCELLATION", subject: "Cancellation / refund request" }, { auth: false, ...opts });
   }
@@ -491,6 +504,7 @@ const API = (() => {
     // Public site
     getHotelInfo, getPolicies, getRooms, getRoom, checkAvailability, getUnavailableDates,
     getOffers, getFacilities, getGallery, submitEnquiry, submitCancellationRequest, getCancellationStatus,
+    verifyReviewStay, submitReview, getReviewStats,
     // Booking flow (guest)
     quoteBooking, createBooking, myBookings, getBooking, guestAccessOpts, getBookingReceipt,
     // Payments

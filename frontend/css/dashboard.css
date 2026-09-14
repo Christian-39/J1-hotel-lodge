@@ -265,7 +265,7 @@ body.drawer-open .dash-main { overflow: hidden; }
   text-transform: uppercase;
 }
 .status-pill::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
-.status-available, .status-confirmed, .status-checked_in, .status-checked_out, .status-paid, .status-success, .status-active, .status-clean { color: var(--color-success); background: var(--color-success-bg); }
+.status-available, .status-confirmed, .status-checked_in, .status-checked_out, .status-paid, .status-success, .status-active, .status-clean, .status-reviewed { color: var(--color-success); background: var(--color-success-bg); }
 .status-reserved, .status-pending, .status-partial, .status-partially_paid, .status-cleaning, .status-unpaid, .status-in_progress, .status-new { color: var(--color-warning); background: var(--color-warning-bg); }
 .status-occupied, .status-attention, .status-out_of_service { color: var(--color-info); background: var(--color-info-bg); }
 .status-maintenance, .status-unavailable, .status-cancelled, .status-failed, .status-no_show, .status-expired, .status-refunded, .status-noshow, .status-inactive, .status-closed, .status-resolved, .status-dirty { color: var(--color-danger); background: var(--color-danger-bg); }
@@ -1127,4 +1127,25 @@ body.receipt-view-page .receipt-utility-actions .btn-outline:hover {
   .rc-access-row { break-inside: avoid; }
   .rc-access-foot { break-inside: avoid; }
   @page { margin: 8mm; }
+}
+
+/* --------------------------- Reviews table layout --------------------------
+   Desktop: a compact table. ≤720px: the SAME rows restack as review cards
+   (mirrors the .table-staff pattern) — no horizontal scrolling on phones. */
+@media (max-width: 720px) {
+  .table-wrap .table-reviews,
+  .table-reviews { table-layout: auto; min-width: 0; }
+  .table-reviews thead { display: none; }
+  .table-reviews, .table-reviews tbody, .table-reviews tr, .table-reviews td { display: block; width: 100%; }
+  .table-reviews tr {
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    background: var(--color-surface);
+    padding: 0.8rem 0.9rem;
+    margin: 0.9rem;
+  }
+  .table-reviews td { border: 0; padding: 0.2rem 0; min-width: 0; overflow-wrap: anywhere; }
+  .table-reviews td[data-label="Rating"] { padding-bottom: 0.35rem; }
+  .table-reviews td:last-child { padding-top: 0.6rem; }
+  .table-reviews td:last-child .btn { width: 100%; justify-content: center; }
 }

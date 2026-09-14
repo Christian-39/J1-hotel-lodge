@@ -27,6 +27,7 @@ class Notification(models.Model):
         CHECKOUT_DUE_SOON = "CHECKOUT_DUE_SOON", "Checkout due soon"
         CHECKOUT_AUTO = "CHECKOUT_AUTO", "Automatic checkout"
         ENQUIRY_NEW = "ENQUIRY_NEW", "New enquiry"
+        REVIEW_NEW = "REVIEW_NEW", "New customer review"
         SYSTEM = "SYSTEM", "System"
 
     recipient = models.ForeignKey(

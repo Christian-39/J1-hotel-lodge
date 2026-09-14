@@ -60,7 +60,7 @@ PUBLIC_PAGES = [
     "facilities.html", "gallery.html", "offers.html",
     "booking.html", "booking-review.html", "booking-confirmation.html",
     "contact.html", "policies.html", "privacy.html", "terms.html",
-    "cancellation-policy.html", "refund-policy.html",
+    "cancellation-policy.html", "refund-policy.html", "review.html",
     "login.html", "my-bookings.html", "404.html", "403.html", "500.html",
 ]
 

@@ -78,6 +78,8 @@ Conventions: dates `YYYY-MM-DD` · datetimes ISO 8601 · money as strings
 | `GET /api/rooms/<slug or id>/unavailable-dates/?start_date&end_date` or `?days=N` | 🔓 | **Per-date calendar inventory for one room type** (powers the booking calendar). `end_date` is exclusive (check-out semantics); legacy `days=N` defaults to a today+365 window. Max span 366 days. Throttled 240/h. |
 | `POST /api/enquiries/` | 🔓 | General enquiry or structured cancellation/refund request. Cancellation body includes `enquiry_type=CANCELLATION`, `booking_reference`, optional payment/receipt refs, reason/contact fields. Returns `cancellation_reference` + secure `status_url`; does **not** cancel the booking. Throttled 10/h. |
 | `GET /api/enquiries/cancellation-status/<reference>/?token=...` | 🔓 + token | Safe public status page payload. Never says refund complete until Paystack confirms `processed`. |
+| `POST /api/reviews/verify/` | 🔓 verified | `{booking_reference, email}` (or owner JWT / `X-Guest-Access-Token`) → safe eligible-stay summary for the review page. The reference alone is never enough; every failure is a uniform `404`. Throttled 20/h. |
+| `POST /api/reviews/` | 🔓 verified | Same verification + `{rating 1–5, comment 10–2000 chars}` → 201. One review per booking (DB-enforced, `409 ALREADY_REVIEWED`); only `CHECKED_OUT` stays are eligible (`409 STAY_NOT_COMPLETED`). HTML is stripped; honeypot `website` field silently drops bots. Throttled 5/h. **There is no public review listing endpoint** — submitted reviews are private to hotel management. |
 
 ## Guest bookings (`/api/bookings/`)
 
@@ -148,11 +150,15 @@ finer grants below.
 | `GET /reports/bookings/?start_date&end_date` | 🧰 | Counts by status/payment status + room-type revenue |
 | `GET/POST /users/` · `GET/PATCH /users/<id>/` | 👑 | Staff accounts, roles, activation — audited |
 | `GET /audit-logs/` · `GET /audit-logs/<id>/` | 👑 | Read-only immutable trail (filter: action, object_type, actor, date range) |
+| `GET /reviews/` | 👑 | Guest reviews list — **ADMIN only** (managers/receptionists get 403). Filters: `?rating=`, `?status=NEW\|REVIEWED`, `?date_from=`, `?date_to=`, `?search=` (guest name/email/phone, booking reference, review text), `?ordering=newest\|oldest\|highest\|lowest`. Paginated. |
+| `GET /reviews/stats/` | 👑 | `{total, average_rating (null when empty), new_count, by_rating}` — single aggregate query |
+| `GET/PATCH/DELETE /reviews/<id>/` | 👑 | Detail / status+internal notes / delete — all mutations audited |
 
 ## Rate limits (429 + `RATE_LIMITED`)
 
 login 5/min · register 20/h · password reset 10/h · enquiry 10/h ·
 booking create 30/h · availability 240/h · payment init 20/h · payment verify 60/h ·
+review verify 20/h · review submit 5/h ·
 **paystack webhook 300/min** (per IP; deliberately generous so legitimate Paystack
 retries/bursts are never dropped, while abuse floods are blunted)
 (per user for authenticated scopes, per IP otherwise).

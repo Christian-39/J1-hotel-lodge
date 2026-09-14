@@ -646,3 +646,103 @@ html[data-theme="dark"] .theme-toggle .icon-moon { opacity: 0; }
   transform: translateX(-100%);
   animation: shimmer 1.3s infinite;
 }
+
+/* ==========================================================================
+   Guest review — "Leave a Review" CTA + review.html flow.
+   Uses only existing design tokens; works in light and dark themes.
+   ========================================================================== */
+
+/* Header CTA — quiet secondary action so the primary nav stays uncrowded.
+   Hidden below the tablet breakpoint: mobile/tablet users reach the review
+   page through the drawer item and the footer link instead. */
+@media (max-width: 960px) {
+  .header-actions .btn-review-cta { display: none; }
+}
+
+/* Homepage feedback CTA band — invitation only, never shows review data. */
+.review-invite {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-6);
+  padding: var(--sp-6);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+}
+.review-invite-body h2 { font-size: var(--fs-xl); margin-bottom: 0.35rem; }
+.review-invite-body p { color: var(--color-text-muted); margin: 0; }
+.review-invite-stars { display: inline-flex; gap: 0.3rem; color: var(--color-accent); margin-bottom: 0.75rem; }
+@media (max-width: 720px) {
+  .review-invite { flex-direction: column; align-items: flex-start; }
+}
+
+/* Review flow card */
+.review-card { max-width: 640px; margin-inline: auto; }
+.review-stay-summary {
+  display: grid;
+  gap: 0.35rem;
+  padding: var(--sp-4) var(--sp-5);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-surface-alt);
+  margin-bottom: var(--sp-5);
+  font-size: var(--fs-sm);
+}
+.review-stay-summary strong { color: var(--color-heading); }
+
+/* Accessible 1–5 star selector — real radio buttons under the hood, so the
+   keyboard and screen readers get standard radio-group behaviour for free. */
+.star-rating { display: flex; align-items: center; gap: 0.25rem; }
+.star-rating input[type="radio"] {
+  position: absolute;
+  width: 1px; height: 1px;
+  margin: -1px; padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  border: 0;
+}
+.star-rating label {
+  display: inline-grid;
+  place-items: center;
+  width: 44px; height: 44px;            /* comfortable touch target */
+  border-radius: var(--radius-sm);
+  color: var(--color-border-strong);
+  cursor: pointer;
+  transition: color var(--speed-1) var(--ease), transform var(--speed-1) var(--ease);
+}
+.star-rating label svg { width: 30px; height: 30px; }
+.star-rating label:hover { transform: scale(1.06); }
+.star-rating label.is-filled { color: var(--color-accent); }
+.star-rating label.is-filled svg { fill: currentColor; }
+.star-rating input[type="radio"]:focus-visible + label {
+  outline: var(--focus-ring);
+  outline-offset: 2px;
+}
+.star-rating-value {
+  margin-left: var(--sp-3);
+  font-size: var(--fs-sm);
+  color: var(--color-text-muted);
+  min-width: 5.5ch;
+}
+
+.review-char-count { font-size: var(--fs-xs); color: var(--color-text-faint); text-align: right; margin-top: 0.3rem; }
+.review-char-count.is-invalid { color: var(--color-danger); }
+
+/* Success panel */
+.review-success { text-align: center; padding: var(--sp-6) var(--sp-4); }
+.review-success .success-icon {
+  display: inline-grid; place-items: center;
+  width: 56px; height: 56px;
+  border-radius: 50%;
+  background: var(--color-success-bg);
+  color: var(--color-success);
+  margin-bottom: var(--sp-4);
+}
+.review-success h2 { margin-bottom: 0.5rem; }
+.review-success p { color: var(--color-text-muted); max-width: 44ch; margin-inline: auto; }
+.review-google-cta {
+  margin-top: var(--sp-5);
+  padding-top: var(--sp-5);
+  border-top: 1px solid var(--color-border);
+}

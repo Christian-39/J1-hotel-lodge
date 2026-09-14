@@ -6,10 +6,14 @@
 (function () {
   // Same machine (dev) vs the deployed frontend (prod).
   var isLocal = ["localhost", "127.0.0.1", ""].indexOf(window.location.hostname) !== -1;
+  // Sandboxed preview host (dev_server.py proxies /api/ same-origin there).
+  var isSandboxPreview = /\.e2b\.app$/.test(window.location.hostname);
 
   var API_BASE_URL = isLocal
     ? "http://127.0.0.1:8000"          // Django dev server (Live Server on :5500)
-    : "https://j1-hotel-lodge-backend.onrender.com";    // production backend URL (set at deploy time)
+    : isSandboxPreview
+      ? ""                             // same-origin — proxied by dev_server.py
+      : "https://j1-hotel-lodge-backend.onrender.com";    // production backend URL (set at deploy time)
 
   window.APP_CONFIG = {
     API_BASE_URL: API_BASE_URL,
@@ -56,6 +60,7 @@
     receipts:      "/api/admin/payments/",        // receipts view = payment records
     enquiries:     "/api/admin/enquiries/",       // includes cancellation/refund review actions
     auditLogs:     "/api/admin/audit-logs/",      // ADMIN, read-only
+    reviews:       "/api/admin/reviews/",         // ADMIN-only guest reviews (private)
     users:         "/api/admin/users/",           // ADMIN
     settings:      "/api/admin/settings/",        // GET manager+, PATCH admin-only
     stats:         "/api/admin/dashboard/",       // dashboard KPIs

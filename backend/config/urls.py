@@ -70,6 +70,9 @@ api_patterns = [
     path("payments/", include("apps.payments.urls", namespace="payments")),
     path("enquiries/", include((enquiry_urls.urlpatterns, "enquiries"), namespace="enquiries")),
     path("notifications/", include("apps.notifications.urls", namespace="notifications")),
+    # Guest review flow: verification-gated submit only — reviews are NEVER
+    # listed publicly; management lives under /api/admin/reviews/ (admin-only).
+    path("reviews/", include("apps.reviews.urls", namespace="reviews")),
 
     # --- Staff hotel operations ----------------------------------------------
     path("admin/dashboard/", include((report_urls.dashboard_urlpatterns, "reports"), namespace="dashboard")),
@@ -89,6 +92,7 @@ api_patterns = [
     path("admin/enquiries/", include((enquiry_urls.admin_urlpatterns, "enquiries"), namespace="admin-enquiries")),
     path("admin/users/", include("apps.accounts.urls_admin", namespace="admin-users")),
     path("admin/audit-logs/", include("apps.audit.urls_admin", namespace="admin-audit")),
+    path("admin/reviews/", include("apps.reviews.urls_admin", namespace="admin-reviews")),
 ]
 
 urlpatterns = [

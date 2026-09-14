@@ -19,9 +19,9 @@ class HotelPublicSerializer(serializers.ModelSerializer):
         model = HotelSettings
         fields = [
             "hotel_name", "tagline", "description", "address", "city", "state",
-            "country", "phone", "email", "google_maps_url", "social_links",
-            "check_in_time", "check_out_time", "currency", "min_stay_nights",
-            "max_stay_nights", "timezone",
+            "country", "phone", "email", "google_maps_url", "google_review_url",
+            "social_links", "check_in_time", "check_out_time", "currency",
+            "min_stay_nights", "max_stay_nights", "timezone",
         ]
         read_only_fields = fields
 
@@ -55,7 +55,8 @@ class HotelSettingsAdminSerializer(serializers.ModelSerializer):
         model = HotelSettings
         fields = [
             "hotel_name", "tagline", "description", "address", "city", "state",
-            "country", "phone", "email", "google_maps_url", "social_links",
+            "country", "phone", "email", "google_maps_url", "google_review_url",
+            "social_links",
             "check_in_time", "check_out_time", "min_stay_nights", "max_stay_nights",
             "currency", "tax_rate_percent", "service_fee", "deposit_percent",
             "pending_booking_minutes", "cancellation_deadline_hours",

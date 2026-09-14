@@ -32,6 +32,14 @@ class HotelSettings(models.Model):
     phone = models.CharField(max_length=30, default="+234803 211 2874")
     email = models.EmailField(default="jonathanonu76@gmail.com")
     google_maps_url = models.URLField(blank=True, default="")
+    # A Google Maps URL is NOT automatically a review URL — this is the
+    # dedicated "write a review" link (e.g. https://g.page/r/…/review).
+    # Optional: the frontend only shows the Google CTA when it is configured.
+    google_review_url = models.URLField(
+        blank=True, default="",
+        help_text="Direct 'write a review' link for the hotel's Google Business profile. "
+                  "Leave blank to hide the Google review button.",
+    )
     social_links = models.JSONField(
         default=list, blank=True,
         help_text='List of {"platform": "facebook", "url": "https://..."} entries.',

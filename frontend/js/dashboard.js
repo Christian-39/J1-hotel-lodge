@@ -32,6 +32,9 @@
     ]},
     { group: "Communication", items: [
       { label: "Enquiries", href: "enquiries.html", icon: "message", view: "enquiries" },
+      // Guest reviews are private to the top role — the menu item is a UX
+      // convenience only; the backend rejects every other role regardless.
+      { label: "Reviews", href: "reviews.html", icon: "star", view: "reviews", role: "admin" },
       { label: "Notifications", href: "notifications.html", icon: "bell", view: "notifications" },
     ]},
     { group: "Administration", items: [

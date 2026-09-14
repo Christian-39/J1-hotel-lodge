@@ -782,6 +782,11 @@ def _perform_checkout(booking: Booking, *, actor=None, automatic=False,
         "Check-out%s: %s by %s", " (auto)" if automatic else "",
         booking.booking_reference, actor.id if actor else "system",
     )
+    # Post-stay review invitation — after the checkout transaction commits so
+    # a delivery problem can never affect the checkout itself.
+    from apps.reviews.services import send_review_invitation
+
+    transaction.on_commit(lambda: send_review_invitation(booking))
     return booking
 
 

@@ -83,6 +83,7 @@
     if(t==="CHECKOUT_DUE_SOON") return "clock";
     if(t.indexOf("BOOKING")===0) return "calendar";
     if(t==="ENQUIRY_NEW") return "inbox";
+    if(t==="REVIEW_NEW") return "star";
     return "bell";
   }
   function unread(n){ return n.is_read===false; }

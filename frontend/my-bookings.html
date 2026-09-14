@@ -35,6 +35,8 @@
 
 
 
+
+
 </head>
 <body>
 <a class="skip-link" href="#main">Skip to content</a>
@@ -65,6 +67,7 @@
         <span class="icon-moon" data-icon="moon" data-size="20"></span>
         <span class="icon-sun" data-icon="sun" data-size="20"></span>
       </button>
+      <a class="btn btn-sm btn-outline btn-review-cta" href="review.html">Leave a Review</a>
       <a class="btn btn-sm btn-accent btn-book" href="booking.html">Book</a>
       <button class="btn-icon btn-outline menu-toggle" type="button" aria-label="Open menu" aria-expanded="false" data-icon="menu" data-size="22"></button>
     </div>
@@ -134,6 +137,7 @@
         <h5>Booking</h5>
         <a href="booking.html">Book Your Stay</a>
         <a href="my-bookings.html">Your stays</a>
+        <a href="review.html">Leave a Review</a>
         <a href="policies.html">Hotel Policies</a>
         <a href="cancellation-policy.html">Cancellation</a>
         <a href="refund-policy.html">Refunds</a>
@@ -175,6 +179,7 @@
       <a data-nav="offers.html" href="offers.html">Offers <span data-icon="chevronRight" data-size="18"></span></a>
       <a data-nav="about.html" href="about.html">About <span data-icon="chevronRight" data-size="18"></span></a>
       <a data-nav="contact.html" href="contact.html">Contact <span data-icon="chevronRight" data-size="18"></span></a>
+      <a data-nav="review.html" href="review.html">Leave a Review <span data-icon="star" data-size="18"></span></a>
       <a data-nav="policies.html" href="policies.html">Policies <span data-icon="chevronRight" data-size="18"></span></a>
     </nav>
     <div class="mobile-footer-row">
@@ -265,6 +270,10 @@
     if (active) {
       var cancelReq = 'contact.html?type=cancellation&booking_reference=' + encodeURIComponent(b.booking_reference) + '&email=' + encodeURIComponent((b.guest && b.guest.email) || '');
       acts += '<a class="btn btn-sm btn-outline" href="' + cancelReq + '"><span data-icon="message" data-size="14"></span> Request cancellation</a>';
+    }
+    if (String(b.status).toUpperCase() === "CHECKED_OUT") {
+      // Completed stay — invite feedback. Eligibility is re-verified server-side.
+      acts += '<a class="btn btn-sm btn-outline" href="review.html?ref=' + encodeURIComponent(b.booking_reference) + '"><span data-icon="star" data-size="14"></span> Leave a review</a>';
     }
     return '<article class="card card-pad" style="margin-bottom:1rem;">' +
       '<div style="display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;align-items:flex-start;">' +

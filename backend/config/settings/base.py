@@ -52,6 +52,7 @@ LOCAL_APPS = [
     "apps.notifications",
     "apps.reports",
     "apps.audit",
+    "apps.reviews",
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
@@ -162,6 +163,8 @@ REST_FRAMEWORK = {
         "payment_init": "20/hour",
         "payment_verify": "60/hour",
         "paystack_webhook": "300/min",
+        "review_verify": "20/hour",
+        "review_submit": "5/hour",
     },
 }
 

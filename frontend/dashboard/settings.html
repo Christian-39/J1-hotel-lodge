@@ -73,6 +73,8 @@
       </div>
       <div class="field"><label class="field-label" for="st-maps">Google Maps URL</label><input class="input" id="st-maps" name="google_maps_url" placeholder="https://maps.google.com/&hellip;">
         <div class="hint">Used by the public contact page&rsquo;s embedded map. A place URL is enough — the site converts it to an embed automatically.</div></div>
+      <div class="field"><label class="field-label" for="st-greview">Google review URL</label><input class="input" id="st-greview" name="google_review_url" placeholder="https://g.page/r/&hellip;/review">
+        <div class="hint">Direct &ldquo;write a review&rdquo; link for the hotel&rsquo;s Google Business profile. When set, guests are offered a Google review after submitting website feedback. Leave blank to hide that button.</div></div>
       <div class="field"><label class="field-label" for="st-social">Social links (JSON)</label><textarea class="textarea" id="st-social" name="social_links" rows="2" placeholder='[{"platform":"Instagram","url":"https://instagram.com/…"}]'></textarea>
         <div class="hint">A JSON list of {"platform","url"} objects. Leave empty for none.</div></div>
 
@@ -138,7 +140,7 @@
   function hide(id){ $(id).style.display = "none"; }
 
   var FIELDS = ["hotel_name","tagline","description","address","city","state","country",
-    "phone","email","google_maps_url","social_links","check_in_time","check_out_time",
+    "phone","email","google_maps_url","google_review_url","social_links","check_in_time","check_out_time",
     "min_stay_nights","max_stay_nights","currency","tax_rate_percent","service_fee",
     "deposit_percent","pending_booking_minutes","cancellation_deadline_hours",
     "cancellation_fee_percent"];
