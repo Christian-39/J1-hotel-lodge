@@ -40,7 +40,9 @@
           <div><dt>Amount paid</dt><dd id="s-amount">—</dd></div>
           <div><dt>Payment status</dt><dd id="s-status">—</dd></div>
         </dl>
-        <a id="s-view-booking" class="btn btn-block" href="booking-confirmation.html">View booking &amp; receipt</a>
+        <button id="s-download-receipt" class="btn btn-block" type="button" disabled>Download receipt image</button>
+        <a id="s-view-booking" class="btn btn-block btn-outline" style="margin-top:0.5rem" href="booking-confirmation.html">View booking &amp; receipt</a>
+        <p class="caption" id="s-download-status" aria-live="polite" style="margin-top:0.75rem"></p>
       </div>
 
       <!-- Failure / pending: honest state, never a faked success -->
@@ -69,6 +71,7 @@
 <script src="js/auth.js"></script>
 <script src="js/hotel-data.js"></script>
 <script src="js/navigation.js"></script>
+<script src="js/receipt.js"></script>
 <script>
 JONE.ui.initChrome();
 (function () {
@@ -96,6 +99,28 @@ JONE.ui.initChrome();
   var guestToken = sessionStorage.getItem("jone.payment_access." + reference) || sessionStorage.getItem("jone.guest_access_token") || params.get("token") || "";
   if (guestToken) sessionStorage.setItem("jone.guest_access_token", guestToken);
   function guestOpts() { return guestToken ? window.API.guestAccessOpts(guestToken) : {}; }
+  var verifiedReceipt = null;
+  var downloadBtn = document.getElementById("s-download-receipt");
+  var downloadStatus = document.getElementById("s-download-status");
+
+  async function downloadReceipt(automatic) {
+    if (!verifiedReceipt || !JONE.receipts) return;
+    if (downloadBtn) downloadBtn.disabled = true;
+    if (downloadStatus) downloadStatus.textContent = automatic ? "Preparing your receipt…" : "Preparing download…";
+    try {
+      await JONE.receipts.downloadImage(null, verifiedReceipt, {
+        assetPrefix: "",
+        filename: "J1-Hotel-Receipt-" + verifiedReceipt.booking_reference + ".png"
+      });
+      sessionStorage.setItem("jone.receipt.downloaded." + reference, "1");
+      if (downloadStatus) downloadStatus.textContent = "Receipt image downloaded. Use the button if you need another copy.";
+    } catch (err) {
+      if (downloadStatus) downloadStatus.textContent = "Automatic download was blocked. Use Download receipt image to try again.";
+    } finally {
+      if (downloadBtn) downloadBtn.disabled = false;
+    }
+  }
+  if (downloadBtn) downloadBtn.addEventListener("click", function () { downloadReceipt(false); });
 
   async function verify() {
     show(elLoading);
@@ -117,7 +142,15 @@ JONE.ui.initChrome();
           sessionStorage.setItem("jone.guest_access_token." + d.booking_reference, guestToken);
         }
         if (view && d.booking_reference) view.href = "booking-confirmation.html?ref=" + encodeURIComponent(d.booking_reference);
+        verifiedReceipt = d.receipt || null;
+        if (downloadBtn) downloadBtn.disabled = !verifiedReceipt;
         show(elSuccess);
+        // Download only after backend verification. The session marker prevents
+        // refreshes, webhook/browser races, and repeated verify calls from
+        // producing duplicate automatic downloads; manual download stays available.
+        if (verifiedReceipt && sessionStorage.getItem("jone.receipt.downloaded." + reference) !== "1") {
+          downloadReceipt(true);
+        }
         // Backend-confirmed — the ONLY place a success toast is allowed.
         if (window.JONE && JONE.ui && JONE.ui.toast) {
           JONE.ui.toast("Your booking has been confirmed.", "success", {

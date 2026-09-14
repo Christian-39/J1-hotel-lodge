@@ -11,6 +11,7 @@
 @import url("booking.css");
 @import url("dashboard.css");
 @import url("responsive.css");
+@import url("audit-fixes.css");
 
 /* ------------------------------- Reset ---------------------------------- */
 *, *::before, *::after { box-sizing: border-box; }

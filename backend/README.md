@@ -149,10 +149,10 @@ Production refuses to boot on SQLite (guard in `production.py`).
    are sent by the app's SMTP/Brevo-style transactional email configuration.
 7. To make **the hotel/merchant bear Paystack charges**, open Paystack Dashboard
    → **Settings** → **Preferences** → **Transaction fees** and leave **Pass fees
-   to customers** unchecked. If that Paystack setting is ever enabled, checkout
-   may display a fee-inclusive card debit; the backend defensively validates the
-   server-initialized hotel amount using Paystack's `requested_amount`/fee fields
-   and records the fee metadata, but it still never trusts browser amounts.
+   to customers** unchecked. Verification requires Paystack's exact `amount` to
+   equal the backend-created Payment amount in kobo. A fee-inclusive customer
+   debit is rejected. Paystack `fees` are stored only as merchant-settlement
+   metadata and never affect guest-facing amounts.
 
 If keys are missing the API returns `503 PAYMENT_NOT_CONFIGURED` explicitly —
 there is **no fake "demo payment" success path**. Browser redirects never confirm

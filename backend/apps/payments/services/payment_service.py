@@ -227,7 +227,7 @@ def initialize_booking_payment(*, booking: Booking, user, request=None):
 # ---------------------------------------------------------------------------
 def _verified_receipt_payload(payment: Payment, transaction_status=None):
     booking = payment.booking
-    return {
+    payload = {
         "payment_reference": payment.reference,
         "booking_reference": booking.booking_reference,
         "transaction_status": transaction_status or payment.status,
@@ -240,6 +240,10 @@ def _verified_receipt_payload(payment: Payment, transaction_status=None):
         "currency": booking.currency,
         "paid_at": payment.paid_at.isoformat() if payment.paid_at else None,
     }
+    if payment.status == Payment.Status.SUCCESS:
+        from apps.bookings.serializers import ReceiptSerializer
+        payload["receipt"] = ReceiptSerializer().to_representation(booking)
+    return payload
 
 
 def _parse_paid_at(value):
@@ -263,26 +267,14 @@ def _int_or_none(value):
 
 
 def _paystack_hotel_amount_kobo(data: dict):
-    """Amount to compare with the server booking amount.
+    """Return the exact amount debited from the guest, in kobo.
 
-    Paystack accounts can be configured so the customer bears Paystack fees. In
-    that mode the verified transaction ``amount`` is the total card debit
-    (hotel amount + Paystack fee), while ``requested_amount`` is the amount our
-    backend initialized for the hotel. We still require an exact server-side
-    match, but compare against Paystack's requested/net hotel amount instead of
-    incorrectly treating the fee-inclusive debit as overpayment fraud.
+    The hotel absorbs Paystack fees. Consequently ``data.amount`` itself must
+    equal the server-created Payment amount. ``requested_amount`` and ``fees``
+    are accounting metadata only and can never make a fee-inclusive customer
+    debit acceptable.
     """
-    requested = _int_or_none(data.get("requested_amount"))
-    if requested is None:
-        requested = _int_or_none(data.get("requestedAmount"))
-    if requested is not None:
-        return requested
-
-    amount = _int_or_none(data.get("amount"))
-    fees = _int_or_none(data.get("fees"))
-    if amount is not None and fees is not None and fees > 0 and amount > fees:
-        return amount - fees
-    return amount
+    return _int_or_none(data.get("amount"))
 
 
 def process_verification(*, reference, request=None, triggered_by="api"):
@@ -374,13 +366,11 @@ def process_verification(*, reference, request=None, triggered_by="api"):
             "paystack_id": data.get("id"),
             "channel": payment.channel,
             "paystack_amount_kobo": paid_kobo,
-            "paystack_hotel_amount_kobo": provider_hotel_amount_kobo,
+            "paystack_hotel_amount_kobo": paid_kobo,
+            # Paystack deducts this from merchant settlement; it is never a
+            # guest charge and never changes Payment.amount or booking totals.
             "paystack_fees_kobo": paystack_fees_kobo,
-            "customer_bears_paystack_fee": bool(
-                paid_kobo is not None
-                and provider_hotel_amount_kobo is not None
-                and paid_kobo > provider_hotel_amount_kobo
-            ),
+            "customer_bears_paystack_fee": False,
         }
         payment.save()
         booking = booking_service.register_successful_payment(booking, payment.amount, request=request)

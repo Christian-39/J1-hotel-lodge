@@ -492,6 +492,13 @@
     ctx.fillStyle = "#ffffff";
     ctx.fillRect(0, 0, width, height);
 
+    // Official J-ONE logo watermark is embedded in the exported pixels (not
+    // merely CSS), so downloaded mobile receipts retain the branding.
+    ctx.save();
+    ctx.globalAlpha = 0.055;
+    await drawOfficialLogo(ctx, width / 2 - 105, height / 2 - 195, 210, 390, opts);
+    ctx.restore();
+
     // Header lockup uses the official J-ONE logo asset.
     await drawOfficialLogo(ctx, padX, 52, 28, 52, opts);
     ctx.fillStyle = "#143d69";

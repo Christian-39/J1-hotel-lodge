@@ -95,15 +95,9 @@ between beat runs as well.
 * For the production preference where J-ONE absorbs Paystack charges, Paystack
   Dashboard → Settings → Preferences → Transaction fees must keep **Pass fees to
   customers** unchecked. If that dashboard setting is ever enabled, Paystack
-  verification may return a fee-inclusive `amount` plus the server-requested
-  hotel amount; the backend still validates the hotel amount from Paystack's
-  `requested_amount`/fee fields before confirming the booking, and frontend
-  amounts remain ignored.
-* Paystack webhook events `refund.pending`, `refund.processing`,
-  `refund.processed`, `refund.failed` and `refund.needs-attention` reconcile
-  refund rows idempotently. The guest is never told a refund is complete until
-  Paystack reports `processed`; then payment/booking refund totals update to
-  `PARTIALLY_REFUNDED` or `REFUNDED`.
+  verification requires Paystack's exact `amount` to equal the backend-created
+  payment amount in kobo. Paystack `fees` are merchant-settlement metadata only;
+  a fee-inclusive customer debit is rejected and never credited.
 
 ## Direct-booking (walk-in / phone)
 
