@@ -519,7 +519,7 @@
     var prev = button.innerHTML;
     button.innerHTML = '<span class="btn-spinner"></span> Preparing…';
     try {
-      var exportOpts = { sourceLabel: "J-ONE Online Booking", documentTitle: "Transaction Receipt" };
+      var exportOpts = { assetPrefix: "", sourceLabel: "J-ONE Online Booking", documentTitle: "Transaction Receipt" };
       if (kind === "pdf") await JONE.receipts.downloadPDF(sheet, payload, exportOpts);
       else await JONE.receipts.downloadImage(sheet, payload, exportOpts);
       JONE.ui.toast(kind === "pdf" ? "Receipt PDF saved." : "Receipt image saved.", "success");

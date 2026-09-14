@@ -264,6 +264,11 @@
     };
   }
 
+  function logoSrc(opts) {
+    opts = opts || {};
+    return (opts.assetPrefix || "") + "assets/icons/logo-official.svg";
+  }
+
   function detailRows(d) {
     return [
       { label: "Transaction Amount", value: money(d.amount), opts: { valueClass: "rc-amount-main", amount: true } },
@@ -304,12 +309,8 @@
   function buildHtml(data, opts) {
     opts = opts || {};
     var d = normalize(data, opts);
-    var logoMarkup = '<svg class="rc-logo" viewBox="0 0 36 52" width="28" height="52" role="img" aria-label="J-ONE logo" xmlns="http://www.w3.org/2000/svg">' +
-      '<path d="M18 2 34 18 18 34 2 18Z" fill="#eeb437"/>' +
-      '<path d="M18 8 28 18 18 28 8 18Z" fill="#fff"/>' +
-      '<path d="M18 12 24 18 18 24 12 18Z" fill="#23272e"/>' +
-      '<path d="M18 34v15" stroke="#6c6e70" stroke-width="5" stroke-linecap="round"/>' +
-      '</svg>';
+    var logo = logoSrc(opts);
+    var logoMarkup = '<img class="rc-logo rc-official-logo" src="' + esc(logo) + '" alt="J-ONE logo" width="28" height="52">';
     var contact = [];
     if (d.hotel.phone) {
       var phone = String(d.hotel.phone);
@@ -411,28 +412,26 @@
     return lines.length ? lines : ["—"];
   }
 
-  function drawLogo(ctx, x, y) {
-    ctx.save();
-    ctx.translate(x, y);
-    ctx.fillStyle = "#eeb437";
-    ctx.beginPath();
-    ctx.moveTo(18, 2); ctx.lineTo(34, 18); ctx.lineTo(18, 34); ctx.lineTo(2, 18); ctx.closePath();
-    ctx.fill();
-    ctx.fillStyle = "#ffffff";
-    ctx.beginPath();
-    ctx.moveTo(18, 8); ctx.lineTo(28, 18); ctx.lineTo(18, 28); ctx.lineTo(8, 18); ctx.closePath();
-    ctx.fill();
-    ctx.fillStyle = "#23272e";
-    ctx.beginPath();
-    ctx.moveTo(18, 12); ctx.lineTo(24, 18); ctx.lineTo(18, 24); ctx.lineTo(12, 18); ctx.closePath();
-    ctx.fill();
-    ctx.strokeStyle = "#6c6e70";
-    ctx.lineWidth = 5;
-    ctx.lineCap = "round";
-    ctx.beginPath();
-    ctx.moveTo(18, 34); ctx.lineTo(18, 49);
-    ctx.stroke();
-    ctx.restore();
+  function loadCanvasImage(src) {
+    return new Promise(function (resolve, reject) {
+      var img = new Image();
+      img.onload = function () { resolve(img); };
+      img.onerror = reject;
+      img.src = src;
+    });
+  }
+
+  async function drawOfficialLogo(ctx, x, y, width, height, opts) {
+    try {
+      var img = await loadCanvasImage(logoSrc(opts));
+      ctx.drawImage(img, x, y, width, height);
+    } catch (_) {
+      // Last-resort text fallback only if the asset fails to load; the normal
+      // path always uses frontend/assets/icons/logo-official.svg.
+      ctx.fillStyle = "#123f70";
+      ctx.font = canvasFont("800", 22);
+      ctx.fillText("J-ONE", x, y + 32);
+    }
   }
 
   function drawWrapped(ctx, lines, x, y, maxWidth, lineHeight) {
@@ -462,7 +461,7 @@
     });
   }
 
-  function drawReceiptCanvas(data, opts) {
+  async function drawReceiptCanvas(data, opts) {
     opts = opts || {};
     var d = normalize(data || {}, opts);
     var rows = detailRows(d);
@@ -498,7 +497,7 @@
     ctx.fillRect(0, 0, width, height);
 
     // Header lockup and Access-like gold slash.
-    drawLogo(ctx, padX, 52);
+    await drawOfficialLogo(ctx, padX, 52, 28, 52, opts);
     ctx.fillStyle = "#143d69";
     ctx.font = canvasFont("800", 30);
     ctx.fillText("J-ONE", padX + 42, 80);
@@ -626,14 +625,14 @@
 
   async function downloadImage(element, data, opts) {
     opts = opts || {};
-    var canvas = drawReceiptCanvas(data || {}, opts);
+    var canvas = await drawReceiptCanvas(data || {}, opts);
     var blob = await canvasToBlob(canvas, "image/png");
     downloadBlob(blob, opts.filename || filenameFor(data, "png"));
   }
 
   async function downloadPDF(element, data, opts) {
     opts = opts || {};
-    var canvas = drawReceiptCanvas(data || {}, opts);
+    var canvas = await drawReceiptCanvas(data || {}, opts);
     var dataUrl = canvas.toDataURL("image/jpeg", 0.95);
     var blob = jpegPdfBlob(dataUrl, canvas.width, canvas.height, canvas.joneCssWidth, canvas.joneCssHeight);
     downloadBlob(blob, opts.filename || filenameFor(data, "pdf"));

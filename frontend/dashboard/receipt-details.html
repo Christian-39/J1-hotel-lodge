@@ -141,7 +141,7 @@
     var prev = button.innerHTML;
     button.innerHTML = '<span class="btn-spinner"></span> Preparing…';
     try {
-      var exportOpts = { sourceLabel: "J-ONE Staff Console", documentTitle: "Transaction Receipt" };
+      var exportOpts = { assetPrefix: "../", sourceLabel: "J-ONE Staff Console", documentTitle: "Transaction Receipt" };
       if (kind === "pdf") await JONE.receipts.downloadPDF(sheet, data, exportOpts);
       else await JONE.receipts.downloadImage(sheet, data, exportOpts);
       JONE.ui.toast(kind === "pdf" ? "Receipt PDF downloaded." : "Receipt image downloaded.", "success");
