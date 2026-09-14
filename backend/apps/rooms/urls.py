@@ -11,6 +11,7 @@ urlpatterns = [
     # Registered BEFORE the room-type slug route so "rooms/" is never captured
     # by <slug:slug>/.
     path("<slug:slug>/rooms/", views.RoomTypeRoomsView.as_view(), name="room-type-rooms"),
+    path("<slug:slug>/unavailable-dates/", views.RoomTypeUnavailableDatesView.as_view(), name="room-type-unavailable-dates"),
     path("<slug:slug>/", views.RoomTypeDetailView.as_view(), name="room-type-detail"),
 ]
 

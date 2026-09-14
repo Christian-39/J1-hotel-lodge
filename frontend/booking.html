@@ -69,6 +69,7 @@
                 <label class="field-label" for="b-checkout">Check-out</label>
                 <input class="input" type="date" id="b-checkout" name="check_out" required>
                 <div class="field-error" data-date-error>Check-out must be after check-in.</div>
+                <p class="caption" data-availability-dates-status aria-live="polite"></p>
               </div>
             </div>
             <div class="form-grid fg-2">
@@ -324,6 +325,56 @@
   applyDateMin();
   document.addEventListener("jone:hotel", applyDateMin);
 
+  // Native date controls cannot visually disable arbitrary dates consistently,
+  // so the backend supplies sold-out dates and selections crossing one are
+  // rejected immediately. The booking endpoint remains the final authority.
+  var unavailableDates = new Set();
+  var datesStatus = document.querySelector("[data-availability-dates-status]");
+  async function loadUnavailableDates() {
+    if (!exactRoomType) return;
+    if (datesStatus) datesStatus.textContent = "Loading available dates…";
+    try {
+      var response = await window.API.getUnavailableDates(exactRoomType, {days:366});
+      unavailableDates = new Set(((response.data||{}).unavailable_dates)||[]);
+      if (datesStatus) datesStatus.textContent = unavailableDates.size ? "Sold-out dates cannot be selected for this room type." : "This room type currently has availability across the calendar.";
+      validateSelectedDates(true);
+    } catch (error) {
+      if (datesStatus) datesStatus.textContent = "Live date availability could not be loaded. Availability will be checked before continuing.";
+    }
+  }
+  function selectedRangeHasUnavailable() {
+    if (!ci.value) return false;
+    var end = co.value || JONE.hotelTodayISO(367);
+    var cursor = new Date(ci.value + "T12:00:00");
+    var finish = new Date(end + "T12:00:00");
+    while (cursor < finish) {
+      var iso = cursor.getFullYear()+"-"+String(cursor.getMonth()+1).padStart(2,"0")+"-"+String(cursor.getDate()).padStart(2,"0");
+      if (unavailableDates.has(iso)) return iso;
+      cursor.setDate(cursor.getDate()+1);
+    }
+    return false;
+  }
+  function validateSelectedDates(silent) {
+    var blocked = selectedRangeHasUnavailable();
+    ci.setCustomValidity(blocked ? "This room type is sold out on "+blocked+"." : "");
+    co.setCustomValidity(blocked ? "Your stay includes a sold-out date: "+blocked+"." : "");
+    if (blocked && !silent) {
+      errBox.textContent = "This room type is sold out on "+JONE.formatDate(blocked,"mid")+". Please choose dates that do not cross it.";
+      errBox.style.display = "block";
+      JONE.ui.toast(errBox.textContent,"warning");
+    }
+    return !blocked;
+  }
+  ci.addEventListener("change",function(){
+    if (unavailableDates.has(ci.value)) {
+      var blocked=ci.value; ci.value=""; co.value="";
+      errBox.textContent="This room type is sold out on "+JONE.formatDate(blocked,"mid")+". Please choose another date.";
+      errBox.style.display="block"; JONE.ui.toast(errBox.textContent,"warning"); syncNote();
+    } else validateSelectedDates(false);
+  });
+  co.addEventListener("change",function(){ validateSelectedDates(false); });
+  loadUnavailableDates();
+
   function guestsLabel() {
     var a = Number(adults.value) || 0, c = Number(children.value) || 0;
     return a + " adult" + (a === 1 ? "" : "s") + (c ? ", " + c + " child" + (c === 1 ? "" : "ren") : "");
@@ -375,6 +426,7 @@
     e.preventDefault();
     errBox.style.display = "none";
     var n = JONE.nightsBetween(ci.value, co.value);
+    if (!validateSelectedDates(false)) return;
     if (!ci.value || !co.value) {
       errBox.textContent = "Please choose your check-in and check-out dates.";
       errBox.style.display = "block";

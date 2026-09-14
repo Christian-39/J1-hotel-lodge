@@ -284,6 +284,9 @@ const API = (() => {
   function checkAvailability(params, opts = {}) {
     return get("/api/rooms/availability/", { params, auth: false, ...opts });
   }
+  function getUnavailableDates(roomType, params = {}, opts = {}) {
+    return get(`/api/rooms/${encodeURIComponent(roomType)}/unavailable-dates/`, { params, auth: false, ...opts });
+  }
 
   /* Offers / facilities / gallery */
   function getOffers(params, opts = {}) { return get("/api/offers/", { params, auth: false, ...opts }); }
@@ -486,7 +489,7 @@ const API = (() => {
   return {
     get, post, put, patch, del, request,
     // Public site
-    getHotelInfo, getPolicies, getRooms, getRoom, checkAvailability,
+    getHotelInfo, getPolicies, getRooms, getRoom, checkAvailability, getUnavailableDates,
     getOffers, getFacilities, getGallery, submitEnquiry, submitCancellationRequest, getCancellationStatus,
     // Booking flow (guest)
     quoteBooking, createBooking, myBookings, getBooking, guestAccessOpts, getBookingReceipt,

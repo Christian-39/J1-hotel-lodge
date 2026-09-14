@@ -7,4 +7,7 @@
    can still opt out by removing their table wrapper. */
 .table-wrap{display:block;width:100%;max-width:100%;overflow-x:auto;overflow-y:visible;-webkit-overflow-scrolling:touch;overscroll-behavior-inline:contain}
 html,body{max-width:100%;overflow-x:hidden}
+/* Short/loading public pages keep the footer at the viewport bottom without
+   fixing or overlaying it; longer pages continue in normal document flow. */
+html{min-height:100%}body{min-height:100vh;min-height:100dvh;display:flex;flex-direction:column}.site-footer{margin-top:auto;flex-shrink:0}body>main{flex:1 0 auto}
 

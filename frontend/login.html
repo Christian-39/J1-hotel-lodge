@@ -12,32 +12,13 @@
 <script>(function(){var t;try{t=JSON.parse(localStorage.getItem("jone.theme"))}catch(e){}if(t!=="dark"&&t!=="light"){t=(window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches)?"dark":"light"}document.documentElement.setAttribute("data-theme",t);})();</script>
 </head>
 <body>
-<header class="site-header">
-  <div class="container header-inner">
-    <a href="index.html" class="brand" aria-label="J-ONE Hotel &amp; Lodge — home">
-      <span class="brand-mark-badge">
-        <img src="assets/icons/logo-official.png" alt="" class="brand-mark">
-      </span>
-      <span>
-        <span class="brand-word">J-ONE</span>
-        <span class="brand-sub">Hotel &amp; Lodge</span>
-      </span>
-    </a>
-
-    <div class="header-actions">
-      <button class="theme-toggle" type="button" aria-label="Toggle theme" aria-pressed="false">
-        <span class="icon-moon" data-icon="moon" data-size="20"></span>
-        <span class="icon-sun" data-icon="sun" data-size="20"></span>
-      </button>
-      <a class="btn btn-sm btn-accent btn-book" href="booking.html">Book</a>
-      <button class="btn-icon btn-outline menu-toggle" type="button" aria-label="Open menu" aria-expanded="false" data-icon="menu" data-size="22"></button>
-    </div>
-  </div>
-</header>
-
-<main id="main" style="min-height:calc(100vh - 76px);display:flex;align-items:center;justify-content:center;padding:2rem 1rem;background:var(--color-background);">
+<a class="skip-link" href="#main">Skip to content</a>
+<main id="main" style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:2rem 1rem;background:var(--color-background);">
   <div style="width:100%;max-width:420px;">
     <div class="center" style="margin-bottom:2rem;">
+      <a href="index.html" class="brand" style="display:inline-flex;justify-content:center;">
+        <img src="assets/icons/logo-official.svg" alt="J-ONE Hotel &amp; Lodge" width="22" height="38" style="margin:0 auto;display:block;">
+      </a>
       <h1 style="font-size:var(--fs-xl);margin-top:1rem;">Sign in</h1>
       <p class="muted">Hotel staff access only.</p>
     </div>

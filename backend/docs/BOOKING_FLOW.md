@@ -95,9 +95,7 @@ between beat runs as well.
 * For the production preference where J-ONE absorbs Paystack charges, Paystack
   Dashboard → Settings → Preferences → Transaction fees must keep **Pass fees to
   customers** unchecked. If that dashboard setting is ever enabled, Paystack
-  verification requires Paystack's exact `amount` to equal the backend-created
-  payment amount in kobo. Paystack `fees` are merchant-settlement metadata only;
-  a fee-inclusive customer debit is rejected and never credited.
+  verification requires Paystack's original `requested_amount` (with an `amount - fees` fallback for older responses) to equal the backend-created payment amount in kobo. Paystack fees remain settlement metadata and are never credited to the booking.
 
 ## Direct-booking (walk-in / phone)
 

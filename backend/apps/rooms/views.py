@@ -8,7 +8,7 @@ honoured. That endpoint deliberately returns the bare minimum (id, number,
 floor and, when dates are supplied, whether the room is free) — housekeeping
 state, notes, status flags and anything else operational stay internal.
 """
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from django.db.models import Prefetch
 from django.utils import timezone
@@ -89,6 +89,49 @@ class RoomTypeDetailView(generics.RetrieveAPIView):
         OpenApiParameter("check_out", OpenApiTypes.DATE, required=False),
     ],
 )
+class RoomTypeUnavailableDatesView(generics.GenericAPIView):
+    """Return sold-out dates for one room type using a bounded, two-query sweep."""
+    permission_classes = [AllowAny]
+    serializer_class = PublicRoomOptionSerializer
+
+    def get(self, request, slug):
+        room_type = _catalog_queryset().filter(slug=slug).first()
+        if room_type is None and str(slug).isdigit():
+            room_type = _catalog_queryset().filter(pk=int(slug)).first()
+        if room_type is None:
+            raise NotFound()
+        today = timezone.localdate()
+        try:
+            days = min(max(int(request.query_params.get("days", 365)), 1), 366)
+        except (TypeError, ValueError):
+            raise ValidationError({"days": ["Days must be a whole number."]})
+        end = today + timedelta(days=days)
+        sellable_ids = set(Room.objects.filter(
+            room_type=room_type, is_active=True
+        ).exclude(status__in=availability.OPERATIONALLY_BLOCKED).values_list("id", flat=True))
+        assignments = list(
+            availability.BookingRoom.objects.filter(room_id__in=sellable_ids)
+            .filter(availability.blocking_booking_q(prefix="booking"))
+            .filter(booking__check_in__lt=end, booking__check_out__gt=today)
+            .values_list("room_id", "booking__check_in", "booking__check_out")
+        )
+        unavailable = []
+        current = today
+        while current < end:
+            following = current + timedelta(days=1)
+            blocked = {room_id for room_id, check_in, check_out in assignments
+                       if check_in < following and check_out > current}
+            if not sellable_ids or len(blocked) >= len(sellable_ids):
+                unavailable.append(current.isoformat())
+            current = following
+        return success_response({
+            "room_type": room_type.slug,
+            "from": today.isoformat(),
+            "through": (end - timedelta(days=1)).isoformat(),
+            "unavailable_dates": unavailable,
+        })
+
+
 class RoomTypeRoomsView(generics.ListAPIView):
     """The physical rooms that make up one room type.
 

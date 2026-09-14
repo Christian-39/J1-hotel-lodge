@@ -152,19 +152,20 @@ class PaymentFlowTests(BaseAPITestCase):
 
     @override_settings(PAYSTACK_SECRET_KEY="sk_test_mock")
     @patch("apps.payments.services.paystack.verify_transaction")
-    def test_verify_rejects_customer_borne_paystack_fee(self, mock_verify):
+    def test_verify_accepts_fee_inclusive_response_when_requested_amount_is_exact(self, mock_verify):
         payment = self._make_payment()
         payload = self._paystack_payload(payment.reference, amount_kobo=5_101_523)
         payload["data"]["requested_amount"] = 5_000_000
         payload["data"]["fees"] = 101_523
         mock_verify.return_value = payload
         response = self.client.get(f"/api/payments/verify/{payment.reference}/")
-        self.assertEqual(response.status_code, 400)
-        self.assertEqual(response.json()["code"], "PAYMENT_AMOUNT_MISMATCH")
+        self.assertEqual(response.status_code, 200, response.json())
         payment.refresh_from_db()
         self.booking.refresh_from_db()
-        self.assertEqual(payment.status, Payment.Status.PENDING)
-        self.assertEqual(self.booking.amount_paid, Decimal("0.00"))
+        self.assertEqual(payment.status, Payment.Status.SUCCESS)
+        self.assertEqual(payment.amount, Decimal("50000.00"))
+        self.assertEqual(self.booking.amount_paid, Decimal("50000.00"))
+        self.assertTrue(payment.metadata["paystack_reported_amount_includes_fee"])
 
     @override_settings(PAYSTACK_SECRET_KEY="sk_test_mock")
     @patch("apps.payments.services.paystack.verify_transaction")
@@ -179,7 +180,7 @@ class PaymentFlowTests(BaseAPITestCase):
         payment.refresh_from_db()
         self.assertEqual(payment.amount, Decimal("50000.00"))
         self.assertEqual(payment.metadata["paystack_fees_kobo"], 75_000)
-        self.assertFalse(payment.metadata["customer_bears_paystack_fee"])
+        self.assertFalse(payment.metadata["paystack_reported_amount_includes_fee"])
 
     # --- Webhook -------------------------------------------------------------
     def _post_webhook(self, payload: dict, secret="sk_test_mock", sign=True):

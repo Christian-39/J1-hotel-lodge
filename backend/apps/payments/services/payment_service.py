@@ -267,13 +267,20 @@ def _int_or_none(value):
 
 
 def _paystack_hotel_amount_kobo(data: dict):
-    """Return the exact amount debited from the guest, in kobo.
+    """Return Paystack's original merchant-requested amount in kobo.
 
-    The hotel absorbs Paystack fees. Consequently ``data.amount`` itself must
-    equal the server-created Payment amount. ``requested_amount`` and ``fees``
-    are accounting metadata only and can never make a fee-inclusive customer
-    debit acceptable.
+    Some Paystack account/API responses expose ``amount`` as a fee-inclusive
+    processed amount even though this application initialized the transaction
+    with the exact hotel amount. In that response shape ``requested_amount`` is
+    the authoritative original charge request. Fall back to ``amount - fees``
+    only for older Paystack responses that omit it. Payment.amount and every
+    guest-facing total remain the exact backend-created hotel amount.
     """
+    requested = _int_or_none(data.get("requested_amount"))
+    if requested is None:
+        requested = _int_or_none(data.get("requestedAmount"))
+    if requested is not None:
+        return requested
     return _int_or_none(data.get("amount"))
 
 
@@ -332,7 +339,18 @@ def process_verification(*, reference, request=None, triggered_by="api"):
         provider_hotel_amount_kobo = _paystack_hotel_amount_kobo(data)
         expected_kobo = _amount_to_kobo(payment.amount)
         paid_currency = str(data.get("currency") or "").upper()
-        if provider_hotel_amount_kobo != expected_kobo or paid_currency != payment.currency.upper():
+        # Accept the exact processed amount, Paystack's explicit original
+        # requested amount, or the legacy fee-inclusive response shape. At
+        # least one provider-derived value must exactly match our immutable
+        # server amount; browser values are never consulted.
+        legacy_net_kobo = (
+            paid_kobo - paystack_fees_kobo
+            if paid_kobo is not None and paystack_fees_kobo is not None
+            and paystack_fees_kobo > 0 and paid_kobo > paystack_fees_kobo
+            else None
+        )
+        amount_matches = expected_kobo in {paid_kobo, provider_hotel_amount_kobo, legacy_net_kobo}
+        if not amount_matches or paid_currency != payment.currency.upper():
             logger.error(
                 "Payment amount/currency mismatch: reference=%s expected=%s/%s got=%s/%s (provider_hotel_amount=%s fees=%s)",
                 reference, expected_kobo, payment.currency, paid_kobo, paid_currency,
@@ -366,11 +384,15 @@ def process_verification(*, reference, request=None, triggered_by="api"):
             "paystack_id": data.get("id"),
             "channel": payment.channel,
             "paystack_amount_kobo": paid_kobo,
-            "paystack_hotel_amount_kobo": paid_kobo,
-            # Paystack deducts this from merchant settlement; it is never a
-            # guest charge and never changes Payment.amount or booking totals.
+            "paystack_hotel_amount_kobo": expected_kobo,
+            "paystack_requested_amount_kobo": provider_hotel_amount_kobo,
+            # Stored only for settlement diagnostics. Neither field changes
+            # Payment.amount, the booking balance, emails, or receipts.
             "paystack_fees_kobo": paystack_fees_kobo,
-            "customer_bears_paystack_fee": False,
+            "paystack_reported_amount_includes_fee": bool(
+                paid_kobo is not None and provider_hotel_amount_kobo is not None
+                and paid_kobo > provider_hotel_amount_kobo
+            ),
         }
         payment.save()
         booking = booking_service.register_successful_payment(booking, payment.amount, request=request)
