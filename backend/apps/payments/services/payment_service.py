@@ -253,6 +253,38 @@ def _parse_paid_at(value):
         return timezone.now()
 
 
+def _int_or_none(value):
+    try:
+        if value in (None, ""):
+            return None
+        return int(value)
+    except (TypeError, ValueError, InvalidOperation):
+        return None
+
+
+def _paystack_hotel_amount_kobo(data: dict):
+    """Amount to compare with the server booking amount.
+
+    Paystack accounts can be configured so the customer bears Paystack fees. In
+    that mode the verified transaction ``amount`` is the total card debit
+    (hotel amount + Paystack fee), while ``requested_amount`` is the amount our
+    backend initialized for the hotel. We still require an exact server-side
+    match, but compare against Paystack's requested/net hotel amount instead of
+    incorrectly treating the fee-inclusive debit as overpayment fraud.
+    """
+    requested = _int_or_none(data.get("requested_amount"))
+    if requested is None:
+        requested = _int_or_none(data.get("requestedAmount"))
+    if requested is not None:
+        return requested
+
+    amount = _int_or_none(data.get("amount"))
+    fees = _int_or_none(data.get("fees"))
+    if amount is not None and fees is not None and fees > 0 and amount > fees:
+        return amount - fees
+    return amount
+
+
 def process_verification(*, reference, request=None, triggered_by="api"):
     """Verify with Paystack, validate reference/amount/currency and reconcile."""
     payment = (
@@ -303,22 +335,24 @@ def process_verification(*, reference, request=None, triggered_by="api"):
             logger.warning("Payment terminal failure: reference=%s gateway_status=%s", reference, gateway_status)
             return _verified_receipt_payload(payment, gateway_status)
 
-        try:
-            paid_kobo = int(data.get("amount"))
-        except (TypeError, ValueError, InvalidOperation):
-            paid_kobo = None
+        paid_kobo = _int_or_none(data.get("amount"))
+        paystack_fees_kobo = _int_or_none(data.get("fees"))
+        provider_hotel_amount_kobo = _paystack_hotel_amount_kobo(data)
         expected_kobo = _amount_to_kobo(payment.amount)
         paid_currency = str(data.get("currency") or "").upper()
-        if paid_kobo != expected_kobo or paid_currency != payment.currency.upper():
+        if provider_hotel_amount_kobo != expected_kobo or paid_currency != payment.currency.upper():
             logger.error(
-                "Payment amount/currency mismatch: reference=%s expected=%s/%s got=%s/%s",
+                "Payment amount/currency mismatch: reference=%s expected=%s/%s got=%s/%s (provider_hotel_amount=%s fees=%s)",
                 reference, expected_kobo, payment.currency, paid_kobo, paid_currency,
+                provider_hotel_amount_kobo, paystack_fees_kobo,
             )
             payment.metadata = {
                 **payment.metadata,
                 "verification_mismatch": {
                     "expected_amount_kobo": expected_kobo,
                     "received_amount_kobo": paid_kobo,
+                    "received_requested_amount_kobo": provider_hotel_amount_kobo,
+                    "received_fees_kobo": paystack_fees_kobo,
                     "received_currency": paid_currency,
                 },
             }
@@ -335,7 +369,19 @@ def process_verification(*, reference, request=None, triggered_by="api"):
         payment.channel = str(data.get("channel") or "")[:40]
         payment.gateway_response = str(data.get("gateway_response") or "")[:255]
         payment.transaction_id = str(data.get("id") or "")[:60]
-        payment.metadata = {**payment.metadata, "paystack_id": data.get("id"), "channel": payment.channel}
+        payment.metadata = {
+            **payment.metadata,
+            "paystack_id": data.get("id"),
+            "channel": payment.channel,
+            "paystack_amount_kobo": paid_kobo,
+            "paystack_hotel_amount_kobo": provider_hotel_amount_kobo,
+            "paystack_fees_kobo": paystack_fees_kobo,
+            "customer_bears_paystack_fee": bool(
+                paid_kobo is not None
+                and provider_hotel_amount_kobo is not None
+                and paid_kobo > provider_hotel_amount_kobo
+            ),
+        }
         payment.save()
         booking = booking_service.register_successful_payment(booking, payment.amount, request=request)
         payment.booking = booking

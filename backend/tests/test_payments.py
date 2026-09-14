@@ -150,6 +150,43 @@ class PaymentFlowTests(BaseAPITestCase):
         self.booking.refresh_from_db()
         self.assertEqual(self.booking.amount_paid, Decimal("0.00"))
 
+    @override_settings(PAYSTACK_SECRET_KEY="sk_test_mock")
+    @patch("apps.payments.services.paystack.verify_transaction")
+    def test_verify_accepts_paystack_customer_borne_fee_requested_amount(self, mock_verify):
+        payment = self._make_payment()
+        payload = self._paystack_payload(payment.reference, amount_kobo=5_101_523)
+        payload["data"]["requested_amount"] = 5_000_000
+        payload["data"]["fees"] = 101_523
+        mock_verify.return_value = payload
+
+        response = self.client.get(f"/api/payments/verify/{payment.reference}/")
+
+        self.assertEqual(response.status_code, 200, response.json())
+        self.booking.refresh_from_db()
+        payment.refresh_from_db()
+        self.assertEqual(self.booking.status, "CONFIRMED")
+        self.assertEqual(self.booking.amount_paid, Decimal("50000.00"))
+        self.assertEqual(payment.status, Payment.Status.SUCCESS)
+        self.assertEqual(payment.metadata["paystack_amount_kobo"], 5_101_523)
+        self.assertEqual(payment.metadata["paystack_hotel_amount_kobo"], 5_000_000)
+        self.assertTrue(payment.metadata["customer_bears_paystack_fee"])
+
+    @override_settings(PAYSTACK_SECRET_KEY="sk_test_mock")
+    @patch("apps.payments.services.paystack.verify_transaction")
+    def test_verify_accepts_paystack_fee_breakdown_without_requested_amount(self, mock_verify):
+        payment = self._make_payment()
+        payload = self._paystack_payload(payment.reference, amount_kobo=5_101_523)
+        payload["data"]["fees"] = 101_523
+        mock_verify.return_value = payload
+
+        response = self.client.get(f"/api/payments/verify/{payment.reference}/")
+
+        self.assertEqual(response.status_code, 200, response.json())
+        self.booking.refresh_from_db()
+        payment.refresh_from_db()
+        self.assertEqual(self.booking.amount_paid, Decimal("50000.00"))
+        self.assertEqual(payment.metadata["paystack_hotel_amount_kobo"], 5_000_000)
+
     # --- Webhook -------------------------------------------------------------
     def _post_webhook(self, payload: dict, secret="sk_test_mock", sign=True):
         body = json.dumps(payload).encode()

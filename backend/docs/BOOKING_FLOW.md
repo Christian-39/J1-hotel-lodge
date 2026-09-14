@@ -92,6 +92,11 @@ between beat runs as well.
   `/api/admin/enquiries/<id>/process-refund/`; the amount comes from the server
   policy calculation, never from the browser. Offline/cash/POS/transfer refunds
   require manual handling outside Paystack.
+* If the Paystack Dashboard passes transaction fees to the customer, Paystack
+  verification may return a fee-inclusive `amount` plus the server-requested
+  hotel amount. The backend validates the hotel amount from Paystack's
+  `requested_amount`/fee fields before confirming the booking; frontend amounts
+  are still ignored.
 * Paystack webhook events `refund.pending`, `refund.processing`,
   `refund.processed`, `refund.failed` and `refund.needs-attention` reconcile
   refund rows idempotently. The guest is never told a refund is complete until
