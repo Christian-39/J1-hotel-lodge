@@ -505,6 +505,23 @@ paths:
               schema:
                 $ref: '#/components/schemas/RecordAction'
           description: ''
+  /api/admin/bookings/{lookup}/send-receipt/:
+    post:
+      operationId: admin_bookings_send_receipt_create
+      description: Send a confirmed payment receipt to the guest after staff approval.
+      parameters:
+      - in: path
+        name: lookup
+        schema:
+          type: string
+        required: true
+      tags:
+      - admin
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          description: No response body
   /api/admin/dashboard/:
     get:
       operationId: admin_dashboard_retrieve
@@ -592,6 +609,166 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/EnquiryAdmin'
+          description: ''
+  /api/admin/enquiries/{id}/approve-cancellation/:
+    post:
+      operationId: admin_enquiries_approve_cancellation_create
+      summary: Approve a cancellation request and cancel its booking
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - Admin · Enquiries
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CancellationActionRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/CancellationActionRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/CancellationActionRequest'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CancellationAction'
+          description: ''
+  /api/admin/enquiries/{id}/close/:
+    post:
+      operationId: admin_enquiries_close_create
+      summary: Close a cancellation request
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - Admin · Enquiries
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CancellationActionRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/CancellationActionRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/CancellationActionRequest'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CancellationAction'
+          description: ''
+  /api/admin/enquiries/{id}/process-refund/:
+    post:
+      operationId: admin_enquiries_process_refund_create
+      summary: Initiate an approved Paystack refund
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - Admin · Enquiries
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CancellationActionRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/CancellationActionRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/CancellationActionRequest'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CancellationAction'
+          description: ''
+  /api/admin/enquiries/{id}/reject-cancellation/:
+    post:
+      operationId: admin_enquiries_reject_cancellation_create
+      summary: Reject a cancellation request
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - Admin · Enquiries
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CancellationActionRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/CancellationActionRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/CancellationActionRequest'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CancellationAction'
+          description: ''
+  /api/admin/enquiries/{id}/review/:
+    post:
+      operationId: admin_enquiries_review_create
+      summary: Mark a cancellation request under review
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - Admin · Enquiries
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CancellationActionRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/CancellationActionRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/CancellationActionRequest'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CancellationAction'
           description: ''
   /api/admin/facilities/:
     get:
@@ -1187,6 +1364,55 @@ paths:
               schema:
                 $ref: '#/components/schemas/RecordOfflinePayment'
           description: ''
+  /api/admin/payments/refunds/:
+    get:
+      operationId: admin_payments_refunds_list
+      summary: List refunds and their Paystack reconciliation status
+      parameters:
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      tags:
+      - Admin · Payments
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedRefundList'
+          description: ''
+  /api/admin/payments/refunds/{id}/:
+    get:
+      operationId: admin_payments_refunds_retrieve
+      summary: Retrieve a refund
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - Admin · Payments
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Refund'
+          description: ''
   /api/admin/policies/:
     get:
       operationId: admin_policies_list
@@ -1435,6 +1661,7 @@ paths:
           application/x-www-form-urlencoded:
             schema:
               $ref: '#/components/schemas/RoomTypeImageRequest'
+        required: true
       security:
       - jwtAuth: []
       responses:
@@ -1486,6 +1713,35 @@ paths:
       responses:
         '204':
           description: No response body
+  /api/admin/room-images/room/{room_id}/:
+    post:
+      operationId: admin_room_images_room_create
+      parameters:
+      - in: path
+        name: room_id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - Admin · Rooms
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/RoomImageRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/RoomImageRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RoomImage'
+          description: ''
   /api/admin/room-types/:
     get:
       operationId: admin_room_types_list
@@ -1519,13 +1775,13 @@ paths:
       - Admin · Room Types
       requestBody:
         content:
-          application/json:
+          multipart/form-data:
             schema:
               $ref: '#/components/schemas/RoomTypeAdminRequest'
           application/x-www-form-urlencoded:
             schema:
               $ref: '#/components/schemas/RoomTypeAdminRequest'
-          multipart/form-data:
+          application/json:
             schema:
               $ref: '#/components/schemas/RoomTypeAdminRequest'
         required: true
@@ -1572,13 +1828,13 @@ paths:
       - Admin · Room Types
       requestBody:
         content:
-          application/json:
+          multipart/form-data:
             schema:
               $ref: '#/components/schemas/RoomTypeAdminRequest'
           application/x-www-form-urlencoded:
             schema:
               $ref: '#/components/schemas/RoomTypeAdminRequest'
-          multipart/form-data:
+          application/json:
             schema:
               $ref: '#/components/schemas/RoomTypeAdminRequest'
         required: true
@@ -1604,13 +1860,13 @@ paths:
       - Admin · Room Types
       requestBody:
         content:
-          application/json:
+          multipart/form-data:
             schema:
               $ref: '#/components/schemas/PatchedRoomTypeAdminRequest'
           application/x-www-form-urlencoded:
             schema:
               $ref: '#/components/schemas/PatchedRoomTypeAdminRequest'
-          multipart/form-data:
+          application/json:
             schema:
               $ref: '#/components/schemas/PatchedRoomTypeAdminRequest'
       security:
@@ -1658,6 +1914,7 @@ paths:
           application/x-www-form-urlencoded:
             schema:
               $ref: '#/components/schemas/RoomTypeImageRequest'
+        required: true
       security:
       - jwtAuth: []
       responses:
@@ -1667,6 +1924,96 @@ paths:
               schema:
                 $ref: '#/components/schemas/RoomTypeImage'
           description: ''
+  /api/admin/room-types/images/{id}/:
+    get:
+      operationId: admin_room_types_images_retrieve
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - Admin · Room Types
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RoomTypeImage'
+          description: ''
+    put:
+      operationId: admin_room_types_images_update
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - Admin · Room Types
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/RoomTypeImageRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/RoomTypeImageRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RoomTypeImage'
+          description: ''
+    patch:
+      operationId: admin_room_types_images_partial_update
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - Admin · Room Types
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedRoomTypeImageRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedRoomTypeImageRequest'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RoomTypeImage'
+          description: ''
+    delete:
+      operationId: admin_room_types_images_destroy
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - Admin · Room Types
+      security:
+      - jwtAuth: []
+      responses:
+        '204':
+          description: No response body
   /api/admin/rooms/:
     get:
       operationId: admin_rooms_list
@@ -1700,13 +2047,13 @@ paths:
       - Admin · Rooms
       requestBody:
         content:
-          application/json:
+          multipart/form-data:
             schema:
               $ref: '#/components/schemas/RoomRequest'
           application/x-www-form-urlencoded:
             schema:
               $ref: '#/components/schemas/RoomRequest'
-          multipart/form-data:
+          application/json:
             schema:
               $ref: '#/components/schemas/RoomRequest'
         required: true
@@ -1753,13 +2100,13 @@ paths:
       - Admin · Rooms
       requestBody:
         content:
-          application/json:
+          multipart/form-data:
             schema:
               $ref: '#/components/schemas/RoomRequest'
           application/x-www-form-urlencoded:
             schema:
               $ref: '#/components/schemas/RoomRequest'
-          multipart/form-data:
+          application/json:
             schema:
               $ref: '#/components/schemas/RoomRequest'
         required: true
@@ -1785,13 +2132,13 @@ paths:
       - Admin · Rooms
       requestBody:
         content:
-          application/json:
+          multipart/form-data:
             schema:
               $ref: '#/components/schemas/PatchedRoomRequest'
           application/x-www-form-urlencoded:
             schema:
               $ref: '#/components/schemas/PatchedRoomRequest'
-          multipart/form-data:
+          application/json:
             schema:
               $ref: '#/components/schemas/PatchedRoomRequest'
       security:
@@ -1819,10 +2166,131 @@ paths:
       responses:
         '204':
           description: No response body
+  /api/admin/rooms/{room_id}/images/:
+    post:
+      operationId: admin_rooms_images_create
+      parameters:
+      - in: path
+        name: room_id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - Admin · Rooms
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/RoomImageRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/RoomImageRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RoomImage'
+          description: ''
+  /api/admin/rooms/images/{id}/:
+    get:
+      operationId: admin_rooms_images_retrieve
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - Admin · Rooms
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RoomImage'
+          description: ''
+    put:
+      operationId: admin_rooms_images_update
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - Admin · Rooms
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/RoomImageRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/RoomImageRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RoomImage'
+          description: ''
+    patch:
+      operationId: admin_rooms_images_partial_update
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - Admin · Rooms
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedRoomImageRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedRoomImageRequest'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RoomImage'
+          description: ''
+    delete:
+      operationId: admin_rooms_images_destroy
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - Admin · Rooms
+      security:
+      - jwtAuth: []
+      responses:
+        '204':
+          description: No response body
   /api/admin/settings/:
     get:
       operationId: admin_settings_retrieve
-      description: GET for managers+; PATCH restricted to ADMIN via permissions hook.
+      description: |-
+        Hotel settings are ADMIN-only — read AND write. Non-admin staff never
+        see protected business rules; public hotel facts come from /api/hotel/.
       tags:
       - Admin · Settings
       security:
@@ -1836,7 +2304,9 @@ paths:
           description: ''
     put:
       operationId: admin_settings_update
-      description: GET for managers+; PATCH restricted to ADMIN via permissions hook.
+      description: |-
+        Hotel settings are ADMIN-only — read AND write. Non-admin staff never
+        see protected business rules; public hotel facts come from /api/hotel/.
       tags:
       - Admin · Settings
       requestBody:
@@ -1861,7 +2331,9 @@ paths:
           description: ''
     patch:
       operationId: admin_settings_partial_update
-      description: GET for managers+; PATCH restricted to ADMIN via permissions hook.
+      description: |-
+        Hotel settings are ADMIN-only — read AND write. Non-admin staff never
+        see protected business rules; public hotel facts come from /api/hotel/.
       tags:
       - Admin · Settings
       requestBody:
@@ -1917,13 +2389,13 @@ paths:
       - Admin · Users
       requestBody:
         content:
-          application/json:
+          multipart/form-data:
             schema:
               $ref: '#/components/schemas/AdminUserCreateRequest'
           application/x-www-form-urlencoded:
             schema:
               $ref: '#/components/schemas/AdminUserCreateRequest'
-          multipart/form-data:
+          application/json:
             schema:
               $ref: '#/components/schemas/AdminUserCreateRequest'
         required: true
@@ -1968,13 +2440,13 @@ paths:
       - Admin · Users
       requestBody:
         content:
-          application/json:
+          multipart/form-data:
             schema:
               $ref: '#/components/schemas/PatchedAdminUserUpdateRequest'
           application/x-www-form-urlencoded:
             schema:
               $ref: '#/components/schemas/PatchedAdminUserUpdateRequest'
-          multipart/form-data:
+          application/json:
             schema:
               $ref: '#/components/schemas/PatchedAdminUserUpdateRequest'
       security:
@@ -1985,6 +2457,33 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AdminUserUpdate'
+          description: ''
+  /api/admin/users/staff/{id}/:
+    get:
+      operationId: admin_users_staff_retrieve
+      description: |-
+        Read-only profile card used by the staff profile modal.
+
+        Access is decided entirely by :class:`CanViewStaffProfile` (admins and
+        managers see every account, receptionists only themselves). Mutations stay
+        on the ADMIN-only ``/api/admin/users/{id}/`` endpoint.
+      summary: Staff profile card (photo, role, activity)
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - Admin · Users
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminStaffProfile'
           description: ''
   /api/auth/login/:
     post:
@@ -2173,7 +2672,7 @@ paths:
   /api/auth/register/:
     post:
       operationId: auth_register_create
-      summary: Register a new guest account
+      summary: Register an optional guest account
       tags:
       - Auth
       requestBody:
@@ -2273,6 +2772,7 @@ paths:
         required: true
       security:
       - jwtAuth: []
+      - {}
       responses:
         '201':
           content:
@@ -2295,6 +2795,7 @@ paths:
       - Bookings
       security:
       - jwtAuth: []
+      - {}
       responses:
         '200':
           content:
@@ -2306,7 +2807,7 @@ paths:
     post:
       operationId: bookings_cancel_create
       description: Resolve a booking by pk or reference + enforce object ownership.
-      summary: Cancel my booking
+      summary: Guest self-cancellation is disabled; submit Contact cancellation request
       parameters:
       - in: path
         name: lookup
@@ -2328,6 +2829,7 @@ paths:
               $ref: '#/components/schemas/CancelBookingRequest'
       security:
       - jwtAuth: []
+      - {}
       responses:
         '200':
           content:
@@ -2350,6 +2852,7 @@ paths:
       - Bookings
       security:
       - jwtAuth: []
+      - {}
       responses:
         '200':
           content:
@@ -2412,6 +2915,28 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/EnquiryCreate'
+          description: ''
+  /api/enquiries/cancellation-status/{reference}/:
+    get:
+      operationId: enquiries_cancellation_status_retrieve
+      summary: Safe public cancellation request status
+      parameters:
+      - in: path
+        name: reference
+        schema:
+          type: string
+        required: true
+      tags:
+      - Enquiries
+      security:
+      - jwtAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublicCancellationStatus'
           description: ''
   /api/facilities/:
     get:
@@ -2539,6 +3064,34 @@ paths:
               schema:
                 $ref: '#/components/schemas/PaginatedNotificationList'
           description: ''
+  /api/notifications/{id}/:
+    get:
+      operationId: notifications_retrieve
+      description: |-
+        Full notification for `notification-details.html`.
+
+        A user can only ever read their OWN notification — the queryset is scoped
+        to the recipient, so someone else's id is a 404, never a leak. Opening the
+        detail marks it read (the response carries the fresh unread count so the
+        sidebar badge can update without another request).
+      summary: Read one notification (owns only)
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - Notifications
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationDetail'
+          description: ''
   /api/notifications/{id}/read/:
     post:
       operationId: notifications_read_create
@@ -2628,6 +3181,7 @@ paths:
         required: true
       security:
       - jwtAuth: []
+      - {}
       responses:
         '200':
           content:
@@ -2649,6 +3203,7 @@ paths:
       - Payments
       security:
       - jwtAuth: []
+      - {}
       responses:
         '200':
           content:
@@ -2711,6 +3266,49 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/RoomTypeDetail'
+          description: ''
+  /api/rooms/{slug}/rooms/:
+    get:
+      operationId: rooms_rooms_list
+      description: |-
+        The physical rooms that make up one room type.
+
+        Only rooms the hotel can actually sell are listed: the type must be active,
+        the room must be active and it must not be under maintenance or out of
+        service. Availability is answered by the authoritative availability engine,
+        never by a client-side hint.
+      summary: Physical rooms of a room type (for book-this-room)
+      parameters:
+      - in: query
+        name: check_in
+        schema:
+          type: string
+          format: date
+        description: Optional. When both dates are given each room reports whether
+          it is free.
+      - in: query
+        name: check_out
+        schema:
+          type: string
+          format: date
+      - in: path
+        name: slug
+        schema:
+          type: string
+        required: true
+      tags:
+      - Rooms
+      security:
+      - jwtAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PublicRoomOption'
           description: ''
   /api/rooms/availability/:
     get:
@@ -2804,6 +3402,10 @@ components:
           type: object
           additionalProperties:
             type: string
+        room_id:
+          type: integer
+          minimum: 1
+          nullable: true
       required:
       - check_in
       - check_out
@@ -2858,6 +3460,10 @@ components:
           type: object
           additionalProperties:
             type: string
+        room_id:
+          type: integer
+          minimum: 1
+          nullable: true
       required:
       - check_in
       - check_out
@@ -3135,6 +3741,12 @@ components:
       - total_amount
     AdminGuestDetail:
       type: object
+      description: |-
+        Complete guest profile for the staff profile modal.
+
+        Every non-sensitive field the ``Guest`` model actually stores is exposed so
+        the dashboard can show it. The one sensitive column (``identification_number``)
+        is masked for receptionists — full value only for managers and admins.
       properties:
         id:
           type: integer
@@ -3143,6 +3755,9 @@ components:
           type: integer
           readOnly: true
           nullable: true
+        has_account:
+          type: string
+          readOnly: true
         first_name:
           type: string
           maxLength: 100
@@ -3175,12 +3790,30 @@ components:
           oneOf:
           - $ref: '#/components/schemas/IdentificationTypeEnum'
           - $ref: '#/components/schemas/BlankEnum'
+        identification_type_label:
+          type: string
+          readOnly: true
         identification_number:
           type: string
-          maxLength: 64
+          readOnly: true
         special_requests:
           type: string
         bookings:
+          type: string
+          readOnly: true
+        bookings_count:
+          type: string
+          readOnly: true
+        last_booking_at:
+          type: string
+          readOnly: true
+        total_stays:
+          type: string
+          readOnly: true
+        total_spent:
+          type: string
+          readOnly: true
+        outstanding_balance:
           type: string
           readOnly: true
         created_at:
@@ -3193,13 +3826,21 @@ components:
           readOnly: true
       required:
       - bookings
+      - bookings_count
       - created_at
       - email
       - first_name
       - full_name
+      - has_account
       - id
+      - identification_number
+      - identification_type_label
+      - last_booking_at
       - last_name
+      - outstanding_balance
       - phone
+      - total_spent
+      - total_stays
       - updated_at
       - user_id
     AdminGuestList:
@@ -3297,6 +3938,98 @@ components:
       - first_name
       - last_name
       - phone
+    AdminStaffProfile:
+      type: object
+      description: |-
+        Complete, non-credential staff profile for the staff profile modal.
+
+        Everything here is already stored on the account (or derived with cheap
+        aggregate counts) — nothing is invented. Password hashes, tokens and any
+        other credential material are deliberately absent.
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        email:
+          type: string
+          format: email
+          readOnly: true
+        first_name:
+          type: string
+          readOnly: true
+        last_name:
+          type: string
+          readOnly: true
+        full_name:
+          type: string
+          readOnly: true
+        phone:
+          type: string
+          readOnly: true
+        role:
+          allOf:
+          - $ref: '#/components/schemas/RoleEnum'
+          readOnly: true
+        role_label:
+          type: string
+          readOnly: true
+        profile_image_url:
+          type: string
+          readOnly: true
+        is_active:
+          type: boolean
+          readOnly: true
+        email_verified:
+          type: boolean
+          readOnly: true
+        is_staff:
+          type: boolean
+          readOnly: true
+        is_admin:
+          type: boolean
+          readOnly: true
+        is_staff_member:
+          type: boolean
+          readOnly: true
+        date_joined:
+          type: string
+          format: date-time
+          readOnly: true
+        last_login:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+        stats:
+          type: string
+          readOnly: true
+        can_manage:
+          type: string
+          readOnly: true
+      required:
+      - can_manage
+      - date_joined
+      - email
+      - email_verified
+      - first_name
+      - full_name
+      - id
+      - is_active
+      - is_admin
+      - is_staff
+      - is_staff_member
+      - last_login
+      - last_name
+      - phone
+      - profile_image_url
+      - role
+      - role_label
+      - stats
+      - updated_at
     AdminUserCreate:
       type: object
       description: Administrator-created staff accounts (roles above GUEST).
@@ -3318,6 +4051,10 @@ components:
           $ref: '#/components/schemas/RoleEnum'
         is_active:
           type: boolean
+        profile_image:
+          type: string
+          format: uri
+          nullable: true
       required:
       - email
       - first_name
@@ -3350,6 +4087,10 @@ components:
           minLength: 8
         is_active:
           type: boolean
+        profile_image:
+          type: string
+          format: binary
+          nullable: true
       required:
       - email
       - first_name
@@ -3379,6 +4120,9 @@ components:
           maxLength: 20
         role:
           $ref: '#/components/schemas/RoleEnum'
+        profile_image_url:
+          type: string
+          readOnly: true
         is_active:
           type: boolean
         email_verified:
@@ -3402,6 +4146,7 @@ components:
       - full_name
       - id
       - last_name
+      - profile_image_url
     AdminUserUpdate:
       type: object
       properties:
@@ -3420,6 +4165,10 @@ components:
           type: boolean
         email_verified:
           type: boolean
+        profile_image:
+          type: string
+          format: uri
+          nullable: true
       required:
       - first_name
       - last_name
@@ -3869,6 +4618,68 @@ components:
         reason:
           type: string
           default: ''
+    CancellationAction:
+      type: object
+      properties:
+        notes:
+          type: string
+          default: ''
+          maxLength: 5000
+        resolution:
+          type: string
+          default: ''
+          maxLength: 5000
+        customer_note:
+          type: string
+          default: ''
+          maxLength: 5000
+        merchant_note:
+          type: string
+          default: ''
+          maxLength: 5000
+    CancellationActionRequest:
+      type: object
+      properties:
+        notes:
+          type: string
+          default: ''
+          maxLength: 5000
+        resolution:
+          type: string
+          default: ''
+          maxLength: 5000
+        customer_note:
+          type: string
+          default: ''
+          maxLength: 5000
+        merchant_note:
+          type: string
+          default: ''
+          maxLength: 5000
+    CancellationStatusEnum:
+      enum:
+      - NEW
+      - UNDER_REVIEW
+      - APPROVED
+      - REJECTED
+      - CANCELLED
+      - REFUND_PENDING
+      - REFUND_PROCESSING
+      - REFUNDED
+      - REFUND_FAILED
+      - CLOSED
+      type: string
+      description: |-
+        * `NEW` - New
+        * `UNDER_REVIEW` - Under review
+        * `APPROVED` - Approved
+        * `REJECTED` - Rejected
+        * `CANCELLED` - Booking cancelled
+        * `REFUND_PENDING` - Refund pending
+        * `REFUND_PROCESSING` - Refund processing
+        * `REFUNDED` - Refunded
+        * `REFUND_FAILED` - Refund failed
+        * `CLOSED` - Closed
     CategoryEnum:
       enum:
       - HOTEL
@@ -3921,6 +4732,102 @@ components:
           $ref: '#/components/schemas/EnquiryAdminStatusEnum'
         internal_notes:
           type: string
+        enquiry_type:
+          allOf:
+          - $ref: '#/components/schemas/EnquiryTypeEnum'
+          readOnly: true
+        cancellation_reference:
+          type: string
+          readOnly: true
+          nullable: true
+        booking_reference:
+          type: string
+          readOnly: true
+        payment_reference:
+          type: string
+          readOnly: true
+          description: Guest-supplied Paystack transaction/payment reference, if available.
+        receipt_reference:
+          type: string
+          readOnly: true
+        cancellation_reason:
+          type: string
+          readOnly: true
+        preferred_contact_method:
+          allOf:
+          - $ref: '#/components/schemas/PreferredContactMethodEnum'
+          readOnly: true
+        refund_requested:
+          type: boolean
+          readOnly: true
+        related_booking:
+          type: integer
+          readOnly: true
+          nullable: true
+        related_payment:
+          type: integer
+          readOnly: true
+          nullable: true
+        related_booking_detail:
+          type: object
+          additionalProperties: {}
+          readOnly: true
+        related_payment_detail:
+          type: object
+          additionalProperties: {}
+          readOnly: true
+        cancellation_status:
+          allOf:
+          - $ref: '#/components/schemas/CancellationStatusEnum'
+          readOnly: true
+        refund_status:
+          allOf:
+          - $ref: '#/components/schemas/RefundStatusEnum'
+          readOnly: true
+        calculated_cancellation_fee:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,10}(?:\.\d{0,2})?$
+          readOnly: true
+        calculated_refund_amount:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,10}(?:\.\d{0,2})?$
+          readOnly: true
+        paystack_refund_reference:
+          type: string
+          readOnly: true
+        processed_by:
+          type: integer
+          readOnly: true
+          nullable: true
+        processed_by_email:
+          type: string
+          readOnly: true
+          nullable: true
+        processed_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        resolution:
+          type: string
+          readOnly: true
+        metadata:
+          readOnly: true
+        refund_detail:
+          type: object
+          additionalProperties: {}
+          readOnly: true
+        cancellation_policy:
+          type: object
+          additionalProperties: {}
+          readOnly: true
+        actions:
+          type: array
+          items:
+            type: string
+          readOnly: true
         created_at:
           type: string
           format: date-time
@@ -3930,12 +4837,37 @@ components:
           format: date-time
           readOnly: true
       required:
+      - actions
+      - booking_reference
+      - calculated_cancellation_fee
+      - calculated_refund_amount
+      - cancellation_policy
+      - cancellation_reason
+      - cancellation_reference
+      - cancellation_status
       - created_at
       - email
+      - enquiry_type
       - id
       - message
+      - metadata
       - name
+      - payment_reference
+      - paystack_refund_reference
       - phone
+      - preferred_contact_method
+      - processed_at
+      - processed_by
+      - processed_by_email
+      - receipt_reference
+      - refund_detail
+      - refund_requested
+      - refund_status
+      - related_booking
+      - related_booking_detail
+      - related_payment
+      - related_payment_detail
+      - resolution
       - subject
       - updated_at
     EnquiryAdminStatusEnum:
@@ -3952,6 +4884,13 @@ components:
         * `CLOSED` - Closed
     EnquiryCreate:
       type: object
+      description: |-
+        Public contact form.
+
+        `website` is an anti-spam honeypot, not an Enquiry column. Cancellation /
+        refund requests use structured fields; references are stored for staff
+        lookup but are not treated as authorization and are not exposed as valid or
+        invalid to the guest.
       properties:
         name:
           type: string
@@ -3968,6 +4907,30 @@ components:
           maxLength: 150
         message:
           type: string
+        enquiry_type:
+          allOf:
+          - $ref: '#/components/schemas/EnquiryTypeEnum'
+          default: GENERAL
+        booking_reference:
+          type: string
+          default: ''
+        payment_reference:
+          type: string
+          default: ''
+        receipt_reference:
+          type: string
+          default: ''
+        cancellation_reason:
+          type: string
+          default: ''
+        preferred_contact_method:
+          default: ''
+          oneOf:
+          - $ref: '#/components/schemas/PreferredContactMethodEnum'
+          - $ref: '#/components/schemas/BlankEnum'
+        refund_requested:
+          type: boolean
+          default: false
       required:
       - email
       - message
@@ -3975,6 +4938,13 @@ components:
       - subject
     EnquiryCreateRequest:
       type: object
+      description: |-
+        Public contact form.
+
+        `website` is an anti-spam honeypot, not an Enquiry column. Cancellation /
+        refund requests use structured fields; references are stored for staff
+        lookup but are not treated as authorization and are not exposed as valid or
+        invalid to the guest.
       properties:
         name:
           type: string
@@ -3999,11 +4969,43 @@ components:
           type: string
           writeOnly: true
           default: ''
+        enquiry_type:
+          allOf:
+          - $ref: '#/components/schemas/EnquiryTypeEnum'
+          default: GENERAL
+        booking_reference:
+          type: string
+          default: ''
+        payment_reference:
+          type: string
+          default: ''
+        receipt_reference:
+          type: string
+          default: ''
+        cancellation_reason:
+          type: string
+          default: ''
+        preferred_contact_method:
+          default: ''
+          oneOf:
+          - $ref: '#/components/schemas/PreferredContactMethodEnum'
+          - $ref: '#/components/schemas/BlankEnum'
+        refund_requested:
+          type: boolean
+          default: false
       required:
       - email
       - message
       - name
       - subject
+    EnquiryTypeEnum:
+      enum:
+      - GENERAL
+      - CANCELLATION
+      type: string
+      description: |-
+        * `GENERAL` - General enquiry
+        * `CANCELLATION` - Cancellation / refund request
     Facility:
       type: object
       properties:
@@ -4364,6 +5366,9 @@ components:
         max_stay_nights:
           type: integer
           readOnly: true
+        timezone:
+          type: string
+          readOnly: true
       required:
       - address
       - check_in_time
@@ -4381,6 +5386,7 @@ components:
       - social_links
       - state
       - tagline
+      - timezone
     HotelSettingsAdmin:
       type: object
       description: Full settings payload for staff; only ADMIN may write.
@@ -4643,6 +5649,9 @@ components:
           allOf:
           - $ref: '#/components/schemas/TypeEnum'
           readOnly: true
+        type_label:
+          type: string
+          readOnly: true
         title:
           type: string
           readOnly: true
@@ -4667,6 +5676,55 @@ components:
       - message
       - title
       - type
+      - type_label
+    NotificationDetail:
+      type: object
+      description: |-
+        Full notification for the dashboard detail page.
+
+        ``related`` is derived from the deep link the backend itself generated, so
+        the detail page can offer a real "View booking" style action instead of a
+        broken hand-built link.
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        type:
+          allOf:
+          - $ref: '#/components/schemas/TypeEnum'
+          readOnly: true
+        type_label:
+          type: string
+          readOnly: true
+        title:
+          type: string
+          readOnly: true
+        message:
+          type: string
+          readOnly: true
+        link:
+          type: string
+          readOnly: true
+        is_read:
+          type: boolean
+          readOnly: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        related:
+          type: string
+          readOnly: true
+      required:
+      - created_at
+      - id
+      - is_read
+      - link
+      - message
+      - related
+      - title
+      - type
+      - type_label
     OfferAdmin:
       type: object
       properties:
@@ -5174,6 +6232,34 @@ components:
             previous:
               type: string
               nullable: true
+    PaginatedRefundList:
+      type: object
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Refund'
+        pagination:
+          type: object
+          properties:
+            count:
+              type: integer
+            page:
+              type: integer
+            page_size:
+              type: integer
+            total_pages:
+              type: integer
+            next:
+              type: string
+              nullable: true
+            previous:
+              type: string
+              nullable: true
     PaginatedRoomList:
       type: object
       properties:
@@ -5462,6 +6548,10 @@ components:
           type: boolean
         email_verified:
           type: boolean
+        profile_image:
+          type: string
+          format: binary
+          nullable: true
     PatchedAmenityRequest:
       type: object
       properties:
@@ -5728,6 +6818,27 @@ components:
           type: string
           format: binary
           nullable: true
+    PatchedRoomImageRequest:
+      type: object
+      properties:
+        image:
+          type: string
+          format: binary
+        alt_text:
+          type: string
+          maxLength: 200
+        caption:
+          type: string
+          maxLength: 200
+        display_order:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: 0
+          format: int64
+        is_primary:
+          type: boolean
+        is_active:
+          type: boolean
     PatchedRoomRequest:
       type: object
       properties:
@@ -5750,8 +6861,23 @@ components:
           type: string
         is_active:
           type: boolean
+        image:
+          type: string
+          format: binary
+          writeOnly: true
+          nullable: true
+          description: Optional room photo (multipart). Becomes the room's primary
+            image.
     PatchedRoomTypeAdminRequest:
       type: object
+      description: |-
+        Staff CRUD for room types, including the cover image.
+
+        The data model stores room-type photos in the related ``RoomTypeImage``
+        gallery, so this serializer does NOT add a duplicate image column. Instead
+        it exposes a write-only ``image`` upload that becomes the gallery's primary
+        (cover) image, which is what the dashboard form submits as multipart. The
+        existing ``images`` array and the dedicated image endpoints are untouched.
       properties:
         name:
           type: string
@@ -5811,9 +6937,28 @@ components:
           maximum: 9223372036854775807
           minimum: 0
           format: int64
+        image:
+          type: string
+          format: binary
+          writeOnly: true
+          nullable: true
+          description: Cover image upload (multipart). Becomes the primary gallery
+            image.
+        image_alt_text:
+          type: string
+          writeOnly: true
+          description: Alt text stored with the uploaded cover image.
+          maxLength: 200
+        remove_image:
+          type: boolean
+          writeOnly: true
+          description: Set true to delete the current cover image.
     PatchedRoomTypeImageRequest:
       type: object
       properties:
+        image:
+          type: string
+          format: binary
         alt_text:
           type: string
           maxLength: 200
@@ -5840,6 +6985,8 @@ components:
         reference:
           type: string
           readOnly: true
+          description: Internal payment reference. For Paystack payments, this is
+            also the Paystack transaction reference.
         booking_reference:
           type: string
           readOnly: true
@@ -5930,6 +7077,16 @@ components:
         * `PARTIALLY_REFUNDED` - Partially refunded
         * `REFUNDED` - Refunded
         * `FAILED` - Payment failed
+    PreferredContactMethodEnum:
+      enum:
+      - EMAIL
+      - PHONE
+      - WHATSAPP
+      type: string
+      description: |-
+        * `EMAIL` - Email
+        * `PHONE` - Phone
+        * `WHATSAPP` - WhatsApp
     ProfileUpdate:
       type: object
       properties:
@@ -5970,6 +7127,86 @@ components:
       required:
       - first_name
       - last_name
+    PublicCancellationStatus:
+      type: object
+      properties:
+        cancellation_reference:
+          type: string
+          nullable: true
+          maxLength: 60
+        booking_reference:
+          type: string
+          maxLength: 60
+        payment_reference:
+          type: string
+          description: Guest-supplied Paystack transaction/payment reference, if available.
+          maxLength: 80
+        cancellation_status:
+          $ref: '#/components/schemas/CancellationStatusEnum'
+        status_label:
+          type: string
+          readOnly: true
+        booking_status:
+          type: string
+          nullable: true
+          readOnly: true
+        refund_status:
+          $ref: '#/components/schemas/RefundStatusEnum'
+        refund_amount:
+          type: string
+          readOnly: true
+        refund_reference:
+          type: string
+          readOnly: true
+        payment_provider_reference:
+          type: string
+          readOnly: true
+        message:
+          type: string
+          readOnly: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - booking_status
+      - created_at
+      - message
+      - payment_provider_reference
+      - refund_amount
+      - refund_reference
+      - status_label
+      - updated_at
+    PublicRoomOption:
+      type: object
+      description: |-
+        Public, deliberately minimal view of one physical room.
+
+        Only what a guest needs to pick "Room 203": its stable id, its number, its
+        floor and — when dates are supplied — whether the availability engine says
+        it is free. Housekeeping state, notes and internal flags stay private.
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        room_number:
+          type: string
+          readOnly: true
+        floor:
+          type: integer
+          readOnly: true
+        available:
+          type: string
+          readOnly: true
+      required:
+      - available
+      - floor
+      - id
+      - room_number
     QuoteRequest:
       type: object
       properties:
@@ -6061,6 +7298,13 @@ components:
           default: false
     RecordOfflinePayment:
       type: object
+      description: |-
+        Front-desk payment capture (cash / POS / bank transfer).
+
+        The amount is validated here for shape only — whether it is *acceptable*
+        (i.e. not more than the booking's outstanding balance) is decided by the
+        payment service against the database row, never against anything the
+        browser computed.
       properties:
         booking_reference:
           type: string
@@ -6073,6 +7317,7 @@ components:
         notes:
           type: string
           default: ''
+          maxLength: 255
       required:
       - amount
       - booking_reference
@@ -6089,6 +7334,13 @@ components:
         * `BANK_TRANSFER` - BANK_TRANSFER
     RecordOfflinePaymentRequest:
       type: object
+      description: |-
+        Front-desk payment capture (cash / POS / bank transfer).
+
+        The amount is validated here for shape only — whether it is *acceptable*
+        (i.e. not more than the booking's outstanding balance) is decided by the
+        payment service against the database row, never against anything the
+        browser computed.
       properties:
         booking_reference:
           type: string
@@ -6102,10 +7354,123 @@ components:
         notes:
           type: string
           default: ''
+          maxLength: 255
       required:
       - amount
       - booking_reference
       - provider
+    Refund:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        booking_reference:
+          type: string
+          readOnly: true
+        payment_reference:
+          type: string
+          readOnly: true
+        cancellation_reference:
+          type: string
+          readOnly: true
+        amount:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,10}(?:\.\d{0,2})?$
+          readOnly: true
+        currency:
+          type: string
+          readOnly: true
+        status:
+          allOf:
+          - $ref: '#/components/schemas/RefundStatusEnum'
+          readOnly: true
+        paystack_transaction_id:
+          type: string
+          readOnly: true
+        paystack_transaction_reference:
+          type: string
+          readOnly: true
+        paystack_refund_id:
+          type: string
+          readOnly: true
+        paystack_refund_reference:
+          type: string
+          readOnly: true
+        customer_note:
+          type: string
+          readOnly: true
+        merchant_note:
+          type: string
+          readOnly: true
+        failure_reason:
+          type: string
+          readOnly: true
+        requested_by_email:
+          type: string
+          readOnly: true
+        submitted_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        processed_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        failed_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - amount
+      - booking_reference
+      - cancellation_reference
+      - created_at
+      - currency
+      - customer_note
+      - failed_at
+      - failure_reason
+      - id
+      - merchant_note
+      - payment_reference
+      - paystack_refund_id
+      - paystack_refund_reference
+      - paystack_transaction_id
+      - paystack_transaction_reference
+      - processed_at
+      - requested_by_email
+      - status
+      - submitted_at
+    RefundStatusEnum:
+      enum:
+      - NONE
+      - NOT_REQUIRED
+      - DUE
+      - MANUAL_REQUIRED
+      - PENDING
+      - PROCESSING
+      - PROCESSED
+      - FAILED
+      - NEEDS_ATTENTION
+      type: string
+      description: |-
+        * `NONE` - No refund reviewed
+        * `NOT_REQUIRED` - No refund required
+        * `DUE` - Refund due
+        * `MANUAL_REQUIRED` - Manual refund required
+        * `PENDING` - Refund pending
+        * `PROCESSING` - Refund processing
+        * `PROCESSED` - Refund processed
+        * `FAILED` - Refund failed
+        * `NEEDS_ATTENTION` - Needs attention
     Register:
       type: object
       properties:
@@ -6188,6 +7553,17 @@ components:
         room_type_slug:
           type: string
           readOnly: true
+        room_type_base_price:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,10}(?:\.\d{0,2})?$
+          readOnly: true
+        room_type_max_guests:
+          type: integer
+          readOnly: true
+        room_type_is_active:
+          type: boolean
+          readOnly: true
         floor:
           type: integer
           maximum: 9223372036854775807
@@ -6195,12 +7571,29 @@ components:
           format: int64
         status:
           $ref: '#/components/schemas/RoomStatusEnum'
+        effective_status:
+          type: string
+          description: |-
+            Reservation-aware status for tonight (spec §12).
+
+            Operational blocks (maintenance / out-of-service) win; otherwise a
+            checked-in stay ⇒ OCCUPIED, an active reservation covering tonight ⇒
+            RESERVED, else AVAILABLE. Uses the annotations computed by the admin
+            viewset from the authoritative availability engine; falls back to the
+            raw operational status when annotations are absent.
+          readOnly: true
         housekeeping_status:
           $ref: '#/components/schemas/HousekeepingStatusEnum'
         notes:
           type: string
         is_active:
           type: boolean
+        images:
+          type: string
+          readOnly: true
+        primary_image_url:
+          type: string
+          readOnly: true
         created_at:
           type: string
           format: date-time
@@ -6211,12 +7604,72 @@ components:
           readOnly: true
       required:
       - created_at
+      - effective_status
       - id
+      - images
+      - primary_image_url
       - room_number
       - room_type
+      - room_type_base_price
+      - room_type_is_active
+      - room_type_max_guests
       - room_type_name
       - room_type_slug
       - updated_at
+    RoomImage:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        image:
+          type: string
+          format: uri
+        image_url:
+          type: string
+          readOnly: true
+        alt_text:
+          type: string
+          maxLength: 200
+        caption:
+          type: string
+          maxLength: 200
+        display_order:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: 0
+          format: int64
+        is_primary:
+          type: boolean
+        is_active:
+          type: boolean
+      required:
+      - id
+      - image
+      - image_url
+    RoomImageRequest:
+      type: object
+      properties:
+        image:
+          type: string
+          format: binary
+        alt_text:
+          type: string
+          maxLength: 200
+        caption:
+          type: string
+          maxLength: 200
+        display_order:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: 0
+          format: int64
+        is_primary:
+          type: boolean
+        is_active:
+          type: boolean
+      required:
+      - image
     RoomRequest:
       type: object
       properties:
@@ -6239,6 +7692,13 @@ components:
           type: string
         is_active:
           type: boolean
+        image:
+          type: string
+          format: binary
+          writeOnly: true
+          nullable: true
+          description: Optional room photo (multipart). Becomes the room's primary
+            image.
       required:
       - room_number
       - room_type
@@ -6258,6 +7718,14 @@ components:
         * `OUT_OF_SERVICE` - Out of service
     RoomTypeAdmin:
       type: object
+      description: |-
+        Staff CRUD for room types, including the cover image.
+
+        The data model stores room-type photos in the related ``RoomTypeImage``
+        gallery, so this serializer does NOT add a duplicate image column. Instead
+        it exposes a write-only ``image`` upload that becomes the gallery's primary
+        (cover) image, which is what the dashboard form submits as multipart. The
+        existing ``images`` array and the dedicated image endpoints are untouched.
       properties:
         id:
           type: integer
@@ -6331,6 +7799,9 @@ components:
         room_count:
           type: integer
           readOnly: true
+        primary_image_url:
+          type: string
+          readOnly: true
         created_at:
           type: string
           format: date-time
@@ -6345,11 +7816,20 @@ components:
       - id
       - images
       - name
+      - primary_image_url
       - room_count
       - slug
       - updated_at
     RoomTypeAdminRequest:
       type: object
+      description: |-
+        Staff CRUD for room types, including the cover image.
+
+        The data model stores room-type photos in the related ``RoomTypeImage``
+        gallery, so this serializer does NOT add a duplicate image column. Instead
+        it exposes a write-only ``image`` upload that becomes the gallery's primary
+        (cover) image, which is what the dashboard form submits as multipart. The
+        existing ``images`` array and the dedicated image endpoints are untouched.
       properties:
         name:
           type: string
@@ -6409,6 +7889,22 @@ components:
           maximum: 9223372036854775807
           minimum: 0
           format: int64
+        image:
+          type: string
+          format: binary
+          writeOnly: true
+          nullable: true
+          description: Cover image upload (multipart). Becomes the primary gallery
+            image.
+        image_alt_text:
+          type: string
+          writeOnly: true
+          description: Alt text stored with the uploaded cover image.
+          maxLength: 200
+        remove_image:
+          type: boolean
+          writeOnly: true
+          description: Set true to delete the current cover image.
       required:
       - base_price
       - name
@@ -6494,6 +7990,9 @@ components:
         id:
           type: integer
           readOnly: true
+        image:
+          type: string
+          format: uri
         image_url:
           type: string
           readOnly: true
@@ -6514,10 +8013,14 @@ components:
           type: boolean
       required:
       - id
+      - image
       - image_url
     RoomTypeImageRequest:
       type: object
       properties:
+        image:
+          type: string
+          format: binary
         alt_text:
           type: string
           maxLength: 200
@@ -6533,6 +8036,8 @@ components:
           type: boolean
         is_active:
           type: boolean
+      required:
+      - image
     RoomTypeList:
       type: object
       description: Lightweight representation for catalog/availability lists.
@@ -6653,12 +8158,24 @@ components:
       - BOOKING_CONFIRMED
       - BOOKING_CANCELLED
       - BOOKING_MODIFIED
+      - CANCELLATION_REQUEST_CREATED
+      - CANCELLATION_REQUEST_REVIEWED
+      - CANCELLATION_REQUEST_APPROVED
+      - CANCELLATION_REQUEST_REJECTED
       - PAYMENT_SUCCESS
       - PAYMENT_FAILED
       - PAYMENT_REFUNDED
       - PAYMENT_DISPUTED
+      - REFUND_REQUESTED
+      - REFUND_PENDING
+      - REFUND_PROCESSING
+      - REFUND_PROCESSED
+      - REFUND_FAILED
+      - REFUND_NEEDS_ATTENTION
       - CHECK_IN
       - CHECK_OUT
+      - CHECKOUT_DUE_SOON
+      - CHECKOUT_AUTO
       - ENQUIRY_NEW
       - SYSTEM
       type: string
@@ -6667,12 +8184,24 @@ components:
         * `BOOKING_CONFIRMED` - Booking confirmed
         * `BOOKING_CANCELLED` - Booking cancelled
         * `BOOKING_MODIFIED` - Booking modified
+        * `CANCELLATION_REQUEST_CREATED` - Cancellation request created
+        * `CANCELLATION_REQUEST_REVIEWED` - Cancellation request reviewed
+        * `CANCELLATION_REQUEST_APPROVED` - Cancellation request approved
+        * `CANCELLATION_REQUEST_REJECTED` - Cancellation request rejected
         * `PAYMENT_SUCCESS` - Payment received
         * `PAYMENT_FAILED` - Payment failed
         * `PAYMENT_REFUNDED` - Payment refunded
         * `PAYMENT_DISPUTED` - Payment disputed
+        * `REFUND_REQUESTED` - Refund requested
+        * `REFUND_PENDING` - Refund pending
+        * `REFUND_PROCESSING` - Refund processing
+        * `REFUND_PROCESSED` - Refund processed
+        * `REFUND_FAILED` - Refund failed
+        * `REFUND_NEEDS_ATTENTION` - Refund needs attention
         * `CHECK_IN` - Guest checked in
         * `CHECK_OUT` - Guest checked out
+        * `CHECKOUT_DUE_SOON` - Checkout due soon
+        * `CHECKOUT_AUTO` - Automatic checkout
         * `ENQUIRY_NEW` - New enquiry
         * `SYSTEM` - System
     UnreadCount:

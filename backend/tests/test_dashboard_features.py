@@ -865,7 +865,7 @@ class EnquirySubmissionTests(BaseAPITestCase):
         """Side effects must never roll back a valid enquiry."""
         self.unauth()
         with mock.patch(
-            "apps.enquiries.views.notify_staff", side_effect=RuntimeError("fan-out down")
+            "apps.enquiries.services.notify_staff", side_effect=RuntimeError("fan-out down")
         ):
             self.assertEqual(self.submit().status_code, 201)
         self.assertEqual(Enquiry.objects.count(), 1)

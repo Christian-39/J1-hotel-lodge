@@ -50,7 +50,7 @@
   <div class="filter-bar">
     <div class="field"><label class="field-label" for="p-q">Search</label><input class="input" id="p-q" placeholder="Reference, booking, guest"></div>
     <div class="field"><label class="field-label" for="p-method">Method</label><select class="select" id="p-method"><option value="">All</option><option value="PAYSTACK">Paystack</option><option value="CASH">Cash</option><option value="POS">POS</option><option value="BANK_TRANSFER">Bank transfer</option></select></div>
-    <div class="field"><label class="field-label" for="p-status">Status</label><select class="select" id="p-status"><option value="">All</option><option value="SUCCESS">Success</option><option value="PENDING">Pending</option><option value="FAILED">Failed</option><option value="REFUNDED">Refunded</option></select></div>
+    <div class="field"><label class="field-label" for="p-status">Status</label><select class="select" id="p-status"><option value="">All</option><option value="SUCCESS">Success</option><option value="PENDING">Pending</option><option value="FAILED">Failed</option><option value="PARTIALLY_REFUNDED">Partially refunded</option><option value="REFUNDED">Refunded</option></select></div>
     <div class="field"><button class="btn btn-sm" id="p-apply" type="button">Apply</button></div>
   </div>
 
@@ -71,6 +71,15 @@
     <div class="table-wrap"><table class="table">
       <thead><tr><th>Payment ref</th><th>Booking</th><th class="hide-sm">Guest</th><th>Method</th><th class="hide-sm">Date</th><th>Amount</th><th>Status</th><th class="hide-sm">By</th></tr></thead>
       <tbody data-tbody="payments"></tbody>
+    </table></div>
+  </div>
+</section>
+<section class="panel" style="margin-top:1.25rem;">
+  <div class="panel-head"><h2>Refund lifecycle</h2><div class="panel-actions"><select class="select" id="r-status" style="min-width:170px;font-size:var(--fs-sm);padding:0.5em 0.8em;"><option value="">All refunds</option><option value="PENDING">Pending</option><option value="PROCESSING">Processing</option><option value="PROCESSED">Processed</option><option value="FAILED">Failed</option><option value="NEEDS_ATTENTION">Needs attention</option></select></div></div>
+  <div class="panel-body no-pad">
+    <div class="table-wrap"><table class="table">
+      <thead><tr><th>Refund</th><th>Booking</th><th>Payment ref</th><th>Amount</th><th>Status</th><th class="hide-sm">Submitted</th><th class="hide-sm">Paystack refund</th></tr></thead>
+      <tbody data-tbody="refunds"></tbody>
     </table></div>
   </div>
 </section>
@@ -128,8 +137,31 @@
   }
   load();
 
+  var refundBody=document.querySelector("[data-tbody=refunds]");
+  function renderRefunds(list){
+    if(!refundBody) return;
+    if(!list.length){ refundBody.innerHTML='<tr><td colspan="7"><div class="empty-state"><span data-icon="rotateCcw"></span><h3>No refunds</h3><p>Paystack refund attempts appear here after staff submit an approved cancellation refund.</p></div></td></tr>'; JONE.icons.inject(refundBody); return; }
+    refundBody.innerHTML=list.map(function(r){
+      var b=r.booking_reference;
+      return '<tr><td>#'+JONE.esc(r.id||"—")+'</td><td>'+(b?'<a href="booking-details.html?ref='+encodeURIComponent(b)+'">'+JONE.esc(b)+'</a>':"—")+'</td><td>'+JONE.esc(r.payment_reference||"—")+'</td><td class="num">'+JONE.esc(JONE.formatNaira(r.amount))+'</td><td>'+JONE.dashboard.statusPill(r.status)+'</td><td class="hide-sm">'+JONE.esc(r.submitted_at?JONE.formatDateTime(r.submitted_at):"—")+'</td><td class="hide-sm">'+JONE.esc(r.paystack_refund_reference||r.paystack_refund_id||"Awaiting Paystack")+'</td></tr>';
+    }).join("");
+  }
+  async function loadRefunds(){
+    if(!refundBody) return;
+    DATA.loading(refundBody);
+    try{
+      var params={ page_size:25 };
+      var rs=document.getElementById("r-status"); if(rs&&rs.value) params.status=rs.value;
+      var res=await window.API.listRefunds(params);
+      var list=window.API.normalizeList?window.API.normalizeList(res.data,res.pagination).items:((res.data&&res.data.results)||res.data||[]);
+      renderRefunds(list||[]);
+    }catch(err){ DATA.error(refundBody,"Refunds couldn't be loaded",(err&&err.message)||"Please try again in a moment.",7); }
+  }
+  loadRefunds();
+
   var applyBtn=document.getElementById("p-apply");
   if(applyBtn) applyBtn.addEventListener("click",load);
+  var refundStatus=document.getElementById("r-status"); if(refundStatus) refundStatus.addEventListener("change",loadRefunds);
   var qEl=document.getElementById("p-q");
   if(qEl) qEl.addEventListener("input",JONE.debounce(load,300));
 

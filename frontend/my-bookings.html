@@ -204,7 +204,8 @@
      { id, booking_reference, room_type_name, room_type_slug, check_in, check_out,
        nights, number_of_rooms, number_of_guests, total_amount, amount_paid,
        amount_due, currency, status, payment_status, created_at, expires_at }
-     Manage/cancel/receipt all go through the backend-authorized endpoints. */
+     Manage/receipt actions go through backend-authorized endpoints; cancellation
+     requests route to Contact for staff review. */
 
   var listEl = document.getElementById("stays-list");
   var errEl = document.getElementById("stays-error");
@@ -262,7 +263,8 @@
       acts = '<a class="btn btn-sm btn-accent" href="' + manage + '"><span data-icon="creditCard" data-size="14"></span> Pay ' + JONE.formatNaira(b.amount_due) + '</a>' + acts;
     }
     if (active) {
-      acts += '<button class="btn btn-sm btn-outline" type="button" data-cancel="' + JONE.esc(b.booking_reference) + '"><span data-icon="x" data-size="14"></span> Cancel</button>';
+      var cancelReq = 'contact.html?type=cancellation&booking_reference=' + encodeURIComponent(b.booking_reference) + '&email=' + encodeURIComponent((b.guest && b.guest.email) || '');
+      acts += '<a class="btn btn-sm btn-outline" href="' + cancelReq + '"><span data-icon="message" data-size="14"></span> Request cancellation</a>';
     }
     return '<article class="card card-pad" style="margin-bottom:1rem;">' +
       '<div style="display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;align-items:flex-start;">' +
@@ -332,37 +334,8 @@
     if (e.target.closest("[data-retry]")) load();
   });
 
-  /* Cancel — the backend decides whether it's still allowed (can_cancel on the
-     detail endpoint). Never faked, never assumed. */
-  listEl.addEventListener("click", function (e) {
-    var btn = e.target.closest("[data-cancel]");
-    if (!btn) return;
-    var ref = btn.getAttribute("data-cancel");
-    btn.disabled = true;
-    window.API.getBooking(ref, accessOpts()).then(function (res) {
-      var b = res.data || {};
-      if (b.can_cancel === false) {
-        JONE.ui.toast("This booking can no longer be cancelled online. Please contact the hotel.", "info");
-        btn.disabled = false;
-        return;
-      }
-      return JONE.ui.confirm({
-        title: "Cancel this stay?",
-        message: (b.room_type_name || "Your booking") + ", " + JONE.formatDate(b.check_in, "mid") + " \u2192 " + JONE.formatDate(b.check_out, "mid") + ". Refunds follow the hotel's cancellation policy.",
-        confirmText: "Cancel booking",
-        danger: true
-      }).then(function (yes) {
-        if (!yes) { btn.disabled = false; return null; }
-        return window.API.cancelBooking(ref, "Cancelled by guest from My stays", accessOpts()).then(function () {
-          JONE.ui.toast("Booking " + ref + " cancelled.", "success");
-          load();
-        });
-      });
-    }).catch(function (err) {
-      JONE.ui.toast((err && err.message) || "Couldn't cancel this booking.", "error");
-      btn.disabled = false;
-    });
-  });
+  /* Guests cannot directly cancel confirmed/paid bookings. The card action
+     above routes them to the structured Contact cancellation/refund request. */
 
   // Arriving from the secure email link with both credentials? Load at once.
   if (accessRef && accessToken) load();

@@ -531,8 +531,52 @@ def expire_stale_pending_bookings(now=None):
 # ---------------------------------------------------------------------------
 # Cancellation
 # ---------------------------------------------------------------------------
+def calculate_cancellation_policy(booking: Booking, *, now=None, settings_obj=None):
+    """Return policy math without changing booking/payment/refund state.
+
+    The calculated refund is an amount due for staff review; it is NOT an
+    indication that any refund has been submitted or processed. Actual refund
+    lifecycle lives on payments.Refund and Paystack webhooks.
+    """
+    from decimal import Decimal
+
+    settings_obj = settings_obj or HotelSettings.get_settings()
+    now = now or timezone.now()
+    check_in_dt = combine_hotel_datetime(booking.check_in, settings_obj.check_in_time)
+    deadline = check_in_dt - timedelta(hours=settings_obj.cancellation_deadline_hours)
+    amount_paid = Decimal(booking.amount_paid or 0).quantize(Decimal("0.01"))
+    fee_percent = Decimal(settings_obj.cancellation_fee_percent or 0).quantize(Decimal("0.01"))
+    fee = (amount_paid * fee_percent / Decimal("100")).quantize(Decimal("0.01"))
+    refund_amount = max(amount_paid - fee, Decimal("0.00"))
+    return {
+        "deadline": deadline,
+        "within_free_cancellation_window": now <= deadline,
+        "deadline_hours": settings_obj.cancellation_deadline_hours,
+        "fee_percent": fee_percent,
+        "amount_paid": amount_paid,
+        "cancellation_fee": fee,
+        "refund_amount": refund_amount,
+    }
+
+
 @transaction.atomic
-def cancel_booking(booking: Booking, *, reason="", by_user=None, staff=False, request=None):
+def cancel_booking(
+    booking: Booking, *, reason="", by_user=None, staff=False, request=None,
+    send_guest_email=True, cancellation_request=None,
+):
+    """Cancel a booking safely without pretending refunds are complete.
+
+    Guests no longer cancel directly. Public cancellation requests are captured
+    through the Contact page and reviewed by staff. This routine is therefore
+    for staff/system use and only updates BOOKING state. Payment/refund state is
+    reconciled separately by the payments service and Paystack webhooks.
+    """
+    if not staff:
+        raise CancellationNotAllowedError(
+            "Online self-cancellation is no longer available. Please submit a Cancellation / Refund Request from the Contact page."
+        )
+
+    booking = Booking.objects.select_for_update().select_related("guest", "guest__user", "room_type").get(pk=booking.pk)
     booking = refresh_expired_pending(booking)
     if booking.status == Booking.Status.CANCELLED:
         return booking  # idempotent: cancelling twice is a no-op
@@ -541,34 +585,14 @@ def cancel_booking(booking: Booking, *, reason="", by_user=None, staff=False, re
             f"A booking with status {booking.get_status_display()} cannot be cancelled."
         )
 
-    settings_obj = HotelSettings.get_settings()
-    if not staff:
-        # Guests are bound by the configured cancellation deadline.
-        check_in_dt = combine_hotel_datetime(booking.check_in, settings_obj.check_in_time)
-        deadline = check_in_dt - timedelta(hours=settings_obj.cancellation_deadline_hours)
-        if timezone.now() > deadline:
-            raise CancellationNotAllowedError(
-                f"Free cancellation ended {int(settings_obj.cancellation_deadline_hours)}h before check-in. "
-                "Please contact the hotel directly."
-            )
-
-    refund_due = 0
-    if booking.amount_paid > 0:
-        fee = booking.amount_paid * settings_obj.cancellation_fee_percent / 100
-        refund_due = booking.amount_paid - fee
-        booking.refund_amount = refund_due
-        booking.payment_status = (
-            Booking.PaymentStatus.REFUNDED
-            if refund_due >= booking.amount_paid
-            else Booking.PaymentStatus.PARTIALLY_REFUNDED
-        )
+    policy = calculate_cancellation_policy(booking)
+    refund_due = policy["refund_amount"]
+    previous_status = booking.status
 
     booking.status = Booking.Status.CANCELLED
     booking.cancelled_at = timezone.now()
-    booking.cancellation_reason = reason or ("Cancelled by staff" if staff else "Cancelled by guest")
-    booking.save(
-        update_fields=["status", "cancelled_at", "cancellation_reason", "payment_status", "refund_amount", "updated_at"]
-    )
+    booking.cancellation_reason = reason or "Cancelled by staff"
+    booking.save(update_fields=["status", "cancelled_at", "cancellation_reason", "updated_at"])
 
     log_action(
         actor=by_user,
@@ -576,18 +600,22 @@ def cancel_booking(booking: Booking, *, reason="", by_user=None, staff=False, re
         instance=booking,
         metadata={
             "reference": booking.booking_reference,
-            "by": "staff" if staff else "guest",
-            "refund_due": str(refund_due),
+            "by": "staff",
+            "previous_status": previous_status,
+            "new_status": booking.status,
+            "calculated_refund_due": str(refund_due),
+            "calculated_cancellation_fee": str(policy["cancellation_fee"]),
+            "cancellation_request": getattr(cancellation_request, "cancellation_reference", ""),
         },
         request=request,
-        summary=f"Booking {booking.booking_reference} cancelled (refund due: {refund_due})",
+        summary=f"Booking {booking.booking_reference} cancelled (refund due for review: {refund_due})",
     )
     notify_staff(
         type="BOOKING_CANCELLED",
         title=f"Booking {booking.booking_reference} cancelled",
         message=(
-            f"Cancelled by {'staff' if staff else 'guest'}."
-            + (f" Refund due: {booking.currency} {refund_due}." if refund_due > 0 else "")
+            "Cancelled by staff."
+            + (f" Calculated refund due for review: {booking.currency} {refund_due}." if refund_due > 0 else "")
         ),
         link=staff_booking_link(booking),
     )
@@ -596,27 +624,25 @@ def cancel_booking(booking: Booking, *, reason="", by_user=None, staff=False, re
             [booking.guest.user],
             type="BOOKING_CANCELLED",
             title=f"Booking {booking.booking_reference} cancelled",
-            message="Your booking has been cancelled.",
+            message="Your booking has been cancelled. Refund status is tracked separately.",
             link=guest_booking_link(booking),
         )
-    hotel = HotelSettings.get_settings()
-    transaction.on_commit(
-        lambda: send_email_safe(
-            subject=f"Booking cancelled: {booking.booking_reference} — {hotel.hotel_name}",
-            message=(
-                f"Hello {booking.guest.first_name},\n\n"
-                f"Booking {booking.booking_reference} has been cancelled."
-                + (
-                    f"\nA refund of {booking.currency} {refund_due} is due and will be processed by the hotel."
-                    if refund_due > 0
-                    else ""
-                )
-                + f"\n\n{hotel.hotel_name} · {hotel.phone}"
-            ),
-            recipients=[booking.guest.email],
+    if send_guest_email and booking.guest.email:
+        hotel = HotelSettings.get_settings()
+        transaction.on_commit(
+            lambda: send_email_safe(
+                subject=f"Booking cancelled: {booking.booking_reference} — {hotel.hotel_name}",
+                message=(
+                    f"Hello {booking.guest.first_name},\n\n"
+                    f"Booking {booking.booking_reference} has been cancelled.\n\n"
+                    "Refunds, if applicable, are reviewed and processed separately. "
+                    "You will receive a separate update only when a refund is submitted or confirmed.\n\n"
+                    f"{hotel.hotel_name} · {hotel.phone}"
+                ),
+                recipients=[booking.guest.email],
+            )
         )
-    )
-    logger.info("Booking cancelled: %s (staff=%s, refund=%s)", booking.booking_reference, staff, refund_due)
+    logger.info("Booking cancelled: %s (staff=%s, calculated_refund=%s)", booking.booking_reference, staff, refund_due)
     return booking
 
 

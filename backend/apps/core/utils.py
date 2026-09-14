@@ -24,6 +24,10 @@ def generate_payment_reference() -> str:
     return f"J1P-{timezone.now():%Y%m%d}-{secrets.token_hex(5).upper()}"
 
 
+def generate_cancellation_reference() -> str:
+    return f"J1C-{timezone.now():%Y%m%d}-{secrets.token_hex(5).upper()}"
+
+
 def money(value) -> str:
     """Canonical API representation of a Decimal money amount."""
     from decimal import Decimal

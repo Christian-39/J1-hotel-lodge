@@ -1,6 +1,6 @@
 from rest_framework import serializers
 
-from .models import Payment
+from .models import Payment, Refund
 
 
 class PaymentSerializer(serializers.ModelSerializer):
@@ -21,6 +21,24 @@ class PaymentSerializer(serializers.ModelSerializer):
 
     def get_staff_email(self, obj):
         return obj.user.email if obj.user_id else None
+
+
+class RefundSerializer(serializers.ModelSerializer):
+    booking_reference = serializers.CharField(source="booking.booking_reference", read_only=True)
+    payment_reference = serializers.CharField(source="payment.reference", read_only=True)
+    cancellation_reference = serializers.CharField(source="cancellation_request.cancellation_reference", read_only=True)
+    requested_by_email = serializers.CharField(source="requested_by.email", read_only=True)
+
+    class Meta:
+        model = Refund
+        fields = [
+            "id", "booking_reference", "payment_reference", "cancellation_reference",
+            "amount", "currency", "status", "paystack_transaction_id",
+            "paystack_transaction_reference", "paystack_refund_id", "paystack_refund_reference",
+            "customer_note", "merchant_note", "failure_reason", "requested_by_email",
+            "submitted_at", "processed_at", "failed_at", "created_at",
+        ]
+        read_only_fields = fields
 
 
 class InitializePaymentSerializer(serializers.Serializer):

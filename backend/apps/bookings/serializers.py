@@ -122,7 +122,10 @@ class BookingDetailSerializer(BookingMoneyMixin, serializers.ModelSerializer):
         )
 
     def get_can_cancel(self, obj):
-        return obj.status in (Booking.Status.PENDING, Booking.Status.CONFIRMED) and not obj.is_expired_pending
+        # Public/guest self-cancellation is intentionally disabled. Guests must
+        # submit a structured cancellation/refund request from the Contact page
+        # so staff can review cancellation policy and Paystack refund state.
+        return False
 
 
 # ---------------------------------------------------------------------------

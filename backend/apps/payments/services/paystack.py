@@ -109,3 +109,41 @@ def verify_transaction(reference):
         logger.warning("Paystack verify rejected: message=%s reference=%s", payload.get("message"), reference)
         raise PaymentError("The transaction could not be verified with the payment provider.")
     return payload
+
+
+def create_refund(*, transaction, amount_kobo=None, currency="NGN", customer_note="", merchant_note=""):
+    """POST /refund server-side and return the validated Paystack refund data.
+
+    ``transaction`` must be the original Paystack transaction reference or ID.
+    ``amount_kobo`` is omitted only for a full refund; partial refunds pass the
+    integer amount in the currency subunit. The secret key never leaves the
+    backend.
+    """
+    body = {"transaction": str(transaction), "currency": currency or "NGN"}
+    if amount_kobo is not None:
+        body["amount"] = int(amount_kobo)
+    if customer_note:
+        body["customer_note"] = str(customer_note)[:500]
+    if merchant_note:
+        body["merchant_note"] = str(merchant_note)[:500]
+
+    try:
+        response = requests.post(
+            f"{BASE_URL}/refund",
+            json=body,
+            headers=_headers(),
+            timeout=TIMEOUT,
+        )
+    except requests.RequestException as exc:
+        logger.error("Paystack refund unreachable: %s", exc.__class__.__name__)
+        raise PaymentGatewayError("Unable to submit refund. Please try again.") from exc
+
+    payload = _json(response, "refund")
+    data = payload.get("data")
+    if response.status_code not in (200, 201) or payload.get("status") is not True or not isinstance(data, dict):
+        logger.warning(
+            "Paystack refund rejected/invalid: HTTP=%s status=%r message=%s transaction=%s",
+            response.status_code, payload.get("status"), payload.get("message"), transaction,
+        )
+        raise PaymentGatewayError("Unable to submit refund to Paystack. Please review the transaction and try again.")
+    return data

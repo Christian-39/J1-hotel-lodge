@@ -10,8 +10,8 @@ from apps.core.permissions import IsStaffRole
 from apps.core.responses import success_response
 from apps.core.utils import money
 
-from .models import Payment
-from .serializers import PaymentSerializer, RecordOfflinePaymentSerializer
+from .models import Payment, Refund
+from .serializers import PaymentSerializer, RecordOfflinePaymentSerializer, RefundSerializer
 from .services import payment_service
 
 
@@ -63,6 +63,47 @@ class AdminPaymentDetailView(generics.RetrieveAPIView):
         if payment is None:
             raise NotFound()
         return payment
+
+    def retrieve(self, request, *args, **kwargs):
+        return success_response(self.get_serializer(self.get_object()).data)
+
+
+@extend_schema(tags=["Admin · Payments"], summary="List refunds and their Paystack reconciliation status")
+class AdminRefundListView(generics.ListAPIView):
+    permission_classes = [IsStaffRole]
+    serializer_class = RefundSerializer
+
+    def get_queryset(self):
+        qs = Refund.objects.select_related(
+            "booking", "booking__guest", "payment", "cancellation_request", "requested_by"
+        ).order_by("-created_at")
+        params = self.request.query_params
+        if status_param := params.get("status"):
+            qs = qs.filter(status=status_param.upper())
+        if booking_reference := params.get("booking_reference"):
+            qs = qs.filter(booking__booking_reference=booking_reference)
+        if payment_reference := params.get("payment_reference"):
+            qs = qs.filter(payment__reference=payment_reference)
+        if search := params.get("search"):
+            qs = qs.filter(
+                Q(booking__booking_reference__icontains=search)
+                | Q(payment__reference__icontains=search)
+                | Q(payment__transaction_id__icontains=search)
+                | Q(paystack_refund_id__icontains=search)
+                | Q(paystack_refund_reference__icontains=search)
+                | Q(cancellation_request__cancellation_reference__icontains=search)
+                | Q(booking__guest__email__icontains=search)
+            )
+        return qs
+
+
+@extend_schema(tags=["Admin · Payments"], summary="Retrieve a refund")
+class AdminRefundDetailView(generics.RetrieveAPIView):
+    permission_classes = [IsStaffRole]
+    serializer_class = RefundSerializer
+
+    def get_queryset(self):
+        return Refund.objects.select_related("booking", "booking__guest", "payment", "cancellation_request", "requested_by")
 
     def retrieve(self, request, *args, **kwargs):
         return success_response(self.get_serializer(self.get_object()).data)

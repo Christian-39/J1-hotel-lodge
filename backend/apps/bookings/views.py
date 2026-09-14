@@ -13,6 +13,7 @@ from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 
 from apps.core.exceptions import InvalidDatesError
+from apps.core.exceptions import CancellationNotAllowedError
 from apps.core.responses import success_response
 from apps.hotel.models import HotelSettings
 
@@ -228,24 +229,16 @@ class BookingDetailView(_OwnedBookingMixin, APIView):
         )
 
 
-@extend_schema(tags=["Bookings"], summary="Cancel my booking")
+@extend_schema(tags=["Bookings"], summary="Guest self-cancellation is disabled; submit Contact cancellation request")
 class BookingCancelView(_OwnedBookingMixin, APIView):
     serializer_class = CancelBookingSerializer
 
     def post(self, request, lookup):
-        booking = self.get_booking()
-        serializer = CancelBookingSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        booking = booking_service.cancel_booking(
-            booking,
-            reason=serializer.validated_data.get("reason", ""),
-            by_user=request.user if request.user.is_authenticated else None,
-            staff=False,
-            request=request,
-        )
-        return success_response(
-            BookingDetailSerializer(booking, context={"request": request}).data,
-            message="Booking cancelled.",
+        # Keep the legacy URL non-destructive for older links/clients while
+        # forcing the new Contact-page review workflow for confirmed/paid stays.
+        self.get_booking()  # still enforce owner/guest-token 404 privacy
+        raise CancellationNotAllowedError(
+            "Online self-cancellation is no longer available. Please submit a Cancellation / Refund Request from the Contact page."
         )
 
 

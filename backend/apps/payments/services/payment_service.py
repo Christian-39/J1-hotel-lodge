@@ -14,6 +14,7 @@ from decimal import Decimal, InvalidOperation
 
 from django.conf import settings
 from django.db import transaction
+from django.db.models import Sum
 from django.utils import timezone
 
 from apps.audit.services import log_action
@@ -28,10 +29,11 @@ from apps.core.exceptions import (
     PaymentGatewayError,
     PaymentNotConfiguredError,
 )
+from apps.core.emails import send_email_safe
 from apps.core.utils import generate_payment_reference, money
 from apps.notifications.services import notify_staff, notify_users
 
-from ..models import Payment
+from ..models import Payment, Refund
 from . import paystack
 
 logger = logging.getLogger("apps")
@@ -366,6 +368,491 @@ def process_verification(*, reference, request=None, triggered_by="api"):
 
 
 # ---------------------------------------------------------------------------
+# Refunds
+# ---------------------------------------------------------------------------
+REFUND_EVENT_TO_STATUS = {
+    "refund.pending": Refund.Status.PENDING,
+    "refund.processing": Refund.Status.PROCESSING,
+    "refund.processed": Refund.Status.PROCESSED,
+    "refund.failed": Refund.Status.FAILED,
+    "refund.needs-attention": Refund.Status.NEEDS_ATTENTION,
+}
+REFUND_ACTIVE_STATUSES = [
+    Refund.Status.PENDING,
+    Refund.Status.PROCESSING,
+    Refund.Status.NEEDS_ATTENTION,
+]
+
+
+def _decimal_from_kobo(value):
+    try:
+        return (Decimal(int(value)) / KOBO_PER_NAIRA).quantize(Decimal("0.01"))
+    except (TypeError, ValueError, InvalidOperation):
+        return None
+
+
+def _normalise_refund_status(value, event=None):
+    if event in REFUND_EVENT_TO_STATUS:
+        return REFUND_EVENT_TO_STATUS[event]
+    status_value = str(value or "").replace("-", "_").upper()
+    aliases = {
+        "PENDING": Refund.Status.PENDING,
+        "PROCESSING": Refund.Status.PROCESSING,
+        "PROCESSED": Refund.Status.PROCESSED,
+        "SUCCESS": Refund.Status.PROCESSED,
+        "SUCCESSFUL": Refund.Status.PROCESSED,
+        "FAILED": Refund.Status.FAILED,
+        "NEEDS_ATTENTION": Refund.Status.NEEDS_ATTENTION,
+        "NEEDS-ATTENTION": Refund.Status.NEEDS_ATTENTION,
+    }
+    return aliases.get(status_value, Refund.Status.PENDING)
+
+
+def _refund_transaction_reference(data):
+    transaction_data = data.get("transaction") if isinstance(data.get("transaction"), dict) else {}
+    return (
+        transaction_data.get("reference")
+        or data.get("transaction_reference")
+        or data.get("transactionReference")
+        or data.get("payment_reference")
+    )
+
+
+def _refund_transaction_id(data):
+    transaction_data = data.get("transaction") if isinstance(data.get("transaction"), dict) else {}
+    value = transaction_data.get("id") or data.get("transaction_id") or data.get("transactionId")
+    return str(value or "")[:60]
+
+
+def _refund_provider_reference(data):
+    # Paystack primarily identifies refunds by id; some API versions include a
+    # refund reference. Never use this as the original payment reference.
+    return str(
+        data.get("refund_reference")
+        or data.get("refundReference")
+        or data.get("reference")
+        or ""
+    )[:120]
+
+
+def _refund_provider_id(data):
+    value = data.get("id") or data.get("refund_id") or data.get("refundId")
+    return str(value or "")[:80]
+
+
+def _provider_amount(data):
+    if "amount" in data:
+        return _decimal_from_kobo(data.get("amount"))
+    return None
+
+
+def _active_refund_total(payment, *, exclude_pk=None):
+    qs = Refund.objects.filter(payment=payment, status__in=REFUND_ACTIVE_STATUSES)
+    if exclude_pk:
+        qs = qs.exclude(pk=exclude_pk)
+    return (qs.aggregate(total=Sum("amount"))["total"] or Decimal("0.00")).quantize(Decimal("0.01"))
+
+
+def _processed_refund_total(payment):
+    return (
+        Refund.objects.filter(payment=payment, status=Refund.Status.PROCESSED)
+        .aggregate(total=Sum("amount"))["total"]
+        or Decimal("0.00")
+    ).quantize(Decimal("0.01"))
+
+
+def _reconcile_payment_and_booking_refunds(payment, *, request=None):
+    """Reflect Paystack-confirmed refunds without mutating gross amount_paid."""
+    payment = Payment.objects.select_related("booking").get(pk=payment.pk)
+    processed_for_payment = _processed_refund_total(payment)
+    if processed_for_payment > 0:
+        new_payment_status = (
+            Payment.Status.REFUNDED
+            if processed_for_payment >= Decimal(payment.amount or 0).quantize(Decimal("0.01"))
+            else Payment.Status.PARTIALLY_REFUNDED
+        )
+        if payment.status != new_payment_status:
+            payment.status = new_payment_status
+            payment.save(update_fields=["status", "updated_at"])
+
+    booking = Booking.objects.select_for_update().get(pk=payment.booking_id)
+    processed_for_booking = (
+        Refund.objects.filter(booking=booking, status=Refund.Status.PROCESSED)
+        .aggregate(total=Sum("amount"))["total"]
+        or Decimal("0.00")
+    ).quantize(Decimal("0.01"))
+    update_fields = []
+    if Decimal(booking.refund_amount or 0).quantize(Decimal("0.01")) != processed_for_booking:
+        booking.refund_amount = processed_for_booking
+        update_fields.append("refund_amount")
+    if processed_for_booking > 0:
+        new_booking_payment_status = (
+            Booking.PaymentStatus.REFUNDED
+            if processed_for_booking >= Decimal(booking.amount_paid or 0).quantize(Decimal("0.01"))
+            else Booking.PaymentStatus.PARTIALLY_REFUNDED
+        )
+        if booking.payment_status != new_booking_payment_status:
+            booking.payment_status = new_booking_payment_status
+            update_fields.append("payment_status")
+    if update_fields:
+        update_fields.append("updated_at")
+        booking.save(update_fields=update_fields)
+
+    return processed_for_payment, processed_for_booking
+
+
+def _mark_refund_status(refund, new_status, *, provider_data=None, failure_reason="", request=None, event_name="", force_notify=False):
+    """Apply a status transition idempotently and send side effects once."""
+    previous_status = refund.status
+    now = timezone.now()
+    provider_data = provider_data or {}
+    metadata = {**(refund.metadata or {})}
+    if event_name:
+        metadata["latest_paystack_event"] = event_name
+    metadata["latest_provider_status"] = provider_data.get("status", "")
+    metadata["latest_provider_seen_at"] = now.isoformat()
+    provider_amount = _provider_amount(provider_data)
+    if provider_amount is not None and provider_amount != Decimal(refund.amount or 0).quantize(Decimal("0.01")):
+        metadata["provider_amount_mismatch"] = {
+            "local_amount": str(refund.amount),
+            "provider_amount": str(provider_amount),
+        }
+
+    refund.status = new_status
+    refund.metadata = metadata
+    if _refund_provider_id(provider_data):
+        refund.paystack_refund_id = _refund_provider_id(provider_data)
+    if _refund_provider_reference(provider_data):
+        refund.paystack_refund_reference = _refund_provider_reference(provider_data)
+    if _refund_transaction_id(provider_data):
+        refund.paystack_transaction_id = _refund_transaction_id(provider_data)
+    if _refund_transaction_reference(provider_data):
+        refund.paystack_transaction_reference = str(_refund_transaction_reference(provider_data))[:120]
+    if new_status in (Refund.Status.PENDING, Refund.Status.PROCESSING) and not refund.submitted_at:
+        refund.submitted_at = now
+    if new_status == Refund.Status.PROCESSED and not refund.processed_at:
+        refund.processed_at = now
+        if provider_data.get("refunded_at"):
+            refund.metadata = {**refund.metadata, "paystack_refunded_at": str(provider_data.get("refunded_at"))}
+    if new_status == Refund.Status.FAILED:
+        refund.failed_at = refund.failed_at or now
+        refund.failure_reason = (failure_reason or provider_data.get("failure_reason") or provider_data.get("gateway_response") or "Paystack marked this refund failed.")[:500]
+    refund.save()
+
+    with transaction.atomic():
+        _reconcile_payment_and_booking_refunds(refund.payment, request=request)
+        # Keep the cancellation request summary in sync, but avoid a module-level
+        # import to prevent a service cycle at import time.
+        if refund.cancellation_request_id:
+            try:
+                from apps.enquiries import services as enquiry_services
+
+                cancellation_request = refund.cancellation_request
+                enquiry_services.sync_refund_summary(cancellation_request)
+            except Exception as exc:  # pragma: no cover - defensive logging only
+                logger.warning("Could not sync cancellation refund summary (%s)", exc.__class__.__name__)
+
+    if previous_status != new_status or force_notify:
+        _notify_refund_status(refund.pk, previous_status, new_status)
+    return refund
+
+
+def _notify_refund_status(refund_pk, previous_status, new_status):
+    try:
+        refund = Refund.objects.select_related("booking", "booking__guest", "booking__guest__user", "cancellation_request").get(pk=refund_pk)
+    except Refund.DoesNotExist:
+        return
+
+    status_titles = {
+        Refund.Status.PENDING: "Refund request submitted to Paystack",
+        Refund.Status.PROCESSING: "Refund is processing at Paystack",
+        Refund.Status.PROCESSED: "Refund processed by Paystack",
+        Refund.Status.FAILED: "Refund failed at Paystack",
+        Refund.Status.NEEDS_ATTENTION: "Refund needs attention in Paystack",
+    }
+    notification_type = {
+        Refund.Status.PENDING: "REFUND_PENDING",
+        Refund.Status.PROCESSING: "REFUND_PROCESSING",
+        Refund.Status.PROCESSED: "REFUND_PROCESSED",
+        Refund.Status.FAILED: "REFUND_FAILED",
+        Refund.Status.NEEDS_ATTENTION: "REFUND_NEEDS_ATTENTION",
+    }.get(new_status, "REFUND_PROCESSING")
+    title = f"{status_titles.get(new_status, 'Refund updated')}: {refund.booking.booking_reference}"
+    message = (
+        f"Refund {refund.pk} for {refund.booking.booking_reference} is {refund.get_status_display()} "
+        f"({refund.currency} {money(refund.amount)})."
+    )
+    notify_staff(type=notification_type, title=title, message=message, link=booking_service.staff_booking_link(refund.booking))
+
+    if refund.booking.guest.user_id:
+        notify_users(
+            [refund.booking.guest.user],
+            type=notification_type,
+            title=status_titles.get(new_status, "Refund updated"),
+            message=(
+                f"Refund status for booking {refund.booking.booking_reference}: {refund.get_status_display()}."
+            ),
+            link=booking_service.guest_booking_link(refund.booking),
+        )
+
+    if not refund.booking.guest.email:
+        return
+
+    # One guest email per status per refund, even if webhooks are redelivered.
+    events = refund.metadata.get("guest_email_events", []) if isinstance(refund.metadata, dict) else []
+    event_key = f"guest:{new_status}"
+    if event_key in events:
+        return
+
+    if new_status in (Refund.Status.PENDING, Refund.Status.PROCESSING):
+        body = (
+            f"Hello {refund.booking.guest.first_name},\n\n"
+            f"A refund of {refund.currency} {money(refund.amount)} for booking "
+            f"{refund.booking.booking_reference} has been submitted to Paystack and is not complete yet. "
+            "We will notify you when Paystack confirms the final result.\n"
+        )
+    elif new_status == Refund.Status.PROCESSED:
+        body = (
+            f"Hello {refund.booking.guest.first_name},\n\n"
+            f"Paystack has confirmed that your refund of {refund.currency} {money(refund.amount)} "
+            f"for booking {refund.booking.booking_reference} has been processed. Your bank/card issuer may take additional time to reflect it.\n"
+        )
+    elif new_status == Refund.Status.FAILED:
+        body = (
+            f"Hello {refund.booking.guest.first_name},\n\n"
+            f"Paystack could not complete the refund request for booking {refund.booking.booking_reference}. "
+            "The hotel team will review it and contact you with the next step.\n"
+        )
+    else:
+        body = (
+            f"Hello {refund.booking.guest.first_name},\n\n"
+            f"Your refund request for booking {refund.booking.booking_reference} needs additional review. "
+            "The hotel team will contact you with the next step.\n"
+        )
+    from apps.hotel.models import HotelSettings
+
+    hotel = HotelSettings.get_settings()
+    body += f"\n{hotel.hotel_name} · {hotel.phone}"
+    send_email_safe(
+        subject=f"Refund update for {refund.booking.booking_reference} — {hotel.hotel_name}",
+        message=body,
+        recipients=[refund.booking.guest.email],
+    )
+    try:
+        events.append(event_key)
+        refund.metadata = {**refund.metadata, "guest_email_events": events}
+        refund.save(update_fields=["metadata", "updated_at"])
+    except Exception as exc:  # pragma: no cover - email already sent; log only
+        logger.warning("Could not record refund email event (%s)", exc.__class__.__name__)
+
+
+def _find_payment_for_refund_payload(data):
+    reference = _refund_transaction_reference(data)
+    transaction_id = _refund_transaction_id(data)
+    qs = Payment.objects.select_related("booking", "booking__guest")
+    if reference:
+        payment = qs.filter(reference=reference, provider=Payment.Provider.PAYSTACK).first()
+        if payment:
+            return payment
+    if transaction_id:
+        payment = qs.filter(transaction_id=transaction_id, provider=Payment.Provider.PAYSTACK).first()
+        if payment:
+            return payment
+    return None
+
+
+def _find_or_create_refund_from_provider(payment, data, *, event_status):
+    provider_id = _refund_provider_id(data)
+    provider_reference = _refund_provider_reference(data)
+    amount = _provider_amount(data) or Decimal("0.00")
+
+    qs = Refund.objects.select_for_update().select_related("payment", "booking", "cancellation_request")
+    refund = None
+    if provider_id:
+        refund = qs.filter(paystack_refund_id=provider_id).first()
+    if refund is None and provider_reference:
+        refund = qs.filter(paystack_refund_reference=provider_reference).first()
+    if refund is None:
+        possible = qs.filter(payment=payment)
+        if amount > 0:
+            possible = possible.filter(amount=amount)
+        fallback_statuses = REFUND_ACTIVE_STATUSES + [Refund.Status.FAILED]
+        if not provider_id and not provider_reference:
+            # If Paystack ever redelivers a sparse test/sandbox-style payload
+            # without a refund id/reference, the safest idempotency key left is
+            # payment + amount + latest processed row. Real Paystack payloads
+            # include provider identifiers and are matched above.
+            fallback_statuses = fallback_statuses + [Refund.Status.PROCESSED]
+        refund = possible.filter(status__in=fallback_statuses).order_by("-created_at").first()
+    if refund is None:
+        refund = Refund.objects.create(
+            booking=payment.booking,
+            payment=payment,
+            amount=amount or Decimal("0.00"),
+            currency=str(data.get("currency") or payment.currency or "NGN")[:3].upper(),
+            status=Refund.Status.PENDING,
+            paystack_transaction_id=payment.transaction_id or _refund_transaction_id(data),
+            paystack_transaction_reference=payment.reference,
+            paystack_refund_id=provider_id,
+            paystack_refund_reference=provider_reference,
+            metadata={"created_from_paystack_webhook": True},
+        )
+    return refund
+
+
+def initiate_cancellation_refund(*, enquiry, staff_user, customer_note="", merchant_note="", request=None):
+    """Submit an approved cancellation refund to Paystack from backend only."""
+    from apps.enquiries.models import Enquiry
+    from apps.enquiries import services as enquiry_services
+
+    with transaction.atomic():
+        enquiry = (
+            Enquiry.objects.select_for_update()
+            .select_related("related_booking", "related_payment", "related_booking__guest")
+            .get(pk=enquiry.pk)
+        )
+        if enquiry.enquiry_type != Enquiry.EnquiryType.CANCELLATION:
+            raise PaymentError("Refunds can only be processed from cancellation/refund requests.")
+        if enquiry.cancellation_status not in (
+            Enquiry.CancellationStatus.APPROVED,
+            Enquiry.CancellationStatus.CANCELLED,
+            Enquiry.CancellationStatus.REFUND_FAILED,
+        ):
+            raise PaymentError("This cancellation request must be approved before a refund is processed.")
+        booking = enquiry.related_booking
+        payment = enquiry.related_payment
+        if booking is None:
+            raise PaymentError("No booking is linked to this cancellation request.")
+        if booking.status != Booking.Status.CANCELLED:
+            raise PaymentError("The booking must be cancelled by staff before a refund is processed.")
+        if payment is None:
+            payment = (
+                Payment.objects.select_for_update()
+                .filter(booking=booking, provider=Payment.Provider.PAYSTACK, status__in=[Payment.Status.SUCCESS, Payment.Status.PARTIALLY_REFUNDED])
+                .order_by("-paid_at", "-created_at")
+                .first()
+            )
+        else:
+            payment = Payment.objects.select_for_update().get(pk=payment.pk)
+        if payment is None or payment.provider != Payment.Provider.PAYSTACK:
+            raise PaymentError("Only Paystack payments can be refunded through this action. Record offline refunds manually outside Paystack.")
+        if payment.status not in (Payment.Status.SUCCESS, Payment.Status.PARTIALLY_REFUNDED):
+            raise PaymentError("This payment is not in a refundable Paystack state.")
+        if payment.currency.upper() != "NGN":
+            raise PaymentError("Paystack refunds are only supported for NGN payments.")
+
+        existing = (
+            Refund.objects.select_for_update()
+            .filter(cancellation_request=enquiry)
+            .order_by("-created_at")
+            .first()
+        )
+        if existing and existing.status in REFUND_ACTIVE_STATUSES:
+            return existing
+        if existing and existing.status == Refund.Status.PROCESSED:
+            return existing
+
+        requested_amount = Decimal(enquiry.calculated_refund_amount or 0).quantize(Decimal("0.01"))
+        processed_total = _processed_refund_total(payment)
+        active_total = _active_refund_total(payment, exclude_pk=getattr(existing, "pk", None))
+        available = (Decimal(payment.amount or 0).quantize(Decimal("0.01")) - processed_total - active_total).quantize(Decimal("0.01"))
+        amount = min(requested_amount, available)
+        if amount <= 0:
+            raise PaymentError("There is no remaining Paystack amount available to refund.")
+
+        refund_defaults = {
+            "booking": booking,
+            "payment": payment,
+            "cancellation_request": enquiry,
+            "amount": amount,
+            "currency": payment.currency,
+            "status": Refund.Status.PENDING,
+            "requested_by": staff_user,
+            "paystack_transaction_id": payment.transaction_id,
+            "paystack_transaction_reference": payment.reference,
+            "paystack_refund_id": "",
+            "paystack_refund_reference": "",
+            "customer_note": (customer_note or "")[:500],
+            "merchant_note": (merchant_note or f"Cancellation request {enquiry.cancellation_reference}")[:500],
+            "failure_reason": "",
+            "failed_at": None,
+            "metadata": {
+                "submission_state": "SUBMITTING",
+                "cancellation_reference": enquiry.cancellation_reference,
+                "requested_amount_from_policy": str(requested_amount),
+                "available_amount_at_submission": str(available),
+                "retry_of_refund_id": existing.pk if existing else None,
+            },
+        }
+        if existing and existing.status == Refund.Status.FAILED:
+            refund = existing
+            for field, value in refund_defaults.items():
+                setattr(refund, field, value)
+            refund.requested_at = timezone.now()
+            refund.submitted_at = None
+            refund.processed_at = None
+            refund.save()
+        else:
+            refund = Refund.objects.create(**refund_defaults)
+        enquiry.refund_status = Enquiry.RefundStatus.PENDING
+        enquiry.related_payment = payment
+        enquiry.paystack_refund_reference = ""
+        enquiry.save(update_fields=["refund_status", "related_payment", "paystack_refund_reference", "updated_at"])
+
+    try:
+        paystack_data = paystack.create_refund(
+            transaction=payment.transaction_id or payment.reference,
+            amount_kobo=_amount_to_kobo(refund.amount),
+            currency=refund.currency,
+            customer_note=refund.customer_note,
+            merchant_note=refund.merchant_note,
+        )
+    except (PaymentGatewayError, PaymentNotConfiguredError) as exc:
+        with transaction.atomic():
+            refund = Refund.objects.select_for_update().get(pk=refund.pk)
+            refund.status = Refund.Status.FAILED
+            refund.failed_at = timezone.now()
+            refund.failure_reason = "Paystack refund submission failed before confirmation."
+            refund.metadata = {**refund.metadata, "submission_state": "FAILED", "submission_error": exc.__class__.__name__}
+            refund.save(update_fields=["status", "failed_at", "failure_reason", "metadata", "updated_at"])
+            enquiry_services.sync_refund_summary(enquiry)
+        log_action(
+            actor=staff_user,
+            action="REFUND_SUBMISSION_FAILED",
+            instance=refund,
+            metadata={"booking": booking.booking_reference, "payment_reference": payment.reference, "amount": str(refund.amount)},
+            request=request,
+            summary=f"Refund submission failed for {booking.booking_reference}",
+        )
+        raise
+
+    with transaction.atomic():
+        refund = Refund.objects.select_for_update().select_related("booking", "payment", "cancellation_request").get(pk=refund.pk)
+        status_value = _normalise_refund_status(paystack_data.get("status"))
+        refund.metadata = {**refund.metadata, "submission_state": "SUBMITTED", "paystack_create_response_status": str(paystack_data.get("status", ""))}
+        refund = _mark_refund_status(refund, status_value, provider_data=paystack_data, request=request, event_name="refund.create", force_notify=True)
+        if refund.cancellation_request_id:
+            enquiry_services.sync_refund_summary(refund.cancellation_request)
+
+    log_action(
+        actor=staff_user,
+        action="REFUND_SUBMITTED",
+        instance=refund,
+        metadata={
+            "booking": refund.booking.booking_reference,
+            "payment_reference": refund.payment.reference,
+            "paystack_transaction_id": refund.paystack_transaction_id,
+            "paystack_refund_id": refund.paystack_refund_id,
+            "amount": str(refund.amount),
+            "status": refund.status,
+        },
+        request=request,
+        summary=f"Refund submitted to Paystack for {refund.booking.booking_reference}",
+    )
+    return refund
+
+
+# ---------------------------------------------------------------------------
 # Webhooks
 # ---------------------------------------------------------------------------
 def verify_webhook_signature(raw_body: bytes, signature: str) -> bool:
@@ -377,14 +864,7 @@ def verify_webhook_signature(raw_body: bytes, signature: str) -> bool:
 
 
 def process_webhook(event_payload: dict, *, request=None):
-    """Handle a signature-verified payload. Always swallows business errors —
-    Paystack expects a 200 once we've accepted the event.
-
-    Branches (all arrive here only AFTER HMAC signature validation):
-    * charge.success    — verify + credit via the shared verification path
-    * refund.processed  — reconcile the local payment to REFUNDED + alert staff
-    * charge.dispute.create — alert staff of a chargeback (no auto state change)
-    """
+    """Handle a signature-verified Paystack payload idempotently."""
     event = event_payload.get("event")
     data = event_payload.get("data") or {}
     reference = data.get("reference")
@@ -394,7 +874,6 @@ def process_webhook(event_payload: dict, *, request=None):
         if not reference:
             return {"handled": False, "reason": "unsupported_event"}
         if not Payment.objects.filter(reference=reference).exists():
-            # Not one of ours (e.g. terminal/POS) — acknowledge without error.
             logger.info("Webhook for unknown reference %s ignored", reference)
             return {"handled": False, "reason": "unknown_reference"}
         try:
@@ -407,8 +886,8 @@ def process_webhook(event_payload: dict, *, request=None):
             logger.warning("Webhook verification failed for %s: %s", reference, getattr(exc, "detail", str(exc)))
             return {"handled": False, "reason": "verification_failed"}
 
-    if event == "refund.processed":
-        return _handle_refund_processed(data, request=request)
+    if event in REFUND_EVENT_TO_STATUS:
+        return _handle_refund_event(event, data, request=request)
 
     if event == "charge.dispute.create":
         return _handle_dispute_created(data, request=request)
@@ -417,53 +896,34 @@ def process_webhook(event_payload: dict, *, request=None):
     return {"handled": False, "reason": "unsupported_event"}
 
 
-def _handle_refund_processed(data, *, request=None):
-    """A refund issued from the Paystack dashboard.
-
-    Reconciles the local payment to REFUNDED and alerts front-desk staff. The
-    BOOKING is deliberately untouched: a refund does not automatically mean
-    cancellation — that judgment belongs to staff.
-    """
-    # Refund events nest the charge reference under `transaction`.
-    reference = (data.get("transaction") or {}).get("reference") or data.get("reference")
-    if not reference:
-        return {"handled": False, "reason": "no_reference"}
-
+def _handle_refund_event(event, data, *, request=None):
+    event_status = _normalise_refund_status(data.get("status"), event=event)
+    payment = _find_payment_for_refund_payload(data)
+    if payment is None:
+        logger.info("Refund webhook for unknown transaction ignored: event=%s", event)
+        return {"handled": False, "reason": "unknown_reference"}
     with transaction.atomic():
-        payment = (
-            Payment.objects.select_for_update()
-            .select_related("booking", "booking__guest")
-            .filter(reference=reference)
-            .first()
-        )
-        if payment is None:
-            logger.info("Refund webhook for unknown reference %s ignored", reference)
-            return {"handled": False, "reason": "unknown_reference"}
-        if payment.status != Payment.Status.SUCCESS:
-            # Only a successful charge can become refunded; repeat deliveries
-            # of the same event are therefore idempotent no-ops.
-            return {"handled": False, "reason": "not_refundable_state", "payment_status": payment.status}
-        payment.status = Payment.Status.REFUNDED
-        payment.save(update_fields=["status", "updated_at"])
+        payment = Payment.objects.select_for_update().select_related("booking", "booking__guest").get(pk=payment.pk)
+        refund = _find_or_create_refund_from_provider(payment, data, event_status=event_status)
+        refund = _mark_refund_status(refund, event_status, provider_data=data, request=request, event_name=event)
 
     log_action(
-        actor=None, action="PAYMENT_REFUNDED", instance=payment,
-        metadata={"reference": reference, "booking": payment.booking.booking_reference,
-                  "amount": str(payment.amount)},
+        actor=None,
+        action="REFUND_WEBHOOK_RECONCILED",
+        instance=refund,
+        metadata={
+            "event": event,
+            "refund_status": refund.status,
+            "payment_reference": payment.reference,
+            "booking": payment.booking.booking_reference,
+            "amount": str(refund.amount),
+            "paystack_refund_id": refund.paystack_refund_id,
+        },
         request=request,
-        summary=f"Refund processed via Paystack for {reference}",
+        summary=f"Refund webhook {event} reconciled for {payment.booking.booking_reference}",
     )
-    notify_staff(
-        type="PAYMENT_REFUNDED",
-        title=f"Refund processed: {payment.booking.booking_reference}",
-        message=(
-            f"A Paystack refund of {payment.currency} {money(payment.amount)} was processed "
-            f"for booking {payment.booking.booking_reference}. Please review and reconcile."
-        ),
-        link=booking_service.staff_booking_link(payment.booking),
-    )
-    logger.info("Refund reconciled: payment=%s booking=%s", reference, payment.booking.booking_reference)
-    return {"handled": True, "reason": "refund_recorded", "payment_reference": reference}
+    logger.info("Refund webhook reconciled: event=%s payment=%s refund=%s status=%s", event, payment.reference, refund.pk, refund.status)
+    return {"handled": True, "reason": "refund_reconciled", "payment_reference": payment.reference, "refund_id": refund.pk, "status": refund.status}
 
 
 def _handle_dispute_created(data, *, request=None):
@@ -471,7 +931,6 @@ def _handle_dispute_created(data, *, request=None):
 
     No payment or booking status is changed automatically.
     """
-    # Dispute payloads carry the reference at top level, but tolerate nesting.
     reference = data.get("reference") or (data.get("transaction") or {}).get("reference")
     if not reference:
         return {"handled": False, "reason": "no_reference"}

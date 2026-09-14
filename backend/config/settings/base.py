@@ -330,6 +330,7 @@ PAYMENT_CALLBACK_URL = (
 )
 
 PAYSTACK_SECRET_KEY = config("PAYSTACK_SECRET_KEY", default="")
+PAYSTACK_PUBLIC_KEY = config("PAYSTACK_PUBLIC_KEY", default="")
 # Webhook signature validation uses the secret key per Paystack documentation.
 
 MAX_UPLOAD_MB = config("MAX_UPLOAD_MB", default=5, cast=int)
@@ -341,6 +342,8 @@ EMAIL_USE_TLS = config("EMAIL_USE_TLS", default=True, cast=bool)
 EMAIL_HOST_USER = config("EMAIL_HOST_USER", default="")
 EMAIL_HOST_PASSWORD = config("EMAIL_HOST_PASSWORD", default="")
 DEFAULT_FROM_EMAIL = config("DEFAULT_FROM_EMAIL", default="J-ONE HOTEL & LODGE <noreply@example.com>")
+# Comma-separated operational inbox(es) for cancellation/enquiry alerts.
+HOTEL_NOTIFICATION_EMAILS = config("HOTEL_NOTIFICATION_EMAILS", default="", cast=Csv())
 EMAIL_BACKEND = config(
     "EMAIL_BACKEND",
     default="django.core.mail.backends.console.EmailBackend",

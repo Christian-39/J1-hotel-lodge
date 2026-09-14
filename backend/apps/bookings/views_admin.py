@@ -11,6 +11,7 @@ from rest_framework.views import APIView
 
 from apps.core.permissions import IsStaffRole
 from apps.core.responses import success_response
+from apps.core.serializers import EmptySerializer
 from apps.core.emails import send_email_safe
 from apps.rooms.models import Room
 
@@ -359,6 +360,7 @@ class AdminGuestDetailView(generics.RetrieveUpdateAPIView):
 class AdminBookingSendReceiptView(APIView):
     """Send a confirmed payment receipt to the guest after staff approval."""
     permission_classes = [IsStaffRole]
+    serializer_class = EmptySerializer
 
     def post(self, request, lookup):
         booking = _get_admin_booking(lookup)

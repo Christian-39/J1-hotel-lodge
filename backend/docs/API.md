@@ -75,7 +75,8 @@ Conventions: dates `YYYY-MM-DD` · datetimes ISO 8601 · money as strings
 | `GET /api/rooms/` | 🔓 | Room-type catalog (lightweight rows) |
 | `GET /api/rooms/<slug or id>/` | 🔓 | Room-type detail: images, amenities, applicable offers |
 | `GET /api/rooms/availability/?check_in&check_out&guests&rooms&room_type` | 🔓 | **Authoritative availability + live pricing**. Throttled 240/h. |
-| `POST /api/enquiries/` | 🔓 | name, email, phone?, subject, message (`website` = honeypot). Throttled 10/h. |
+| `POST /api/enquiries/` | 🔓 | General enquiry or structured cancellation/refund request. Cancellation body includes `enquiry_type=CANCELLATION`, `booking_reference`, optional payment/receipt refs, reason/contact fields. Returns `cancellation_reference` + secure `status_url`; does **not** cancel the booking. Throttled 10/h. |
+| `GET /api/enquiries/cancellation-status/<reference>/?token=...` | 🔓 + token | Safe public status page payload. Never says refund complete until Paystack confirms `processed`. |
 
 ## Guest bookings (`/api/bookings/`)
 
@@ -84,8 +85,8 @@ Conventions: dates `YYYY-MM-DD` · datetimes ISO 8601 · money as strings
 | `POST /quote/` | 🔓 | room_type, check_in, check_out, rooms?, adults?, children?, offer_code? → full price breakdown + policies + hold info (nothing persisted) |
 | `GET /` | 🔑 | my bookings (paginated; `?status=`) |
 | `POST /` | 🔓 guest / 🔑 optional | stay fields + `guest{}`? + special_requests? → 201 booking (PENDING, inventory held, `expires_at` set). Throttled. |
-| `GET /<id or reference>/` | 🔑 (owner/staff) | full booking detail with `can_pay`, `can_cancel` |
-| `POST /<id or ref>/cancel/` | 🔑 (owner/staff) | reason? → cancelled booking. Enforces deadline/fee rules. |
+| `GET /<id or reference>/` | 🔑 (owner/staff) | full booking detail with `can_pay`; public `can_cancel` is always false |
+| `POST /<id or ref>/cancel/` | 🔑 (owner/staff) | Legacy non-destructive endpoint: returns `CANCELLATION_NOT_ALLOWED`; guests must submit Contact cancellation/refund requests. |
 | `GET /<id or ref>/receipt/` | 🔑 (owner/staff) | hotel + guest + stay + payment lines receipt |
 
 Ownership is enforced **object-level** — another guest's booking reference/id
@@ -97,7 +98,7 @@ returns `404` to avoid confirming that the object exists.
 |---|---|---|
 | `POST /initialize/` | guest token or owner/staff JWT | `{booking_reference}` → `{reference, authorization_url, amount, currency}`. Amount is computed server-side; retries reuse the pending attempt. |
 | `GET /verify/<reference>/` | guest token or owner/staff JWT | Server verifies directly with Paystack; **idempotent**; confirms booking on success. |
-| `POST /webhook/` | 🔓 signed | Paystack → `x-paystack-signature` HMAC-SHA512 validated before anything else. Always 200 on accepted/ignored events. |
+| `POST /webhook/` | 🔓 signed | Paystack → `x-paystack-signature` HMAC-SHA512 validated before parsing. Handles `charge.success` plus `refund.pending/processing/processed/failed/needs-attention` idempotently. |
 
 ## Notifications (`/api/notifications/`)
 
@@ -120,10 +121,11 @@ finer grants below.
 | `GET/POST /bookings/` | 🛎 | List (filter: status, payment_status, source, room_type, date_from, date_to, check_in, check_out, search, ordering) · manual booking create |
 | `GET/PATCH /bookings/<id\|ref>/` | 🛎 | Detail / modify (dates, rooms, guests, notes — re-validates availability & reprices) |
 | `POST /bookings/<id\|ref>/confirm/` | 🛎 | Confirm without online payment (pay at hotel) |
-| `POST /bookings/<id\|ref>/cancel/` | 🛎 | Staff cancel (audited) |
+| `POST /bookings/<id\|ref>/cancel/` | 🛎 | Staff cancel (audited; refund remains separate) |
 | `POST /bookings/<id\|ref>/check-in/` ↪ `check-out/` ↪ `no-show/` `assign-room/` | 🛎 | Front-desk actions (checkout guards `OUTSTANDING_BALANCE` unless `allow_balance_due`) |
 | `GET /guests/` · `GET/PATCH /guests/<id>/` | 🛎 | Guest CRM + stay history |
 | `GET /payments/` · `GET /payments/<id\|ref>/` | 🛎 | Payment records (sanitized) |
+| `GET /payments/refunds/` · `GET /payments/refunds/<id>/` | 🛎 | Refund lifecycle rows reconciled from Paystack |
 | `POST /payments/record/` | 🛎 | Record CASH/POS/BANK_TRANSFER payments |
 | `GET/POST /rooms/` · `GET/PATCH/DELETE /rooms/<id>/` | 🛎 read · 🧰 write | DELETE = soft deactivation |
 | `GET/POST /room-types/` · `GET/PATCH/DELETE /room-types/<id>/` | 🛎 read · 🧰 write | Pricing, capacity, amenities; DELETE = deactivate |
@@ -134,7 +136,12 @@ finer grants below.
 | `GET /settings/` · `PATCH /settings/` | 🧰 read · 👑 write | Business rules (tax, deposit %, deadlines…) — audited diffs |
 | `GET/POST /offers/` · `GET/PATCH/DELETE /offers/<id>/` | 🛎 read · 🧰 write | Dates/discounts/scope validated |
 | `GET/POST /gallery/` · `GET/PATCH/DELETE /gallery/<id>/` | 🛎 read · 🧰 write | |
-| `GET /enquiries/` · `GET/PATCH /enquiries/<id>/` | 🛎 | Status workflow NEW→IN_PROGRESS→RESOLVED→CLOSED |
+| `GET /enquiries/` · `GET/PATCH /enquiries/<id>/` | 🛎 | General enquiry workflow plus cancellation/refund review rows |
+| `POST /enquiries/<id>/review/` | 🛎 | Mark cancellation/refund request under review |
+| `POST /enquiries/<id>/approve-cancellation/` | 🛎 | Staff approval cancels booking; refund remains pending review |
+| `POST /enquiries/<id>/reject-cancellation/` | 🛎 | Reject request and notify guest |
+| `POST /enquiries/<id>/process-refund/` | 🧰 | Manager/admin submits eligible Paystack refund backend-only |
+| `POST /enquiries/<id>/close/` | 🛎 | Close request |
 | `GET /reports/revenue/?start_date&end_date` | 🧰 | Totals, by-day, by-provider, refunds |
 | `GET /reports/occupancy/?start_date&end_date` | 🧰 | Per-day occupied rooms + average % |
 | `GET /reports/bookings/?start_date&end_date` | 🧰 | Counts by status/payment status + room-type revenue |
@@ -152,4 +159,4 @@ retries/bursts are never dropped, while abuse floods are blunted)
 
 ## Guest checkout authentication
 
-`POST /api/auth/register/` remains available for optional accounts, but checkout never requires it. `POST /api/bookings/` is public and accepts the nested guest contact record. Its response contains a one-time raw guest access token; the booking stores only its digest. Send that token as `X-Guest-Access-Token` with booking detail, receipt, cancellation, payment initialization, and payment verification requests. Booking references alone return not found.
+`POST /api/auth/register/` remains available for optional accounts, but checkout never requires it. `POST /api/bookings/` is public and accepts the nested guest contact record. Its response contains a one-time raw guest access token; the booking stores only its digest. Send that token as `X-Guest-Access-Token` with booking detail, receipt, payment initialization, and payment verification requests. Booking references alone return not found. Cancellation uses the separate Contact request/status token flow.

@@ -136,14 +136,21 @@ Production refuses to boot on SQLite (guard in `production.py`).
 ## 7. Paystack
 
 1. Get test/live keys: <https://dashboard.paystack.com/#/settings/developers>
-2. Set `PAYSTACK_SECRET_KEY` (server-side only).
+2. Set `PAYSTACK_SECRET_KEY` on the **backend only**. `PAYSTACK_PUBLIC_KEY` is optional for this hosted-redirect checkout.
 3. Webhook URL (Paystack dashboard): `https://<your-api-host>/api/payments/webhook/`
    — the endpoint validates the `x-paystack-signature` HMAC before processing.
-4. `PAYMENT_CALLBACK_URL` should point at your frontend's verify page
+4. Enable these webhook events in Paystack: `charge.success`, `refund.pending`,
+   `refund.processing`, `refund.processed`, `refund.failed` and, where available,
+   `refund.needs-attention`; dispute webhooks may also be enabled for alerts.
+5. `PAYMENT_CALLBACK_URL` should point at your frontend's verify page
    (default: `{FRONTEND_URL}/payment-verify.html`).
+6. Paystack Dashboard transaction receipts may be enabled there for card/bank
+   payment receipts only. Booking, cancellation, refund-status and staff emails
+   are sent by the app's SMTP/Brevo-style transactional email configuration.
 
 If keys are missing the API returns `503 PAYMENT_NOT_CONFIGURED` explicitly —
-there is **no fake "demo payment" success path**.
+there is **no fake "demo payment" success path**. Browser redirects never confirm
+a booking unless the backend verifies the transaction with Paystack.
 
 ## 8. Media / Backblaze B2 (production)
 
@@ -157,9 +164,10 @@ so `--` URLs render in browsers. Uploads are validated for extension, size
 
 - `apps.bookings.tasks.expire_pending_bookings` (every 5 min via Celery Beat)
   releases inventory held by abandoned PENDING bookings.
-- Emails (booking confirmation, payment receipt, cancellation, password
-  reset, enquiry alerts) send asynchronously via Celery; in development they
-  print to the console.
+- Emails (booking confirmations, cancellation/refund request updates, refund
+  lifecycle notices, password resets and staff alerts) use Django email /
+  SMTP/Brevo-style transactional delivery; in development they print to the
+  console. Paystack receipts are configured separately in the Paystack Dashboard.
 
 ```bash
 celery -A config worker -l info
@@ -172,8 +180,8 @@ blocks inventory even before the beat task runs).
 ## 10. Testing
 
 ```bash
-python manage.py test          # 85 tests: auth, availability, pricing,
-                               # bookings, payments (mocked Paystack), staff, security
+python manage.py test          # full backend suite: auth, availability, pricing,
+                               # bookings, payments/refunds (mocked Paystack), staff, security
 python manage.py spectacular --file schema.yml --validate   # OpenAPI sanity
 ```
 

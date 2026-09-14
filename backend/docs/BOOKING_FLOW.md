@@ -48,7 +48,7 @@ CONFIRMED ──── staff terminal ───► CHECKED_IN ───► CHECK
 | Paystack says pending/ongoing/processing/queued | 200 pending state | `transaction_status` | verify |
 | Amount/currency mismatch (fraud guard) | 400 | `PAYMENT_AMOUNT_MISMATCH` | verify, webhook |
 | Gateway unreachable | 502 | `PAYMENT_GATEWAY_ERROR` | initialize, verify |
-| Too late to cancel (deadline passed) | 400 | `CANCELLATION_NOT_ALLOWED` | guest cancel |
+| Guest direct cancellation attempted | 400 | `CANCELLATION_NOT_ALLOWED` | legacy guest cancel endpoint |
 | Balance due at checkout | 400 | `OUTSTANDING_BALANCE` | staff checkout (override flag exists) |
 | Wrong state for an action | 409 | `INVALID_BOOKING_STATE` | confirm/cancel/check-in/out/no-show |
 | Frontend retried after success | 200, same result | — | verify, check-in, check-out (idempotent) |
@@ -78,14 +78,25 @@ between beat runs as well.
 
 ## Cancellations & refunds
 
-* Guests cancel while (check-in − `cancellation_deadline_hours`) is still in
-  the future; `cancellation_fee_percent` of the paid amount is retained and
-  the remainder is marked as refund due (`payment_status` →
-  `PARTIALLY_REFUNDED`/`REFUNDED`, `refund_amount` set, staff notified).
-  Actual money is returned from the Paystack dashboard — the system tracks,
-  staff executes (deliberate human control over refunds).
-* Staff can cancel at any time pre-stay; every cancellation is audited and
-  releases the held rooms immediately.
+* Guests do **not** directly cancel confirmed/paid bookings from My Bookings or
+  the legacy public cancel endpoint. They submit a structured Contact-page
+  cancellation/refund request with booking reference, optional Paystack/payment
+  reference, reason and preferred contact method. The response gives a
+  `cancellation_reference` and secure status link; the booking is still active
+  until staff approve the request.
+* Staff review the request in `/api/admin/enquiries/`, approve/reject/close it,
+  and only an approval cancels the booking. Booking cancellation releases rooms
+  and is audited, but it does **not** mark any refund completed.
+* Refund lifecycle is stored separately in `payments.Refund`. For eligible
+  Paystack payments, a manager/admin submits the refund backend-only via
+  `/api/admin/enquiries/<id>/process-refund/`; the amount comes from the server
+  policy calculation, never from the browser. Offline/cash/POS/transfer refunds
+  require manual handling outside Paystack.
+* Paystack webhook events `refund.pending`, `refund.processing`,
+  `refund.processed`, `refund.failed` and `refund.needs-attention` reconcile
+  refund rows idempotently. The guest is never told a refund is complete until
+  Paystack reports `processed`; then payment/booking refund totals update to
+  `PARTIALLY_REFUNDED` or `REFUNDED`.
 
 ## Direct-booking (walk-in / phone)
 

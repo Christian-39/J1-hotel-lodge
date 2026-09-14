@@ -147,9 +147,16 @@ reserve the same room. Manual (staff) bookings follow the identical path.
   double-credit. Webhooks reuse the exact same verification path after HMAC
   signature validation, so the two channels can never disagree.
 * **No fake paths**: missing secret key ⇒ `503 PAYMENT_NOT_CONFIGURED`.
+* **Refunds**: local `Refund` rows are separate from `Payment` and `Booking`.
+  Staff approve cancellation requests first; manager/admin refund submission calls
+  Paystack `/refund` backend-only with server-derived amount/currency. Webhooks
+  (`refund.pending`, `refund.processing`, `refund.processed`, `refund.failed`,
+  `refund.needs-attention`) reconcile idempotently. Payment/booking refund totals
+  update only when Paystack confirms `processed`.
 * **Offline payments** (front desk CASH/POS/BANK_TRANSFER) are recorded as
   SUCCESS `Payment` rows via `/api/admin/payments/record/` and drive the same
-  confirmation logic — one monetary code path.
+  confirmation logic — one monetary code path. Offline refunds are manual and
+  are not sent to Paystack.
 * We never store card data; gateway metadata is whitelisted (id and channel; payer IP is not retained).
 
 ## 8. Booking state machine
@@ -159,7 +166,7 @@ reserve the same room. Manual (staff) bookings follow the identical path.
       ┌────────┐  deposit window lapses ┌───────────┐  ┌────────────┐
       │PENDING │ ─────────────────────▶ │ CONFIRMED │─▶│ CHECKED_IN │─▶ CHECKED_OUT
       └───┬────┘                        └─────┬─────┘  └────────────┘
-          │ expires (beat/lazy)               ├── cancel (deadline/fee rules) ─▶ CANCELLED
+          │ expires (beat/lazy)               ├── staff-approved cancellation ─▶ CANCELLED
           ▼                                   └── check-in date passes ─▶ NO_SHOW
       EXPIRED  (hold released)
 ```
@@ -222,6 +229,7 @@ through `Booking.guest`.
 
 A booking response and its email contain a cryptographically random,
 90-day guest access token. Only a SHA-256 digest is stored on the booking.
-Guest detail, receipt, cancellation, payment initialization, and payment
-verification require the token in `X-Guest-Access-Token`; a booking reference
-alone is never sufficient. Staff continue to use JWT and staff permissions.
+Guest detail, receipt, payment initialization, and payment verification require
+the token in `X-Guest-Access-Token`; a booking reference alone is never
+sufficient. Cancellation/refund status uses a separate request reference and
+access token issued by the enquiries app. Staff continue to use JWT and staff permissions.

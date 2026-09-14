@@ -344,30 +344,18 @@
         title: "Booking confirmed", assertive: true, duration: 6000
       });
     }
-    // Optional cancel action — only when the backend says it's allowed.
+    // Direct guest cancellation is intentionally not offered here. Confirmed/paid
+    // bookings must go through the Contact cancellation/refund request so staff
+    // can review policy and Paystack refund state.
     var b = booking || {};
     var actions = document.querySelector(".confirm-actions");
-    if (b.can_cancel && actions && !document.getElementById("cancel-booking-btn")) {
-      var btn = document.createElement("button");
-      btn.className = "btn btn-outline";
-      btn.id = "cancel-booking-btn";
-      btn.type = "button";
-      btn.textContent = "Cancel booking";
-      btn.addEventListener("click", async function () {
-        if (!window.confirm("Cancel this booking? This cannot be undone.")) return;
-        if (!JONE.guardSubmit(btn)) return;
-        try {
-          var res = await window.API.cancelBooking(b.booking_reference, "", guestOpts());
-          booking = res.data || booking;
-          JONE.ui.toast("Booking cancelled.", "success");
-          btn.remove();
-          fillReceipt();
-        } catch (err) {
-          JONE.releaseGuard(btn);
-          JONE.ui.toast(err.message || "The booking couldn't be cancelled.", "error");
-        }
-      });
-      actions.insertBefore(btn, actions.firstChild);
+    if (b.booking_reference && actions && !document.getElementById("request-cancel-btn")) {
+      var link = document.createElement("a");
+      link.className = "btn btn-outline";
+      link.id = "request-cancel-btn";
+      link.href = "contact.html?type=cancellation&booking_reference=" + encodeURIComponent(b.booking_reference) + "&email=" + encodeURIComponent((b.guest && b.guest.email) || "");
+      link.textContent = "Request cancellation / refund";
+      actions.insertBefore(link, actions.firstChild);
     }
   }
 

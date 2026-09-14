@@ -292,6 +292,20 @@ const API = (() => {
 
   /* Enquiries / contact (honeypot `website` field must stay blank). */
   function submitEnquiry(payload, opts = {}) { return post("/api/enquiries/", payload, { auth: false, ...opts }); }
+  function submitCancellationRequest(payload, opts = {}) {
+    return post("/api/enquiries/", { ...payload, enquiry_type: "CANCELLATION", subject: "Cancellation / refund request" }, { auth: false, ...opts });
+  }
+  function getCancellationStatus(reference, token, opts = {}) {
+    const headers = token ? { "X-Cancellation-Access-Token": token, ...(opts.headers || {}) } : (opts.headers || {});
+    const params = { ...(opts.params || {}) };
+    if (token) params.token = token;
+    return get(`/api/enquiries/cancellation-status/${encodeURIComponent(reference)}/`, {
+      ...opts,
+      auth: false,
+      params,
+      headers
+    });
+  }
 
   /* ------------------------ BOOKING FLOW (guest) ---------------------------
      Quote and creation are public. Subsequent booking/payment operations use
@@ -310,11 +324,6 @@ const API = (() => {
   /* Booking detail by id or booking_reference (auth + owner). */
   function guestAccessOpts(token) { return token ? { auth: false, headers: { "X-Guest-Access-Token": token } } : {}; }
   function getBooking(lookup, opts = {}) { return get(`/api/bookings/${encodeURIComponent(lookup)}/`, opts); }
-
-  /* Cancel a booking (auth + owner). Body: { reason? }. */
-  function cancelBooking(lookup, reason, opts = {}) {
-    return post(`/api/bookings/${encodeURIComponent(lookup)}/cancel/`, reason ? { reason } : {}, opts);
-  }
 
   /* Receipt for a booking (auth + owner) — renders the confirmation page. */
   function getBookingReceipt(lookup, opts = {}) {
@@ -429,6 +438,18 @@ const API = (() => {
     return post(base + "/record/", payload, opts);
   }
 
+  function enquiryAction(id, action, payload, opts = {}) {
+    const base = resourceEp("enquiries");
+    if (!base) throw notConfigured("enquiries");
+    return post(`${base}/${encodeURIComponent(id)}/${action}/`, payload || {}, opts);
+  }
+  const reviewCancellationRequest = (id, payload, opts = {}) => enquiryAction(id, "review", payload, opts);
+  const approveCancellationRequest = (id, payload, opts = {}) => enquiryAction(id, "approve-cancellation", payload, opts);
+  const rejectCancellationRequest = (id, payload, opts = {}) => enquiryAction(id, "reject-cancellation", payload, opts);
+  const processCancellationRefund = (id, payload, opts = {}) => enquiryAction(id, "process-refund", payload, opts);
+  const closeCancellationRequest = (id, payload, opts = {}) => enquiryAction(id, "close", payload, opts);
+  function listRefunds(params, opts = {}) { return list("refunds", params, opts); }
+
   /* --- Operational search ------------------------------------------------
      Every search below runs SERVER-SIDE: the backend matches booking
      reference, guest name/email/phone, physical room number, room type and
@@ -466,9 +487,9 @@ const API = (() => {
     get, post, put, patch, del, request,
     // Public site
     getHotelInfo, getPolicies, getRooms, getRoom, checkAvailability,
-    getOffers, getFacilities, getGallery, submitEnquiry,
+    getOffers, getFacilities, getGallery, submitEnquiry, submitCancellationRequest, getCancellationStatus,
     // Booking flow (guest)
-    quoteBooking, createBooking, myBookings, getBooking, guestAccessOpts, cancelBooking, getBookingReceipt,
+    quoteBooking, createBooking, myBookings, getBooking, guestAccessOpts, getBookingReceipt,
     // Payments
     initPayment, verifyPayment,
     // Auth
@@ -479,6 +500,7 @@ const API = (() => {
     list, getOne, create, update, remove,
     confirmBooking, staffCancelBooking, checkInBooking, checkOutBooking,
     noShowBooking, assignRoom, recordPayment, searchBookings, searchCheckout,
+    reviewCancellationRequest, approveCancellationRequest, rejectCancellationRequest, processCancellationRefund, closeCancellationRequest, listRefunds,
     getStaffProfile, sendReceipt, getRoomTypeRooms,
     // Helpers
     setTokenProvider, setRefreshProvider, APIError, BASE,

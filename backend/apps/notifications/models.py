@@ -8,10 +8,20 @@ class Notification(models.Model):
         BOOKING_CONFIRMED = "BOOKING_CONFIRMED", "Booking confirmed"
         BOOKING_CANCELLED = "BOOKING_CANCELLED", "Booking cancelled"
         BOOKING_MODIFIED = "BOOKING_MODIFIED", "Booking modified"
+        CANCELLATION_REQUEST_CREATED = "CANCELLATION_REQUEST_CREATED", "Cancellation request created"
+        CANCELLATION_REQUEST_REVIEWED = "CANCELLATION_REQUEST_REVIEWED", "Cancellation request reviewed"
+        CANCELLATION_REQUEST_APPROVED = "CANCELLATION_REQUEST_APPROVED", "Cancellation request approved"
+        CANCELLATION_REQUEST_REJECTED = "CANCELLATION_REQUEST_REJECTED", "Cancellation request rejected"
         PAYMENT_SUCCESS = "PAYMENT_SUCCESS", "Payment received"
         PAYMENT_FAILED = "PAYMENT_FAILED", "Payment failed"
         PAYMENT_REFUNDED = "PAYMENT_REFUNDED", "Payment refunded"
         PAYMENT_DISPUTED = "PAYMENT_DISPUTED", "Payment disputed"
+        REFUND_REQUESTED = "REFUND_REQUESTED", "Refund requested"
+        REFUND_PENDING = "REFUND_PENDING", "Refund pending"
+        REFUND_PROCESSING = "REFUND_PROCESSING", "Refund processing"
+        REFUND_PROCESSED = "REFUND_PROCESSED", "Refund processed"
+        REFUND_FAILED = "REFUND_FAILED", "Refund failed"
+        REFUND_NEEDS_ATTENTION = "REFUND_NEEDS_ATTENTION", "Refund needs attention"
         CHECK_IN = "CHECK_IN", "Guest checked in"
         CHECK_OUT = "CHECK_OUT", "Guest checked out"
         CHECKOUT_DUE_SOON = "CHECKOUT_DUE_SOON", "Checkout due soon"
@@ -22,7 +32,7 @@ class Notification(models.Model):
     recipient = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="notifications"
     )
-    type = models.CharField(max_length=30, choices=Type.choices, db_index=True)
+    type = models.CharField(max_length=40, choices=Type.choices, db_index=True)
     title = models.CharField(max_length=150)
     message = models.TextField()
     # Frontend-relative deep link (e.g. "/dashboard/bookings.html?ref=J1-...").

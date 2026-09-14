@@ -52,8 +52,9 @@
     roomImages:    "/api/admin/room-images/",      // room-type image detail (PATCH/DELETE)
     amenities:     "/api/admin/amenities/",
     payments:      "/api/admin/payments/",        // list; detail {id|ref}; record via API.recordPayment()
+    refunds:       "/api/admin/payments/refunds/", // Paystack refund lifecycle rows (read-only list/detail)
     receipts:      "/api/admin/payments/",        // receipts view = payment records
-    enquiries:     "/api/admin/enquiries/",
+    enquiries:     "/api/admin/enquiries/",       // includes cancellation/refund review actions
     auditLogs:     "/api/admin/audit-logs/",      // ADMIN, read-only
     users:         "/api/admin/users/",           // ADMIN
     settings:      "/api/admin/settings/",        // GET manager+, PATCH admin-only

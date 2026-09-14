@@ -72,12 +72,26 @@
         </div>
 
         <form class="card card-pad contact-form-card" data-contact-form novalidate>
-          <h2 style="font-size:var(--fs-xl);margin-bottom:1.5rem;">Send a message</h2>
+          <h2 style="font-size:var(--fs-xl);margin-bottom:0.5rem;">Send a message</h2>
+          <p class="muted" style="margin-top:0;margin-bottom:1.5rem;">For cancellation or refund help, use the structured option below. Your booking is not cancelled until hotel staff approve it.</p>
           <div class="field"><label class="field-label" for="c-name">Name</label><input class="input" id="c-name" name="name" required autocomplete="name"><div class="field-error">Please enter your name.</div></div>
           <div class="field"><label class="field-label" for="c-email">Email</label><input class="input" id="c-email" name="email" type="email" required autocomplete="email"><div class="field-error">Please enter a valid email.</div></div>
           <div class="field"><label class="field-label" for="c-phone">Phone <span class="muted">(optional)</span></label><input class="input" id="c-phone" name="phone" type="tel" autocomplete="tel"></div>
-          <div class="field"><label class="field-label" for="c-subject">Subject</label><select class="select" id="c-subject" name="subject" required><option value="">Select a topic</option><option>Booking enquiry</option><option>Room availability</option><option>Event / gathering</option><option>Feedback</option><option>Other</option></select><div class="field-error">Please choose a subject.</div></div>
+          <div class="field"><label class="field-label" for="c-subject">Subject</label><select class="select" id="c-subject" name="subject" required><option value="">Select a topic</option><option>Booking enquiry</option><option>Room availability</option><option>Cancellation / refund request</option><option>Event / gathering</option><option>Feedback</option><option>Other</option></select><div class="field-error">Please choose a subject.</div></div>
+          <div data-cancellation-fields hidden>
+            <div class="notice" style="margin-bottom:1rem;">
+              <strong>Cancellation / refund requests are reviewed by staff.</strong><br>
+              Please include your booking reference. Paystack refunds are initiated by the hotel only and are not complete until Paystack confirms them.
+            </div>
+            <div class="field"><label class="field-label" for="c-booking-reference">Booking reference</label><input class="input" id="c-booking-reference" name="booking_reference" placeholder="e.g. J1-20260913-AB12CD34"><div class="field-error">Please enter your booking reference.</div></div>
+            <div class="field"><label class="field-label" for="c-payment-reference">Payment / Paystack reference <span class="muted">(optional)</span></label><input class="input" id="c-payment-reference" name="payment_reference" placeholder="If available from your receipt"></div>
+            <div class="field"><label class="field-label" for="c-receipt-reference">Receipt reference <span class="muted">(optional)</span></label><input class="input" id="c-receipt-reference" name="receipt_reference"></div>
+            <div class="field"><label class="field-label" for="c-preferred-contact">Preferred contact</label><select class="select" id="c-preferred-contact" name="preferred_contact_method"><option value="EMAIL">Email</option><option value="PHONE">Phone call</option><option value="WHATSAPP">WhatsApp</option></select></div>
+            <label class="check-row" style="display:flex;gap:0.6rem;align-items:flex-start;margin:0.5rem 0 1rem;"><input type="checkbox" name="refund_requested" value="1" style="margin-top:0.25rem;"><span>I believe a refund may be due under the hotel cancellation policy.</span></label>
+            <div class="field"><label class="field-label" for="c-cancellation-reason">Reason for cancellation</label><textarea class="textarea" id="c-cancellation-reason" name="cancellation_reason" rows="4" placeholder="Tell us why you need to cancel"></textarea></div>
+          </div>
           <div class="field"><label class="field-label" for="c-message">Message</label><textarea class="textarea" id="c-message" name="message" required></textarea><div class="field-error">Please write your message.</div></div>
+          <p class="muted" style="font-size:var(--fs-xs);">Already submitted a request? <a href="cancellation-result.html">Check cancellation/refund status</a>.</p>
           <!-- Spam honeypot: real users never see or fill this. Kept blank. -->
           <input type="text" id="c-website" name="website" value="" tabindex="-1" autocomplete="off" aria-hidden="true" style="position:absolute;left:-9999px;top:-9999px;height:0;width:0;opacity:0;">
           <div class="field-error" data-form-error style="display:none;color:var(--color-danger);margin-bottom:1rem;"></div>

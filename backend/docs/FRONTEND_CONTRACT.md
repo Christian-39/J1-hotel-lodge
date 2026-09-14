@@ -194,11 +194,39 @@ Params: `check_in*`, `check_out*` (YYYY-MM-DD), `guests`≥1, `rooms`≥1, `room
 **No availability** ⇒ `200` with `results: []` or rows whose `bookable` is false.
 Treat these as *preview* prices — the final word is `/api/bookings/quote/`.
 
-## 9. Enquiries — `POST /api/enquiries/`
+## 9. Enquiries and cancellation/refund requests — `POST /api/enquiries/`
 
-Body: `{ "name": "…", "email": "…", "phone": "…", "subject": "…", "message": "…" }`
-(optional hidden field `"website"`: leave blank — it's a spam honeypot).
-→ `201 { success, message }` (no data payload). Throttled; HTML stripped server-side.
+General body: `{ "name": "…", "email": "…", "phone": "…", "subject": "…", "message": "…" }`
+(optional hidden field `"website"`: leave blank — it is a spam honeypot).
+→ `201 { success, message }`. Throttled; HTML stripped server-side.
+
+Cancellation/refund body uses the same endpoint and adds structured fields:
+
+```jsonc
+{ "enquiry_type": "CANCELLATION", "subject": "Cancellation / refund request",
+  "booking_reference": "J1-…",
+  "payment_reference": "J1P-…",        // optional Paystack/internal payment reference
+  "receipt_reference": "J1P-…",        // optional
+  "cancellation_reason": "Travel changed",
+  "preferred_contact_method": "EMAIL" | "PHONE" | "WHATSAPP",
+  "refund_requested": true }
+```
+
+Success returns:
+
+```jsonc
+"data": { "cancellation_reference": "J1C-…",
+  "status_url": "https://frontend/cancellation-result.html?ref=J1C-…&token=…",
+  "booking_reference": "J1-…", "status": "NEW" }
+```
+
+Submitting this request never cancels the booking and never starts a refund. It
+only creates a staff-review row.
+
+**Public status** — `GET /api/enquiries/cancellation-status/{reference}/?token=…`
+(or `X-Cancellation-Access-Token`) returns safe status fields and a guest-facing
+message. It never reports refund completion unless Paystack has confirmed
+`refund.processed`.
 
 ## 10. Auth endpoints
 
@@ -286,7 +314,7 @@ Body = quote fields **plus** the optional `room_id` (see "Exact room" below):
   "special_requests": "High floor", "cancellation_reason": "",
   "expires_at": "2026-10-12T14:31:00+01:00",      // pay before this
   "checked_in_at": null, "checked_out_at": null, "cancelled_at": null,
-  "created_at": "…", "can_pay": true, "can_cancel": true }
+  "created_at": "…", "can_pay": true, "can_cancel": false }
 ```
 
 **Exact room ("Book this room — Room 203").** `room_id` is advisory: the server
@@ -323,8 +351,10 @@ guest, and it is mirrored into the audit log metadata.
 `status` ∈ `PENDING` `CONFIRMED` `CHECKED_IN` `CHECKED_OUT` `CANCELLED` `EXPIRED` `NO_SHOW` ·
 `payment_status` ∈ `UNPAID` `PARTIALLY_PAID` `PAID` `PARTIALLY_REFUNDED` `REFUNDED` `FAILED`.
 
-Frontend rule of thumb: show **Pay** when `can_pay`, show **Cancel** when
-`can_cancel`, show **Expired** state when `status == "EXPIRED"` (even mid-session).
+Frontend rule of thumb: show **Pay** when `can_pay`; do not show direct
+self-cancel buttons. Route active-stay cancellation/refund needs to
+`contact.html?type=cancellation&booking_reference=…`. Show **Expired** when
+`status == "EXPIRED"` (even mid-session).
 
 ## 13. My bookings — `GET /api/bookings/` 🔑
 
@@ -341,10 +371,12 @@ Rows:
 
 Same payload as §12. Unknown or unauthorized lookups both return 404.
 
-## 15. Cancel — `POST /api/bookings/{id or reference}/cancel/` 🔑
+## 15. Legacy guest cancel endpoint — `POST /api/bookings/{id or reference}/cancel/` 🔑
 
-Body `{ "reason": "optional" }` → 200 with the updated booking (§12 shape) →
-`status: "CANCELLED"`. Errors: `CANCELLATION_NOT_ALLOWED`, `INVALID_BOOKING_STATE`.
+This endpoint remains only as a non-destructive compatibility path. It enforces
+owner/guest-token privacy, then returns `400 CANCELLATION_NOT_ALLOWED` with
+guidance to submit the Contact cancellation/refund request. Do not call it from
+new frontend UI.
 
 ## 16. Payments
 
@@ -406,6 +438,10 @@ then the financial breakdown and the payments recorded.
 "data": { "unread_count": 2,
   "notifications": [ { "id", "type": "BOOKING_CREATED" | "BOOKING_CONFIRMED" |
     "BOOKING_CANCELLED" | "BOOKING_MODIFIED" | "PAYMENT_SUCCESS" | "PAYMENT_FAILED" |
+    "CANCELLATION_REQUEST_CREATED" | "CANCELLATION_REQUEST_REVIEWED" |
+    "CANCELLATION_REQUEST_APPROVED" | "CANCELLATION_REQUEST_REJECTED" |
+    "REFUND_PENDING" | "REFUND_PROCESSING" | "REFUND_PROCESSED" |
+    "REFUND_FAILED" | "REFUND_NEEDS_ATTENTION" |
     "CHECK_IN" | "CHECK_OUT" | "ENQUIRY_NEW" | "SYSTEM",
     "title", "message", "link": "/my-booking.html?ref=J1-…",
     "is_read": false, "created_at" } ] }, "pagination": { … }
@@ -566,8 +602,18 @@ PATCH accepts contact + identification fields.
 
 Row: `{ id, reference, booking_reference, guest_name, staff_email, provider:
 PAYSTACK|CASH|POS|BANK_TRANSFER, amount, currency, status: PENDING|SUCCESS|
-FAILED|REFUNDED, channel, gateway_response, transaction_id, paid_at, notes,
-created_at }` — filters `status, provider, date, date_from, date_to, paid_on, search`.
+FAILED|PARTIALLY_REFUNDED|REFUNDED, channel, gateway_response, transaction_id,
+paid_at, notes, created_at }` — filters `status, provider, date, date_from,
+date_to, paid_on, search`.
+
+Refund rows are read-only here: `GET /api/admin/payments/refunds/` and
+`GET /api/admin/payments/refunds/{id}/` return `{ id, booking_reference,
+payment_reference, cancellation_reference, amount, currency, status:
+PENDING|PROCESSING|PROCESSED|FAILED|NEEDS_ATTENTION, paystack_transaction_id,
+paystack_transaction_reference, paystack_refund_id, paystack_refund_reference,
+customer_note, merchant_note, failure_reason, requested_by_email, submitted_at,
+processed_at, failed_at, created_at }`. Refund initiation happens from an
+approved cancellation request, not from the generic payment list.
 
 Record offline payment:
 
@@ -642,9 +688,33 @@ Confirms the booking when the deposit is covered.
     "cancellation_fee_percent", "updated_at" }
   ```
 
-## 25. Enquiries — `GET /api/admin/enquiries/` · `GET/PATCH …/{id}/`
+## 25. Enquiries / cancellation review — `GET /api/admin/enquiries/` · `GET/PATCH …/{id}/`
 
-`{ id, name, email, phone, subject, message, status: NEW|IN_PROGRESS|RESOLVED|CLOSED, internal_notes, created_at, updated_at }` — PATCH only `status`/`internal_notes`. Filters `status`, `search`.
+General enquiry fields remain: `{ id, name, email, phone, subject, message,
+status: NEW|IN_PROGRESS|RESOLVED|CLOSED, internal_notes, created_at, updated_at }`;
+PATCH only accepts `status` and `internal_notes`. Filters: `status`, `type`,
+`enquiry_type`, `cancellation_status`, `refund_status`, `search`.
+
+Cancellation/refund rows add: `enquiry_type=CANCELLATION`,
+`cancellation_reference`, supplied booking/payment/receipt references,
+`cancellation_reason`, `preferred_contact_method`, `refund_requested`, linked
+`related_booking_detail`, linked `related_payment_detail`, `cancellation_status`,
+`refund_status`, calculated fee/refund amount, latest `refund_detail`,
+`cancellation_policy`, and `actions`.
+
+Action endpoints (all POST):
+
+| Endpoint | Role | Effect |
+|---|---|---|
+| `/api/admin/enquiries/{id}/review/` | staff | mark under review |
+| `/api/admin/enquiries/{id}/approve-cancellation/` | staff | cancel linked booking; refund remains separate |
+| `/api/admin/enquiries/{id}/reject-cancellation/` | staff | reject request and email guest |
+| `/api/admin/enquiries/{id}/process-refund/` | manager/admin | submit eligible Paystack refund backend-only; amount is server-derived |
+| `/api/admin/enquiries/{id}/close/` | staff | close request |
+
+Never display refund completion to a guest from an approval/process-click alone;
+only `refund_status=PROCESSED` / `cancellation_status=REFUNDED` means Paystack
+confirmed it.
 
 ## 26. Reports (MANAGER+) — `?start_date&end_date` (YYYY-MM-DD, ≤ 366 days)
 

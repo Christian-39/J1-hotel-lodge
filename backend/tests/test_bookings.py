@@ -9,7 +9,7 @@ from apps.bookings.models import Booking, Guest
 from apps.core.utils import hotel_today
 
 from .base import BaseAPITestCase
-from .factories import make_room, make_room_type, make_user
+from .factories import make_room, make_room_type, make_user, make_staff
 
 
 class BookingFlowTests(BaseAPITestCase):
@@ -88,13 +88,16 @@ class BookingFlowTests(BaseAPITestCase):
         self.assertEqual(second.json()["code"], "ROOM_UNAVAILABLE")
         self.assertEqual(Booking.objects.count(), 1)
 
-    def test_double_booking_allowed_after_cancellation(self):
+    def test_double_booking_allowed_after_staff_cancellation(self):
         first = self._create(rooms=2)
         reference = first.json()["data"]["booking_reference"]
-        cancel = self.client.post(f"/api/bookings/{reference}/cancel/", {"reason": "Changed plans"})
-        self.assertEqual(cancel.status_code, 200)
+        staff = make_staff("cancel-desk@staff.dev")
+        self.auth(staff)
+        cancel = self.client.post(f"/api/admin/bookings/{reference}/cancel/", {"reason": "Changed plans"})
+        self.assertEqual(cancel.status_code, 200, cancel.json())
+        self.auth(self.user)
         second = self._create(rooms=2)
-        self.assertEqual(second.status_code, 201)
+        self.assertEqual(second.status_code, 201, second.json())
 
     def test_my_bookings_lists_only_mine(self):
         self._create()
@@ -118,17 +121,18 @@ class BookingFlowTests(BaseAPITestCase):
         by_id = self.client.get(f"/api/bookings/{booking.pk}/")
         self.assertEqual(by_id.status_code, 404)
 
-    def test_cancel_allowed_before_deadline(self):
+    def test_guest_direct_cancellation_is_disabled_before_deadline(self):
         reference = self._create(
             check_in=(self.today + timedelta(days=5)).isoformat(),
             check_out=(self.today + timedelta(days=7)).isoformat(),
         ).json()["data"]["booking_reference"]
         response = self.client.post(f"/api/bookings/{reference}/cancel/",
                                     {"reason": "No longer travelling"})
-        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["code"], "CANCELLATION_NOT_ALLOWED")
         booking = Booking.objects.get(booking_reference=reference)
-        self.assertEqual(booking.status, "CANCELLED")
-        self.assertEqual(booking.cancellation_reason, "No longer travelling")
+        self.assertEqual(booking.status, "PENDING")
+        self.assertEqual(booking.cancellation_reason, "")
 
     def test_cancel_blocked_after_deadline(self):
         reference = self._create(

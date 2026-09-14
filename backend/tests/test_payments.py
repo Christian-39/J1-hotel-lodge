@@ -14,7 +14,7 @@ from rest_framework.throttling import ScopedRateThrottle
 from apps.bookings.models import Booking
 from apps.core.utils import hotel_today
 from apps.notifications.models import Notification
-from apps.payments.models import Payment
+from apps.payments.models import Payment, Refund
 
 from .base import BaseAPITestCase
 from .factories import make_room, make_room_type, make_staff, make_user
@@ -209,7 +209,10 @@ class PaymentFlowTests(BaseAPITestCase):
         # A refund does NOT auto-cancel the booking — staff judgment required.
         self.booking.refresh_from_db()
         self.assertEqual(self.booking.status, "CONFIRMED")
-        Notification.objects.get(recipient=staff, type="PAYMENT_REFUNDED")
+        refund = Refund.objects.get(payment=payment)
+        self.assertEqual(refund.status, Refund.Status.PROCESSED)
+        self.assertEqual(self.booking.refund_amount, Decimal("50000.00"))
+        Notification.objects.get(recipient=staff, type="REFUND_PROCESSED")
         # Idempotent: a duplicate delivery is acknowledged without side effects.
         response = self._post_webhook({
             "event": "refund.processed",
@@ -218,6 +221,29 @@ class PaymentFlowTests(BaseAPITestCase):
         self.assertEqual(response.status_code, 200)
         payment.refresh_from_db()
         self.assertEqual(payment.status, Payment.Status.REFUNDED)
+        self.assertEqual(Refund.objects.filter(payment=payment).count(), 1)
+
+    @override_settings(PAYSTACK_SECRET_KEY="sk_test_mock")
+    def test_webhook_refund_pending_processing_failed_lifecycle(self):
+        make_staff("refund-lifecycle@staff.dev", role=User.Role.ADMIN)
+        payment = self._make_payment()
+        payment.status = Payment.Status.SUCCESS
+        payment.transaction_id = "123456789"
+        payment.save(update_fields=["status", "transaction_id"])
+        for event, expected in [
+            ("refund.pending", Refund.Status.PENDING),
+            ("refund.processing", Refund.Status.PROCESSING),
+            ("refund.failed", Refund.Status.FAILED),
+        ]:
+            response = self._post_webhook({
+                "event": event,
+                "data": {
+                    "id": 777, "status": expected.lower(), "amount": 2_500_000,
+                    "transaction": {"reference": payment.reference, "id": payment.transaction_id},
+                },
+            })
+            self.assertEqual(response.status_code, 200, response.json())
+            self.assertEqual(Refund.objects.get(paystack_refund_id="777").status, expected)
 
     @override_settings(PAYSTACK_SECRET_KEY="sk_test_mock")
     def test_webhook_dispute_create_notifies_staff_without_state_change(self):
