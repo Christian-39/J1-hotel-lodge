@@ -34,9 +34,6 @@
     ".rc-logo{width:28px;height:52px;max-width:28px;object-fit:contain;flex:none;}",
     ".rc-wordmark{font-size:30px;line-height:.9;font-weight:800;letter-spacing:-.04em;color:#143d69;text-transform:uppercase;white-space:nowrap;}",
     ".rc-wordmark-sub{margin-top:5px;font-size:9px;font-weight:800;letter-spacing:.28em;color:#6c6e70;text-transform:uppercase;white-space:nowrap;}",
-    ".rc-slash-wrap{display:flex;align-items:center;gap:16px;min-width:160px;justify-content:flex-end;padding-top:2px;}",
-    ".rc-slash{display:block;width:7px;height:82px;background:#eeb437;transform:skew(-29deg);border-radius:999px;box-shadow:10px 0 0 rgba(238,180,55,.18);}",
-    ".rc-tagline{font-size:10px;line-height:1.1;font-weight:800;color:#9a650f;text-transform:lowercase;white-space:nowrap;}",
     ".rc-title{margin:18px 0 0;text-align:center;font-size:30px;line-height:1.12;font-weight:800;letter-spacing:-.02em;color:#053e75;}",
     ".rc-generated{margin:18px 0 0;text-align:center;font-size:13px;color:#7b828a;}",
     ".rc-generated strong{color:#6c6e70;font-weight:800;}",
@@ -551,7 +548,6 @@
       ctx.stroke();
       y += r.height;
     });
-
     ctx.fillStyle = "#707780";
     ctx.font = canvasFont("400", 12);
     drawWrapped(ctx, footerLines, padX, footerTop + 12, contentWidth, 16);
