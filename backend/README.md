@@ -147,10 +147,12 @@ Production refuses to boot on SQLite (guard in `production.py`).
 6. Paystack Dashboard transaction receipts may be enabled there for card/bank
    payment receipts only. Booking, cancellation, refund-status and staff emails
    are sent by the app's SMTP/Brevo-style transactional email configuration.
-7. If Paystack is configured so the customer bears Paystack transaction fees,
-   checkout may display a fee-inclusive card debit. The backend still validates
-   the server-initialized hotel amount using Paystack's `requested_amount`/fee
-   fields and records the fee metadata; it does not trust browser amounts.
+7. To make **the hotel/merchant bear Paystack charges**, open Paystack Dashboard
+   → **Settings** → **Preferences** → **Transaction fees** and leave **Pass fees
+   to customers** unchecked. If that Paystack setting is ever enabled, checkout
+   may display a fee-inclusive card debit; the backend defensively validates the
+   server-initialized hotel amount using Paystack's `requested_amount`/fee fields
+   and records the fee metadata, but it still never trusts browser amounts.
 
 If keys are missing the API returns `503 PAYMENT_NOT_CONFIGURED` explicitly —
 there is **no fake "demo payment" success path**. Browser redirects never confirm

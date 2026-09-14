@@ -48,14 +48,14 @@
     <div class="dash-content">
 
 <div class="receipt-actions no-print">
-  <button class="btn btn-accent" data-print type="button"><span data-icon="printer" data-size="16"></span> Print</button>
-  <button class="btn btn-outline" data-download type="button"><span data-icon="download" data-size="16"></span> Download</button>
+  <button class="btn btn-accent" data-print type="button"><span data-icon="printer" data-size="16"></span> Print receipt</button>
+  <button class="btn btn-outline" data-download-image type="button"><span data-icon="image" data-size="16"></span> Download image</button>
+  <button class="btn btn-outline" data-download-pdf type="button"><span data-icon="download" data-size="16"></span> Download PDF</button>
   <button class="btn btn-outline" data-email type="button"><span data-icon="mail" data-size="16"></span> Email guest</button>
   <a class="btn btn-ghost" data-booking-link href="bookings.html"><span data-icon="arrowLeft" data-size="16"></span> Booking</a>
 </div>
 
-<article class="receipt-sheet" id="receipt" data-receipt>
-      <img class="receipt-watermark" src="../assets/icons/logo-watermark.svg" alt="" aria-hidden="true">
+<article class="receipt-sheet rc-access" id="receipt" data-receipt>
   <div class="loading-block"><div class="spinner" role="status"></div><p class="muted">Loading receipt&hellip;</p></div>
 </article>
     </div>
@@ -69,6 +69,7 @@
 <script src="../js/ui.js"></script>
 <script src="../js/auth.js"></script>
 <script src="../js/hotel-data.js"></script>
+<script src="../js/receipt.js"></script>
 <script src="../js/navigation.js"></script>
 <script src="../js/dashboard.js"></script>
 <script>
@@ -83,161 +84,23 @@
   var ref = new URLSearchParams(location.search).get("ref");
   var data = null;
 
-  /* Verified receipt shape: GET /api/bookings/{ref}/receipt/ (owner or staff)
-     { hotel:{name,address,city,state,country,phone,email},
-       booking_reference, booking_status, booking_status_label, payment_status,
-       payment_status_label, guest:{name,email,phone,address,city,state,country},
-       room_type, room_numbers[], rooms, check_in, check_out, nights,
-       number_of_guests, adults, children, price_per_night, subtotal, discount,
-       tax, fees, total, amount_paid, amount_due, currency, issued_at,
-       receipt_reference, latest_payment{...}, previous_payments_total,
-       payments[ {reference,amount,provider,provider_label,channel,paid_at,
-                  recorded_by,notes,status} ] }
-     Every figure comes from the backend — nothing is calculated here. */
-
-  function t(value){ return value == null || value === "" ? "—" : String(value); }
-  function naira(value){ return JONE.formatNaira(value || 0); }
+  /* Verified receipt shape: GET /api/bookings/{ref}/receipt/ (owner or staff).
+     The Access-style renderer in js/receipt.js uses the same authoritative
+     server payload for screen, image export and PDF export — no totals are
+     recalculated in the browser. */
   function esc(value){ return JONE.esc(value == null || value === "" ? "—" : String(value)); }
-
-  /* Compact receipt rows: label on the left, value on the right, one line
-     each. `tone` marks the money rows that need emphasis. */
-  function row(label, value, tone){
-    return '<div class="rc-row' + (tone ? " " + tone : "") + '">' +
-      '<span class="rc-label">' + JONE.esc(label) + "</span>" +
-      '<span class="rc-value">' + esc(value) + "</span></div>";
-  }
-  function moneyRow(label, value, tone){
-    return '<div class="rc-row rc-money' + (tone ? " " + tone : "") + '">' +
-      '<span class="rc-label">' + JONE.esc(label) + "</span>" +
-      '<span class="rc-value">' + JONE.esc(naira(value)) + "</span></div>";
-  }
-  function section(title, rows){
-    return '<section class="rc-section"><h3>' + JONE.esc(title) + "</h3>" +
-      rows.filter(Boolean).join("") + "</section>";
-  }
-
-  function statusTone(status){
-    var s = String(status || "").toUpperCase();
-    if (s === "PAID") return "rc-status-paid";
-    if (s === "PARTIALLY_PAID") return "rc-status-partial";
-    if (s === "UNPAID") return "rc-status-unpaid";
-    return "rc-status-other";
-  }
 
   function render(d){
     data = d || {};
-    var guest = data.guest || {};
-    var hotel = data.hotel || {};
-    var latest = data.latest_payment;
-    var paid = Number(data.amount_paid || 0);
-    var due = Number(data.amount_due || 0);
-    var total = Number(data.total || 0);
-    var progress = total > 0 ? Math.min(100, Math.round((paid / total) * 100)) : (paid > 0 ? 100 : 0);
-
-    var hotelLines = [hotel.address, [hotel.city, hotel.state].filter(Boolean).join(", "), hotel.country]
-      .filter(Boolean).filter(function(v){ return v && v !== ", "; }).join(", ");
-    var guestLines = [guest.address, [guest.city, guest.state].filter(Boolean).join(", "), guest.country]
-      .filter(Boolean).filter(function(v){ return v && v !== ", "; }).join(", ");
-    var roomNumbers = (data.room_numbers && data.room_numbers.length)
-      ? data.room_numbers.join(", ")
-      : (data.rooms ? data.rooms + " room(s)" : null);
-    var method = latest ? (latest.provider_label || latest.provider) : "—";
-    var fullyPaid = due <= 0 && paid > 0;
-    // The headline figure is THIS transaction, exactly like a fintech receipt.
-    var headline = latest ? Number(latest.amount || 0) : due;
-    var headlineLabel = latest ? "Amount received" : "Outstanding balance";
-    var history = (data.payments || []).filter(function(p){ return p && p.reference; });
-
-    var html =
-      /* --- Header: brand + document type (compact, no giant logo) --------- */
-      '<header class="rc-head">' +
-        '<img class="rc-logo" src="../assets/icons/logo-official.svg" alt="" width="26" height="36">' +
-        "<div class=\"rc-head-text\">" +
-          '<p class="rc-brand">' + esc(hotel.name || "J-ONE HOTEL &amp; LODGE") + "</p>" +
-          '<p class="rc-doc-title">Payment receipt</p>' +
-        "</div>" +
-        '<span class="rc-status ' + statusTone(data.payment_status) + '">' +
-          esc(data.payment_status_label || data.payment_status) + "</span>" +
-      "</header>" +
-
-      /* --- The amount: first thing the eye lands on ----------------------- */
-      '<section class="rc-amount">' +
-        '<p class="rc-amount-label">' + JONE.esc(headlineLabel) + "</p>" +
-        '<p class="rc-amount-value">' + JONE.esc(naira(headline)) + "</p>" +
-        '<p class="rc-amount-sub">' +
-          (fullyPaid
-            ? JONE.esc(naira(total)) + " settled in full"
-            : JONE.esc(naira(paid)) + " paid of " + JONE.esc(naira(total)) +
-              (due > 0 ? " · " + JONE.esc(naira(due)) + " outstanding" : "")) +
-        "</p>" +
-      "</section>" +
-
-      /* --- Transaction ---------------------------------------------------- */
-      section("Transaction", [
-        row("Receipt no.", data.receipt_reference || data.booking_reference),
-        row("Booking ref.", data.booking_reference),
-        row("Date & time", data.issued_at ? JONE.formatDateTime(data.issued_at) : null),
-        row("Payment method", method),
-        row("Received by", latest ? (latest.recorded_by || "Online") : null),
-      ]) +
-
-      /* --- Guest ----------------------------------------------------------- */
-      section("Guest", [
-        row("Name", guest.name),
-        row("Phone", guest.phone),
-        guest.email ? row("Email", guest.email) : "",
-      ]) +
-
-      /* --- Stay ------------------------------------------------------------ */
-      section("Stay", [
-        row("Room type", data.room_type),
-        row("Room", roomNumbers),
-        row("Check-in", data.check_in ? JONE.formatDate(data.check_in, "mid") : null),
-        row("Check-out", data.check_out ? JONE.formatDate(data.check_out, "mid") : null),
-        row("Nights", data.nights != null ? data.nights + (data.nights === 1 ? " night" : " nights") : null),
-        row("Guests", data.number_of_guests != null
-          ? data.number_of_guests + " guest" + (data.number_of_guests === 1 ? "" : "s") : null),
-      ]) +
-
-      /* --- Payment --------------------------------------------------------- */
-      section("Payment", [
-        // Only spell out the nightly breakdown when it is not simply the total
-        // (i.e. when fees, tax or a discount are involved) — otherwise it is
-        // the same number twice and just adds height.
-        (Number(data.subtotal) !== Number(data.total) || Number(data.fees) ||
-         Number(data.tax) || Number(data.discount)
-          ? moneyRow("Room charges (" + t(data.nights != null ? data.nights : "—") + " × " +
-              naira(data.price_per_night) + ")", data.subtotal)
-          : ""),
-        Number(data.fees) ? moneyRow("Fees & extra guests", data.fees) : "",
-        Number(data.discount) ? moneyRow("Discount", "-" + naira(data.discount)) : "",
-        Number(data.tax) ? moneyRow("Tax", data.tax) : "",
-        moneyRow("Booking total", data.total, "rc-row-total"),
-        moneyRow("This payment", latest ? latest.amount : 0),
-        moneyRow("Previous payments", data.previous_payments_total),
-        moneyRow("Amount paid", data.amount_paid),
-        moneyRow("Outstanding balance", data.amount_due, fullyPaid ? "rc-row-ok" : "rc-row-due"),
-      ]) +
-
-      /* --- Payment history: only when there is more than one --------------- */
-      (history.length > 1
-        ? section("Payment history", history.map(function(p){
-            return '<div class="rc-row rc-history">' +
-              '<span class="rc-label">' + esc(p.paid_at ? JONE.formatDate(p.paid_at, "mid") : "—") +
-              " · " + esc(p.provider_label || p.provider) + "</span>" +
-              '<span class="rc-value">' + JONE.esc(naira(p.amount)) + "</span></div>";
-          }))
-        : "") +
-
-      '<footer class="rc-foot">' +
-        "<p>Thank you for choosing " + esc(hotel.name || "J-ONE HOTEL &amp; LODGE") + ".</p>" +
-        (hotelLines ? '<p class="rc-muted">' + esc(hotelLines) + "</p>" : "") +
-        '<p class="rc-muted">Generated ' + esc(new Date().toLocaleString()) +
-          " · valid without a signature.</p>" +
-      "</footer>";
-
-    sheet.innerHTML = html;
-
+    if (!window.JONE || !JONE.receipts) {
+      showError({ message: "Receipt renderer is unavailable." });
+      return;
+    }
+    JONE.receipts.render(sheet, data, {
+      assetPrefix: "../",
+      sourceLabel: "J-ONE Staff Console",
+      documentTitle: "Transaction Receipt"
+    });
     if (subtitle) {
       subtitle.textContent = (data.receipt_reference || data.booking_reference || "") +
         (data.guest && data.guest.name ? " · " + data.guest.name : "");
@@ -267,7 +130,35 @@
 
   /* ------------------------------- Actions -------------------------------- */
   var printBtn = document.querySelector("[data-print]");
-  if (printBtn) printBtn.addEventListener("click", function(){ window.print(); });
+  if (printBtn) printBtn.addEventListener("click", function(){
+    if (!data || !window.JONE || !JONE.receipts) return;
+    JONE.receipts.printReceipt(sheet, data);
+  });
+
+  async function exportReceipt(button, kind){
+    if (!data || !window.JONE || !JONE.receipts) return;
+    if (!JONE.guardSubmit(button)) return;
+    var prev = button.innerHTML;
+    button.innerHTML = '<span class="btn-spinner"></span> Preparing…';
+    try {
+      var exportOpts = { sourceLabel: "J-ONE Staff Console", documentTitle: "Transaction Receipt" };
+      if (kind === "pdf") await JONE.receipts.downloadPDF(sheet, data, exportOpts);
+      else await JONE.receipts.downloadImage(sheet, data, exportOpts);
+      JONE.ui.toast(kind === "pdf" ? "Receipt PDF downloaded." : "Receipt image downloaded.", "success");
+    } catch (err) {
+      JONE.ui.toast((err && err.message) || "The receipt could not be exported.", "error");
+    } finally {
+      JONE.releaseGuard(button);
+      button.innerHTML = prev;
+      JONE.icons.inject(button);
+    }
+  }
+
+  var imageBtn = document.querySelector("[data-download-image]");
+  if (imageBtn) imageBtn.addEventListener("click", function(){ exportReceipt(imageBtn, "image"); });
+
+  var pdfBtn = document.querySelector("[data-download-pdf]");
+  if (pdfBtn) pdfBtn.addEventListener("click", function(){ exportReceipt(pdfBtn, "pdf"); });
 
   var emailBtn = document.querySelector("[data-email]");
   if (emailBtn) emailBtn.addEventListener("click", async function(){
@@ -277,58 +168,10 @@
       await window.API.sendReceipt(data.booking_reference);
       JONE.ui.toast("Receipt sent to the guest's email.", "success");
     } catch (err) {
-      JONE.releaseGuard(emailBtn);
       JONE.ui.toast((err && err.message) || "The receipt couldn't be sent.", "error");
+    } finally {
+      JONE.releaseGuard(emailBtn);
     }
-  });
-
-  /* Download: a self-contained, printable copy of the receipt (open it in any
-     browser and print/export to PDF). No new endpoint, no client-side
-     re-calculation — the same server data, saved as a file. */
-  var dlBtn = document.querySelector("[data-download]");
-  if (dlBtn) dlBtn.addEventListener("click", function(){
-    if (!data) return;
-    var css = [
-      "body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;margin:0 auto;padding:16px;color:#1c1c1c;max-width:420px;font-size:13px;line-height:1.45;}",
-      ".receipt-sheet{position:relative;overflow:hidden;}",
-      ".receipt-sheet:before{content:\"\";position:absolute;inset:50% auto auto 50%;transform:translate(-50%,-50%);width:72%;height:72%;background:url('../assets/icons/logo-watermark.svg') center/contain no-repeat;opacity:.075;pointer-events:none;}",
-      ".receipt-sheet>*{position:relative;z-index:1;}",
-      ".rc-head{display:flex;align-items:center;gap:8px;padding-bottom:8px;border-bottom:2px solid #1c1c1c;}",
-      ".rc-logo{width:24px;height:auto;} .rc-head-text{flex:1;min-width:0;}",
-      ".rc-brand{margin:0;font-weight:700;letter-spacing:.04em;font-size:13px;}",
-      ".rc-doc-title{margin:0;font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:#6b6b6b;}",
-      ".rc-status{padding:2px 8px;border-radius:999px;font-size:10px;font-weight:700;text-transform:uppercase;white-space:nowrap;}",
-      ".rc-status-paid{background:#e6f6ec;color:#14663a;} .rc-status-partial{background:#fdf3e2;color:#8a5a00;}",
-      ".rc-status-unpaid{background:#fdecec;color:#a02626;} .rc-status-other{background:#eef2f7;color:#2b4a6f;}",
-      ".rc-amount{margin:10px 0;padding:10px 0;text-align:center;border-bottom:1px solid #e3e3e3;}",
-      ".rc-amount-label{margin:0;font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:#6b6b6b;}",
-      ".rc-amount-value{margin:2px 0;font-size:26px;font-weight:700;letter-spacing:-.02em;overflow-wrap:anywhere;}",
-      ".rc-amount-sub{margin:0;font-size:11px;color:#6b6b6b;}",
-      ".rc-section{margin:0;padding:8px 0;border-bottom:1px solid #ececec;}",
-      ".rc-section h3{margin:0 0 5px;font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:#6b6b6b;}",
-      ".rc-row{display:flex;justify-content:space-between;gap:10px;padding:2px 0;}",
-      ".rc-label{color:#6b6b6b;flex:0 0 auto;} .rc-value{text-align:right;font-weight:600;overflow-wrap:anywhere;min-width:0;}",
-      ".rc-money .rc-value,.rc-history .rc-value{font-variant-numeric:tabular-nums;}",
-      ".rc-row-total{border-top:1px solid #1c1c1c;margin-top:4px;padding-top:5px;font-weight:700;}",
-      ".rc-row-due .rc-value{color:#a02626;} .rc-row-ok .rc-value{color:#14663a;}",
-      ".rc-foot{margin-top:10px;padding-top:8px;border-top:1px solid #e3e3e3;text-align:center;font-size:11px;color:#6b6b6b;}",
-      ".rc-foot p{margin:0 0 2px;}",
-      "@media print{@page{margin:8mm;} body{margin:0;padding:0;max-width:100%;}}"
-    ].join("\n");
-    var doc = "<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"UTF-8\"><title>Receipt " +
-      JONE.esc(data.receipt_reference || data.booking_reference || "") +
-      '</title><style>' + css + '</style></head><body>' +
-      sheet.innerHTML.replace(/<img class="rc-logo"[^>]*>/, "") +
-      "</body></html>";
-    var url = URL.createObjectURL(new Blob([doc], { type: "text/html" }));
-    var a = document.createElement("a");
-    a.href = url;
-    a.download = "J-ONE-receipt-" + (data.receipt_reference || data.booking_reference || "receipt") + ".html";
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
-    JONE.ui.toast("Receipt downloaded.", "success");
   });
 })();
 </script>

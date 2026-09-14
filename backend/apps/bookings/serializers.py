@@ -296,6 +296,8 @@ class ReceiptSerializer(serializers.Serializer):
             "latest_payment": (
                 {
                     "reference": latest.reference,
+                    "transaction_id": latest.transaction_id,
+                    "provider_reference": latest.paystack_reference,
                     "amount": money(latest.amount),
                     "provider": latest.provider,
                     "provider_label": latest.get_provider_display(),
@@ -312,6 +314,8 @@ class ReceiptSerializer(serializers.Serializer):
             "payments": [
                 {
                     "reference": p.reference,
+                    "transaction_id": p.transaction_id,
+                    "provider_reference": p.paystack_reference,
                     "amount": money(p.amount),
                     "status": p.status,
                     "provider": p.provider,

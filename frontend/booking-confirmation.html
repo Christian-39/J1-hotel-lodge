@@ -93,23 +93,14 @@
       </div>
 
       <!-- Receipt/folio sheet -->
-      <div class="receipt-sheet" id="receipt-sheet" style="margin-top:2rem;">
-        <img class="receipt-watermark" src="assets/icons/logo-watermark.svg" alt="" aria-hidden="true">
-        <div class="receipt-content">
-        <div class="receipt-brand">
-          <img src="assets/icons/logo-official.svg" alt="J-ONE Hotel &amp; Lodge" height="44">
-          <div style="font-weight:600;font-size:1.05rem;letter-spacing:0.09em;">J-ONE HOTEL &amp; LODGE</div>
-          <div class="caption">Booking confirmation &amp; receipt</div>
-        </div>
-        <table class="receipt-table">
-          <tbody id="receipt-body"></tbody>
-        </table>
-        <div class="receipt-foot">Thank you for staying with us. For assistance, contact <span data-contact-phone>+234 803 211 2874</span>.</div>
-        </div>
-      </div>
+      <article class="receipt-sheet rc-access" id="receipt-sheet" data-receipt style="margin-top:2rem;">
+        <div class="loading-block"><div class="spinner" role="status"></div><p class="muted">Preparing receipt&hellip;</p></div>
+      </article>
 
-      <div class="confirm-actions">
-        <a class="btn" id="receipt-download" href="#">Print / Save receipt</a>
+      <div class="confirm-actions receipt-actions">
+        <button class="btn" id="receipt-download-image" type="button"><span data-icon="image" data-size="16"></span> Save image</button>
+        <button class="btn btn-outline" id="receipt-download-pdf" type="button"><span data-icon="download" data-size="16"></span> Save PDF</button>
+        <button class="btn btn-outline" id="receipt-print" type="button"><span data-icon="printer" data-size="16"></span> Print receipt</button>
         <a class="btn btn-outline" href="index.html">Return home</a>
         <a class="btn btn-outline" href="contact.html">Contact hotel</a>
       </div>
@@ -217,6 +208,7 @@
 <script src="js/ui.js"></script>
 <script src="js/auth.js"></script>
 <script src="js/hotel-data.js"></script>
+<script src="js/receipt.js"></script>
 <script src="js/contact.js"></script>
 <script src="js/navigation.js"></script>
 <script>JONE.ui.initChrome(); JONE.nav.init();</script>
@@ -247,6 +239,7 @@
   // so the folio survives the payment redirect.
   var booking = null;
   var quote = null;
+  var receiptData = null;
   function bookingTokenKey(ref) { return "jone.guest_access_token." + String(ref || ""); }
   var guestToken = (bookingRef && sessionStorage.getItem(bookingTokenKey(bookingRef))) || sessionStorage.getItem("jone.guest_access_token") || p.get("token") || "";
   if (guestToken) {
@@ -284,36 +277,35 @@
 
   function fillReceipt(source) {
     var b = source || booking || {};
-    var guest = b.guest || {};
+    receiptData = b;
     var ref = b.booking_reference || bookingRef || "—";
-    var paidLabel = {
-      UNPAID: "Not paid yet", PARTIALLY_PAID: "Partially paid", PAID: "Paid",
-      PARTIALLY_REFUNDED: "Partially refunded", REFUNDED: "Refunded", FAILED: "Payment failed"
-    };
-    var statusLabel = paidLabel[String(b.payment_status || "").toUpperCase()] || (b.payment_status || "—");
-    var rows = [
-      ["Booking reference", ref],
-      ["Guest", guest.full_name || ((guest.first_name || "") + " " + (guest.last_name || "")).trim() || "Guest"],
-      ["Room", roomSummary(b)],
-      ["Check-in", JONE.formatDate(b.check_in || criteria.check_in)],
-      ["Check-out", JONE.formatDate(b.check_out || criteria.check_out)],
-      ["Nights", (b.nights != null ? b.nights : "—")],
-      ["Room rate", b.price_per_night != null ? JONE.formatNaira(b.price_per_night) + " / night" : "—"]
-    ];
-    if (b.subtotal != null) rows.push(["Subtotal", JONE.formatNaira(b.subtotal)]);
-    if (b.discount_amount != null && Number(b.discount_amount) > 0) rows.push(["Discount", "−" + JONE.formatNaira(b.discount_amount)]);
-    var html = rows.map(function(r){ return "<tr><td>"+JONE.esc(r[0])+"</td><td>"+JONE.esc(String(r[1]))+"</td></tr>"; }).join("");
-    if (b.total_amount != null) html += '<tr class="total"><td>Total</td><td>'+JONE.esc(JONE.formatNaira(b.total_amount))+'</td></tr>';
-    if (b.amount_paid != null) html += '<tr><td>Amount paid</td><td>'+JONE.esc(JONE.formatNaira(b.amount_paid))+'</td></tr>';
-    if (b.amount_due != null && Number(b.amount_due) > 0) html += '<tr><td>Balance due</td><td>'+JONE.esc(JONE.formatNaira(b.amount_due))+'</td></tr>';
-    html += '<tr><td>Payment status</td><td>'+JONE.esc(statusLabel)+'</td></tr>';
-    if (b.status) html += '<tr><td>Booking status</td><td>'+JONE.esc(String(b.status).toLowerCase().replace(/_/g," "))+'</td></tr>';
-    document.getElementById("receipt-body").innerHTML = html;
-    var dl = document.getElementById("receipt-download");
-    if (dl) dl.addEventListener("click", function(e){ e.preventDefault(); window.print(); });
+    var sheet = document.getElementById("receipt-sheet");
+    if (window.JONE && JONE.receipts && sheet) {
+      JONE.receipts.render(sheet, b, {
+        assetPrefix: "",
+        sourceLabel: "J-ONE Online Booking",
+        documentTitle: "Transaction Receipt"
+      });
+      // Upgrade the confirmation folio with the richer receipt endpoint when a
+      // guest token is available. The endpoint is still backend-authoritative;
+      // failure simply leaves the already-rendered booking data in place.
+      if (b.booking_reference && !b.latest_payment && window.API && window.API.getBookingReceipt) {
+        window.API.getBookingReceipt(b.booking_reference, guestOpts()).then(function (res) {
+          if (res && res.data) {
+            receiptData = res.data;
+            JONE.receipts.render(sheet, res.data, {
+              assetPrefix: "",
+              sourceLabel: "J-ONE Online Booking",
+              documentTitle: "Transaction Receipt"
+            });
+          }
+        }).catch(function () {});
+      }
+    }
     var refEl = document.querySelector("[data-ref]");
     if (refEl) refEl.textContent = ref;
   }
+
 
   // Decide, from BACKEND-AUTHORITATIVE booking data alone, whether a success
   // toast is warranted (and which one). Never inferred from URL/callback.
@@ -518,6 +510,37 @@
   document.getElementById("pay-btn").addEventListener("click", pay);
   var retryBtn = document.getElementById("retry-pay");
   if (retryBtn) retryBtn.addEventListener("click", pay);
+
+  async function exportReceipt(button, kind) {
+    var sheet = document.getElementById("receipt-sheet");
+    if (!sheet || !window.JONE || !JONE.receipts) return;
+    var payload = receiptData || booking || {};
+    if (!JONE.guardSubmit(button)) return;
+    var prev = button.innerHTML;
+    button.innerHTML = '<span class="btn-spinner"></span> Preparing…';
+    try {
+      var exportOpts = { sourceLabel: "J-ONE Online Booking", documentTitle: "Transaction Receipt" };
+      if (kind === "pdf") await JONE.receipts.downloadPDF(sheet, payload, exportOpts);
+      else await JONE.receipts.downloadImage(sheet, payload, exportOpts);
+      JONE.ui.toast(kind === "pdf" ? "Receipt PDF saved." : "Receipt image saved.", "success");
+    } catch (err) {
+      JONE.ui.toast((err && err.message) || "The receipt could not be exported.", "error");
+    } finally {
+      JONE.releaseGuard(button);
+      button.innerHTML = prev;
+      JONE.icons.inject(button);
+    }
+  }
+
+  var imageBtn = document.getElementById("receipt-download-image");
+  if (imageBtn) imageBtn.addEventListener("click", function () { exportReceipt(imageBtn, "image"); });
+  var pdfBtn = document.getElementById("receipt-download-pdf");
+  if (pdfBtn) pdfBtn.addEventListener("click", function () { exportReceipt(pdfBtn, "pdf"); });
+  var printReceiptBtn = document.getElementById("receipt-print");
+  if (printReceiptBtn) printReceiptBtn.addEventListener("click", function () {
+    var sheet = document.getElementById("receipt-sheet");
+    if (sheet && window.JONE && JONE.receipts) JONE.receipts.printReceipt(sheet, receiptData || booking || {});
+  });
 
   /* ------------------------- entry points ------------------------- */
   (async function init() {

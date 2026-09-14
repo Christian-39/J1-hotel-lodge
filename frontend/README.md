@@ -229,7 +229,7 @@ The frontend never fabricates production records. Specifically:
 5. **Pay** — the frontend asks the backend to initiate payment, receives the Paystack
    `authorization_url`, redirects there, and then **polls the backend for the authoritative
    payment/booking status**. It never treats a redirect back as success by itself.
-6. Confirmation + receipt are shown only after backend confirmation.
+6. Confirmation + receipt are shown only after backend confirmation. Receipt actions export **only the receipt sheet** as image/PDF (or print only the receipt), never the full page chrome.
 
 ## Theme system
 

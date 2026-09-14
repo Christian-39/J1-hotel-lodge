@@ -420,17 +420,19 @@ endpoint (or the signed webhook) confirms.**
   "subtotal", "discount", "tax", "fees", "total",
   "amount_paid", "amount_due", "currency",
   "issued_at", "receipt_reference",
-  "latest_payment": { "reference", "amount", "provider", "provider_label",
-                      "channel", "status", "paid_at", "recorded_by", "notes" } | null,
+  "latest_payment": { "reference", "transaction_id", "provider_reference", "amount",
+                      "provider", "provider_label", "channel", "status",
+                      "paid_at", "recorded_by", "notes" } | null,
   "previous_payments_total": "0.00",
-  "payments": [ { "reference", "amount", "status", "provider", "provider_label",
-                  "channel", "paid_at", "recorded_by", "notes" } ] }
+  "payments": [ { "reference", "transaction_id", "provider_reference", "amount",
+                  "status", "provider", "provider_label", "channel",
+                  "paid_at", "recorded_by", "notes" } ] }
 ```
 
 Every field previously documented is still present — the additions are purely
-additive, so existing consumers keep working. Render as the professional
-receipt page: the **amount first**, then the references, then guest / stay,
-then the financial breakdown and the payments recorded.
+additive, so existing consumers keep working. Render as the Access-inspired
+professional receipt page: J-ONE logo lockup, centred title/generated line,
+gold labels, blue values, ruled rows, and receipt-only image/PDF/print exports.
 
 ## 18. Notifications — `GET /api/notifications/` 🔑
 
