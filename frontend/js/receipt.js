@@ -324,7 +324,6 @@
           logoMarkup +
           '<div class="rc-wordmark-wrap"><div class="rc-wordmark">J-ONE</div><div class="rc-wordmark-sub">Hotel &amp; Lodge</div></div>' +
         "</div>" +
-        '<div class="rc-slash-wrap" aria-hidden="true"><span class="rc-slash"></span><span class="rc-tagline">comfort with care</span></div>' +
       "</header>" +
       '<h2 class="rc-title">' + esc(d.documentTitle) + "</h2>" +
       '<p class="rc-generated">Generated from <strong>' + esc(d.sourceLabel) + "</strong> on " + esc(d.generatedAt) + "</p>" +
