@@ -17,6 +17,7 @@ from drf_spectacular.types import OpenApiTypes
 from rest_framework import generics
 from rest_framework.exceptions import NotFound, ValidationError
 from rest_framework.permissions import AllowAny
+from rest_framework.throttling import ScopedRateThrottle
 
 from apps.bookings.services import availability
 from apps.core.responses import success_response
@@ -81,6 +82,108 @@ class RoomTypeDetailView(generics.RetrieveAPIView):
 
 @extend_schema(
     tags=["Rooms"],
+    summary="Per-date availability calendar for one room type",
+    description=(
+        "Every date in the window reports whether the room type has at least "
+        "one sellable physical room free that NIGHT. A date some booking "
+        "merely touches is NOT unavailable while another physical room of the "
+        "same type is still free; a date is unavailable only when every "
+        "sellable room is blocked. A checkout day never blocks the next "
+        "guest's check-in (half-open [check_in, check_out) nights)."
+    ),
+    parameters=[
+        OpenApiParameter("start_date", OpenApiTypes.DATE, required=False,
+                         description="Window start, inclusive. Defaults to today."),
+        OpenApiParameter("end_date", OpenApiTypes.DATE, required=False,
+                         description="Window end, EXCLUSIVE (check-out semantics). "
+                                     "Required together with start_date; the window "
+                                     "may span at most 366 days."),
+        OpenApiParameter("days", int, required=False,
+                         description="Legacy shorthand: window length from today "
+                                     "(1–366, default 365). Ignored when both "
+                                     "start_date and end_date are supplied."),
+    ],
+)
+class RoomTypeUnavailableDatesView(generics.GenericAPIView):
+    """Calendar inventory for one room type, computed by the availability engine.
+
+    The sweep itself lives in ``apps.bookings.services.availability`` — the
+    same blocking rules as the range search and booking creation, resolved
+    per night. This view only parses the window and shapes the response.
+    """
+    permission_classes = [AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "availability"
+    serializer_class = PublicRoomOptionSerializer  # schema marker only
+
+    def _room_type(self, slug):
+        qs = _catalog_queryset()
+        room_type = qs.filter(slug=slug).first()
+        if room_type is None and str(slug).isdigit():
+            room_type = qs.filter(pk=int(slug)).first()
+        if room_type is None:
+            raise NotFound()
+        return room_type
+
+    def _window(self, request):
+        params = request.query_params
+        start_raw = params.get("start_date")
+        end_raw = params.get("end_date")
+        days_raw = params.get("days")
+
+        if start_raw or end_raw:
+            if not (start_raw and end_raw):
+                raise ValidationError(
+                    {"start_date": ["Provide both start_date and end_date."]}
+                )
+            try:
+                start = datetime.strptime(start_raw, "%Y-%m-%d").date()
+                end = datetime.strptime(end_raw, "%Y-%m-%d").date()
+            except (TypeError, ValueError):
+                raise ValidationError(
+                    {"start_date": ["Dates must use YYYY-MM-DD format."]}
+                )
+            if end <= start:
+                raise ValidationError(
+                    {"end_date": ["end_date must be after start_date."]}
+                )
+            if (end - start).days > availability.MAX_CALENDAR_WINDOW_DAYS:
+                raise ValidationError(
+                    {"end_date": [
+                        f"The window may span at most {availability.MAX_CALENDAR_WINDOW_DAYS} days."
+                    ]}
+                )
+            return start, end
+
+        try:
+            days = int(days_raw) if days_raw is not None else 365
+        except (TypeError, ValueError):
+            raise ValidationError({"days": ["Days must be a whole number."]})
+        today = timezone.localdate()
+        return today, today + timedelta(days=min(max(days, 1), availability.MAX_CALENDAR_WINDOW_DAYS))
+
+    def get(self, request, slug):
+        room_type = self._room_type(slug)
+        start, end = self._window(request)
+        inventory = availability.nightly_inventory(room_type=room_type, start=start, end=end)
+        dates = inventory["dates"]
+        unavailable = [day for day, info in dates.items() if not info["available"]]
+        return success_response({
+            "room_type": {
+                "id": room_type.pk,
+                "name": room_type.name,
+                "slug": room_type.slug,
+            },
+            "total_rooms": inventory["total_sellable"],
+            "from": start.isoformat(),
+            "through": (end - timedelta(days=1)).isoformat(),
+            "dates": dates,
+            "unavailable_dates": unavailable,
+        })
+
+
+@extend_schema(
+    tags=["Rooms"],
     summary='Physical rooms of a room type (for book-this-room)',
     parameters=[
         OpenApiParameter("check_in", OpenApiTypes.DATE, required=False,
@@ -89,49 +192,6 @@ class RoomTypeDetailView(generics.RetrieveAPIView):
         OpenApiParameter("check_out", OpenApiTypes.DATE, required=False),
     ],
 )
-class RoomTypeUnavailableDatesView(generics.GenericAPIView):
-    """Return sold-out dates for one room type using a bounded, two-query sweep."""
-    permission_classes = [AllowAny]
-    serializer_class = PublicRoomOptionSerializer
-
-    def get(self, request, slug):
-        room_type = _catalog_queryset().filter(slug=slug).first()
-        if room_type is None and str(slug).isdigit():
-            room_type = _catalog_queryset().filter(pk=int(slug)).first()
-        if room_type is None:
-            raise NotFound()
-        today = timezone.localdate()
-        try:
-            days = min(max(int(request.query_params.get("days", 365)), 1), 366)
-        except (TypeError, ValueError):
-            raise ValidationError({"days": ["Days must be a whole number."]})
-        end = today + timedelta(days=days)
-        sellable_ids = set(Room.objects.filter(
-            room_type=room_type, is_active=True
-        ).exclude(status__in=availability.OPERATIONALLY_BLOCKED).values_list("id", flat=True))
-        assignments = list(
-            availability.BookingRoom.objects.filter(room_id__in=sellable_ids)
-            .filter(availability.blocking_booking_q(prefix="booking"))
-            .filter(booking__check_in__lt=end, booking__check_out__gt=today)
-            .values_list("room_id", "booking__check_in", "booking__check_out")
-        )
-        unavailable = []
-        current = today
-        while current < end:
-            following = current + timedelta(days=1)
-            blocked = {room_id for room_id, check_in, check_out in assignments
-                       if check_in < following and check_out > current}
-            if not sellable_ids or len(blocked) >= len(sellable_ids):
-                unavailable.append(current.isoformat())
-            current = following
-        return success_response({
-            "room_type": room_type.slug,
-            "from": today.isoformat(),
-            "through": (end - timedelta(days=1)).isoformat(),
-            "unavailable_dates": unavailable,
-        })
-
-
 class RoomTypeRoomsView(generics.ListAPIView):
     """The physical rooms that make up one room type.
 

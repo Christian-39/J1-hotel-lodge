@@ -194,6 +194,33 @@ Params: `check_in*`, `check_out*` (YYYY-MM-DD), `guests`≥1, `rooms`≥1, `room
 **No availability** ⇒ `200` with `results: []` or rows whose `bookable` is false.
 Treat these as *preview* prices — the final word is `/api/bookings/quote/`.
 
+## 8b. Calendar availability — `GET /api/rooms/<slug or id>/unavailable-dates/`
+
+One request returns the per-night inventory for a whole window (never one
+request per date). Params: either `start_date*` + `end_date*`
+(`YYYY-MM-DD`, **end exclusive** — check-out semantics, max span 366 days)
+or the legacy shorthand `days=N` (defaults to a today+365 window).
+
+```jsonc
+"data": {
+  "room_type": { "id": 1, "name": "Standard Room", "slug": "standard-room" },
+  "total_rooms": 4,                        // sellable physical rooms
+  "from": "2026-09-01", "through": "2026-09-30",
+  "dates": {                               // one entry PER date in the window
+    "2026-09-18": { "available_rooms": 2, "available": true },
+    "2026-09-26": { "available_rooms": 0, "available": false } },
+  "unavailable_dates": ["2026-09-26", "2026-09-27", "2026-09-28"]  // legacy list (kept)
+}
+```
+
+A date is `available: false` only when **every** sellable physical room of
+the type is blocked that night (CONFIRMED / CHECKED_IN / live PENDING hold);
+cancelled, expired, checked-out and no-show reservations never block, and a
+check-out day never blocks the next guest's check-in. The sweep is the same
+authoritative availability engine that answers the range search and guards
+booking creation — the calendar is a UX aid, never a substitute for the
+server's final check.
+
 ## 9. Enquiries and cancellation/refund requests — `POST /api/enquiries/`
 
 General body: `{ "name": "…", "email": "…", "phone": "…", "subject": "…", "message": "…" }`

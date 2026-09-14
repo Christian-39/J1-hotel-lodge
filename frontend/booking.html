@@ -59,20 +59,39 @@
         <section id="booking-step1" class="bk-panel is-current">
           <form id="stay-form" class="card card-pad" novalidate>
             <h2 style="font-size:var(--fs-xl);margin-bottom:0.35rem;">Your stay</h2>
-            <p class="muted" style="margin-bottom:1.5rem;font-size:var(--fs-sm);">Tell us your dates and party size to see what's available.</p>
-            <div class="form-grid fg-2" style="margin-bottom:1rem;">
+            <p class="muted" style="margin-bottom:1.5rem;font-size:var(--fs-sm);">Choose your dates and party size. Select a room type and its calendar shows live availability — sold-out dates cannot be picked.</p>
+            <div class="field" style="margin-bottom:1rem;">
+              <label class="field-label" for="b-roomtype">Room type</label>
+              <select class="select" id="b-roomtype" name="room_type">
+                <option value="">Any room type — I'll choose at the next step</option>
+              </select>
+            </div>
+            <div class="form-grid fg-2" style="margin-bottom:0.75rem;">
               <div class="field">
-                <label class="field-label" for="b-checkin">Check-in</label>
-                <input class="input" type="date" id="b-checkin" name="check_in" required>
+                <span class="field-label" id="lbl-checkin">Check-in</span>
+                <button type="button" class="input cal-display is-empty" data-cal-display="checkin" aria-labelledby="lbl-checkin">
+                  <span class="cal-display-value">Select date</span>
+                  <span data-icon="calendar" data-size="18"></span>
+                </button>
+                <!-- state-backed values (the calendar above is the user-facing picker) -->
+                <input type="hidden" id="b-checkin" name="check_in" value="">
               </div>
               <div class="field">
-                <label class="field-label" for="b-checkout">Check-out</label>
-                <input class="input" type="date" id="b-checkout" name="check_out" required>
+                <span class="field-label" id="lbl-checkout">Check-out</span>
+                <button type="button" class="input cal-display is-empty" data-cal-display="checkout" aria-labelledby="lbl-checkout">
+                  <span class="cal-display-value">Select date</span>
+                  <span data-icon="calendar" data-size="18"></span>
+                </button>
+                <input type="hidden" id="b-checkout" name="check_out" value="">
                 <div class="field-error" data-date-error>Check-out must be after check-in.</div>
-                <p class="caption" data-availability-dates-status aria-live="polite"></p>
               </div>
             </div>
-            <div class="form-grid fg-2">
+            <div id="stay-calendar"></div>
+            <div class="cal-statusline">
+              <p class="caption" data-availability-dates-status aria-live="polite"></p>
+              <button type="button" class="cal-about-link" id="cal-about">How availability works</button>
+            </div>
+            <div class="form-grid fg-2" style="margin-top:1rem;">
               <div class="field">
                 <label class="field-label" for="b-adults">Adults</label>
                 <select class="select" id="b-adults" name="adults">
@@ -222,6 +241,7 @@
 <script src="js/hotel-data.js"></script>
 <script src="js/contact.js"></script>
 <script src="js/navigation.js"></script>
+<script src="js/booking-calendar.js"></script>
 <script>JONE.ui.initChrome(); JONE.nav.init();</script>
 <script src="js/site.js"></script>
 <script src="js/booking-stepper.js"></script>
@@ -238,17 +258,17 @@
        ROOM TYPE  — "Deluxe Room", identified by its slug (or id).
        ROOM       — the physical room, "Room 203", identified by its stable id.
 
-     ?room= carries the ROOM TYPE (a room-type page or the rooms list sends it);
+     ?room= seeds the ROOM TYPE (a room-type page or the rooms list sends it);
      ?room_id= / ?room_no= carry the PHYSICAL ROOM chosen on a room page.
 
-     An explicit URL parameter is always NEWER than whatever a previous visit
-     left in localStorage, so it becomes `exactRoomType` and any stale draft
-     room state is cleared here. Previously the page computed `exactRoomType`
-     from the URL but then restored the selection from `draft.room_type`, so a
-     guest arriving from "Book this room" landed on step 2 with nothing
-     selected and had to choose the room type a second time. */
+     The URL is only the INITIAL seed. From that moment the guest's latest
+     choice — the "Room type" selector on this step or the room card on the
+     next — is authoritative and lives in `selectedRoomType`, so the calendar
+     can never keep showing a previous type's sold-out dates after a change. */
   var urlRoomType = (params.get("room") || "").toString().trim();
-  var exactRoomType = (urlRoomType || draft.room_type || "").toString();
+  var urlRoomValidated = "";        // catalog-validated slug behind ?room=
+  var selectedRoomType = urlRoomType || draft.room_type || "";
+  var selectedRoomName = (params.get("room_name") || draft.room_name || "").toString();
   var exactRoomId = params.get("room_id") || "";
   var exactRoomNumber = params.get("room_no") || "";
 
@@ -260,21 +280,23 @@
     JONE.storage.set(S, stale);
     draft = JONE.storage.get(S, {}) || {};
   }
-  if (exactRoomId && !exactRoomType) exactRoomId = "";
+  if (exactRoomId && !selectedRoomType) exactRoomId = "";
   if (!exactRoomId && draft.room_id && draft.room_type &&
-      String(draft.room_type) === String(exactRoomType)) {
+      String(draft.room_type) === String(selectedRoomType)) {
     exactRoomId = draft.room_id;
     exactRoomNumber = draft.room_number || exactRoomNumber;
   }
 
-  var ci = document.getElementById("b-checkin");
-  var co = document.getElementById("b-checkout");
+  var ci = document.getElementById("b-checkin");       // hidden state holders —
+  var co = document.getElementById("b-checkout");      // the calendar is the UI
   var adults = document.getElementById("b-adults");
   var children = document.getElementById("b-children");
+  var roomtypeSelect = document.getElementById("b-roomtype");
   var nightNote = document.querySelector("[data-nights-note]");
   var nightText = document.querySelector("[data-nights-text]");
   var errBox = document.querySelector("[data-form-error]");
   var dateErr = document.querySelector("[data-date-error]");
+  var datesStatus = document.querySelector("[data-availability-dates-status]");
 
   var panel1 = document.getElementById("booking-step1");
   var panel2 = document.getElementById("booking-step2");
@@ -290,6 +312,7 @@
   var criteria = {
     check_in: ci.value, check_out: co.value,
     adults: adults.value, children: children.value,
+    room: selectedRoomType, room_name: selectedRoomName,
     offer: params.get("offer") || draft.offer_code || ""
   };
   var stepper = JONE.stepper.mount(document.getElementById("booking-stepper"), {
@@ -297,7 +320,7 @@
     criteria: criteria,
     onNavigate: function (step, index) {
       // In-page back navigation between Stay (1) and Room (2).
-      if (index === 1) { switchPanel(2, 1); stepper.update(1); return true; }
+      if (index === 1) { switchPanel(2, 1); syncRoomTypeUI(); stepper.update(1); return true; }
       if (index === 2) { switchPanel(1, 2); stepper.update(2); return true; }
       return false;
     }
@@ -318,62 +341,266 @@
     b.scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "start" });
   }
 
-  function applyDateMin() {
-    ci.min = JONE.hotelTodayISO(0);
-    if (ci.value && ci.value < ci.min) { ci.value = ci.min; syncNote(); }
-  }
-  applyDateMin();
-  document.addEventListener("jone:hotel", applyDateMin);
-
-  // Native date controls cannot visually disable arbitrary dates consistently,
-  // so the backend supplies sold-out dates and selections crossing one are
-  // rejected immediately. The booking endpoint remains the final authority.
-  var unavailableDates = new Set();
-  var datesStatus = document.querySelector("[data-availability-dates-status]");
-  async function loadUnavailableDates() {
-    if (!exactRoomType) return;
-    if (datesStatus) datesStatus.textContent = "Loading available dates…";
-    try {
-      var response = await window.API.getUnavailableDates(exactRoomType, {days:366});
-      unavailableDates = new Set(((response.data||{}).unavailable_dates)||[]);
-      if (datesStatus) datesStatus.textContent = unavailableDates.size ? "Sold-out dates cannot be selected for this room type." : "This room type currently has availability across the calendar.";
-      validateSelectedDates(true);
-    } catch (error) {
-      if (datesStatus) datesStatus.textContent = "Live date availability could not be loaded. Availability will be checked before continuing.";
-    }
-  }
-  function selectedRangeHasUnavailable() {
-    if (!ci.value) return false;
-    var end = co.value || JONE.hotelTodayISO(367);
-    var cursor = new Date(ci.value + "T12:00:00");
-    var finish = new Date(end + "T12:00:00");
-    while (cursor < finish) {
-      var iso = cursor.getFullYear()+"-"+String(cursor.getMonth()+1).padStart(2,"0")+"-"+String(cursor.getDate()).padStart(2,"0");
-      if (unavailableDates.has(iso)) return iso;
-      cursor.setDate(cursor.getDate()+1);
-    }
-    return false;
-  }
-  function validateSelectedDates(silent) {
-    var blocked = selectedRangeHasUnavailable();
-    ci.setCustomValidity(blocked ? "This room type is sold out on "+blocked+"." : "");
-    co.setCustomValidity(blocked ? "Your stay includes a sold-out date: "+blocked+"." : "");
-    if (blocked && !silent) {
-      errBox.textContent = "This room type is sold out on "+JONE.formatDate(blocked,"mid")+". Please choose dates that do not cross it.";
-      errBox.style.display = "block";
-      JONE.ui.toast(errBox.textContent,"warning");
-    }
-    return !blocked;
-  }
-  ci.addEventListener("change",function(){
-    if (unavailableDates.has(ci.value)) {
-      var blocked=ci.value; ci.value=""; co.value="";
-      errBox.textContent="This room type is sold out on "+JONE.formatDate(blocked,"mid")+". Please choose another date.";
-      errBox.style.display="block"; JONE.ui.toast(errBox.textContent,"warning"); syncNote();
-    } else validateSelectedDates(false);
+  /* ======================= Stay calendar (step 1) =========================
+     The visible date picker. Availability comes from the backend
+     (GET /api/rooms/{slug}/unavailable-dates/ via the central API client) —
+     never invented locally. When no room type is selected the calendar is a
+     plain date picker and every type's availability is answered by the
+     search on the next step. */
+  var calendar = JONE.stayCalendar.mount(document.getElementById("stay-calendar"), {
+    minDate: JONE.hotelTodayISO(0),
+    maxDate: JONE.hotelTodayISO(365),
+    checkIn: ci.value || null,
+    checkOut: co.value || null,
+    onChange: onCalendarChange,
+    onRetry: function () { loadAvailability(selectedRoomType, { force: true }); }
   });
-  co.addEventListener("change",function(){ validateSelectedDates(false); });
-  loadUnavailableDates();
+
+  function onCalendarChange(sel, reason) {
+    ci.value = sel.checkIn || "";
+    co.value = sel.checkOut || "";
+    if (reason === "checkin-unavailable") {
+      showDateError("The selected room type is sold out on your check-in date. Please choose different dates.");
+    } else if (reason === "range-unavailable") {
+      showDateError("Your selected stay crosses a sold-out date for this room type. Please choose a shorter stay or different dates.");
+    }
+    syncNote();
+    updateDateDisplays();
+  }
+
+  var displayIn = document.querySelector('[data-cal-display="checkin"]');
+  var displayOut = document.querySelector('[data-cal-display="checkout"]');
+  [displayIn, displayOut].forEach(function (btn) {
+    if (btn) btn.addEventListener("click", function () {
+      if (calendar) calendar.focus();
+    });
+  });
+
+  function updateDateDisplays() {
+    if (displayIn) {
+      displayIn.querySelector(".cal-display-value").textContent = ci.value ? JONE.formatDate(ci.value, "mid") : "Select date";
+      displayIn.classList.toggle("is-empty", !ci.value);
+    }
+    if (displayOut) {
+      displayOut.querySelector(".cal-display-value").textContent = co.value ? JONE.formatDate(co.value, "mid") : "Select date";
+      displayOut.classList.toggle("is-empty", !co.value);
+    }
+  }
+
+  function showDateError(msg) {
+    if (dateErr) { dateErr.textContent = msg; dateErr.style.display = "block"; }
+    JONE.ui.toast(msg, "warning");
+  }
+  function clearDateError() {
+    if (dateErr) dateErr.style.display = "none";
+  }
+
+  function setStatus(msg) {
+    if (datesStatus) datesStatus.textContent = msg || "";
+  }
+
+  /* ISO +1 day without any local-timezone Date parsing. */
+  function nextIsoDay(iso) {
+    var p = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+    if (!p) return iso;
+    var ms = Date.UTC(+p[1], +p[2] - 1, +p[3]) + 86400000;
+    return new Date(ms).toISOString().slice(0, 10);
+  }
+
+  /* Re-apply the hotel-timezone "today" once it arrives (hotel-data.js). */
+  function applyCalendarBounds() {
+    calendar.setBounds({ min: JONE.hotelTodayISO(0) });
+  }
+  document.addEventListener("jone:hotel", applyCalendarBounds);
+
+  /* -------------------- Availability (one service, cached) -----------------
+     All requests flow through window.API — no page-level fetch(). Results
+     are cached per room type for a short TTL so switching types back and
+     forth does not hammer the API; the cache NEVER bypasses the backend's
+     authoritative re-check at booking creation. */
+  var AVAIL_TTL_MS = 60000;
+  var availabilityCache = {};     // slug -> {at, from, through, unavailable:Set, total}
+  var calendarType = "";          // slug currently reflected by the calendar
+  var availabilityFailed = false; // true while the current type's data is unknown
+
+  function findType(ref) {
+    var wanted = String(ref || "").trim();
+    if (!wanted || !roomTypesCache) return null;
+    var lowered = wanted.toLowerCase();
+    for (var i = 0; i < roomTypesCache.length; i++) {
+      var rt = roomTypesCache[i];
+      if (String(rt.slug || "") === wanted || String(rt.id) === wanted ||
+          String(rt.name || "").toLowerCase() === lowered) return rt;
+    }
+    return null;
+  }
+
+  function loadAvailability(slug, opts) {
+    opts = opts || {};
+    if (!slug) {
+      calendarType = "";
+      availabilityFailed = false;
+      calendar.setError(false);
+      calendar.setBusy(false);
+      calendar.setBounds({ min: JONE.hotelTodayISO(0), max: JONE.hotelTodayISO(365) });
+      calendar.setUnavailable(null);
+      setStatus("No room type selected — availability for every type is checked at the next step.");
+      return Promise.resolve();
+    }
+    var cached = availabilityCache[slug];
+    if (cached && Date.now() - cached.at < AVAIL_TTL_MS && !opts.force) {
+      applyAvailability(cached);
+      return Promise.resolve();
+    }
+    calendar.setBusy(true);
+    setStatus("Checking live availability for " + (selectedRoomName || "this room type") + "…");
+    return window.API.getUnavailableDates(slug, { days: 366 }).then(function (res) {
+      var data = res.data || {};
+      var entry = {
+        at: Date.now(),
+        from: data.from,
+        through: data.through,
+        unavailable: new Set(data.unavailable_dates || []),
+        total: data.total_rooms
+      };
+      availabilityCache[slug] = entry;
+      applyAvailability(entry);
+    }).catch(function () {
+      availabilityFailed = true;
+      calendar.setError(true);
+      setStatus("Live availability for " + (selectedRoomName || "this room type") +
+                " couldn't be loaded. Use Try again, or switch to “Any room type”.");
+    });
+  }
+
+  function applyAvailability(entry) {
+    availabilityFailed = false;
+    calendarType = selectedRoomType;
+    calendar.setError(false);
+    calendar.setBusy(false);
+    if (entry.through) calendar.setBounds({ max: entry.through });
+    var scope = " for " + (selectedRoomName || "this room type");
+    calendar.setUnavailable(function (iso) { return entry.unavailable.has(iso); }, scope);
+    if (entry.total === 0) {
+      setStatus((selectedRoomName || "This room type") + " currently has no bookable rooms. Please choose another room type.");
+    } else if (entry.unavailable.size) {
+      setStatus((selectedRoomName || "This room type") + ": struck-through dates are sold out and cannot be selected.");
+    } else {
+      setStatus((selectedRoomName || "This room type") + " has availability across the whole calendar.");
+    }
+  }
+
+  /* ------------------------ Room type selection --------------------------- */
+  var roomTypesCache = null;
+
+  function setSelectedType(slug, opts) {
+    opts = opts || {};
+    var match = slug ? findType(slug) : null;
+    var newSlug = match ? match.slug : "";
+    var newName = match ? match.name : "";
+    var changed = newSlug !== selectedRoomType;
+
+    // An exact physical room only belongs to its own room type.
+    if (exactRoomId && urlRoomValidated && newSlug !== urlRoomValidated) {
+      exactRoomId = "";
+      exactRoomNumber = "";
+    }
+
+    selectedRoomType = newSlug;
+    selectedRoomName = newName;
+    criteria.room = newSlug;
+    criteria.room_name = newName;
+
+    if (roomtypeSelect && roomtypeSelect.value !== newSlug) roomtypeSelect.value = newSlug;
+    updateSummaryRoom();
+
+    if (opts.persist !== false && (changed || opts.fromUser)) {
+      var d = JONE.storage.get(S, {}) || {};
+      d.room_type = newSlug; d.room_name = newName;
+      d.room_id = exactRoomId || ""; d.room_number = exactRoomNumber || "";
+      JONE.storage.set(S, d);
+    }
+    if (changed || opts.fromUser || opts.load) {
+      clearDateError();
+      loadAvailability(newSlug, { force: !!opts.force });
+    }
+  }
+
+  function updateSummaryRoom() {
+    var el = document.querySelector("[data-sum-room]");
+    if (!el) return;
+    el.textContent = selectedRoomType
+      ? selectedRoomName + (exactRoomNumber ? " · Room " + exactRoomNumber : "")
+      : "Select a room";
+  }
+
+  function syncRoomTypeUI() {
+    // Reflect the current selection (e.g. changed on the room step) on this
+    // step: selector, summary and — when the type changed — a fresh calendar.
+    if (roomtypeSelect && roomtypeSelect.value !== selectedRoomType) {
+      roomtypeSelect.value = selectedRoomType || "";
+    }
+    updateSummaryRoom();
+    if (selectedRoomType !== calendarType) {
+      loadAvailability(selectedRoomType);
+    }
+  }
+
+  roomtypeSelect.addEventListener("change", function () {
+    setSelectedType(roomtypeSelect.value, { fromUser: true });
+  });
+
+  /* ---------------------- Room type catalog (one call) -------------------- */
+  function loadRoomTypes() {
+    return window.API.getRooms().then(function (res) {
+      roomTypesCache = (res.data && (Array.isArray(res.data) ? res.data : res.data.results)) || [];
+      var keep = roomtypeSelect.value;
+      roomtypeSelect.innerHTML = '<option value="">Any room type — I&rsquo;ll choose at the next step</option>';
+      roomTypesCache.forEach(function (rt) {
+        var opt = document.createElement("option");
+        opt.value = rt.slug || String(rt.id);
+        opt.textContent = rt.name + (rt.base_price ? " — " + JONE.formatNaira(rt.base_price) + " / night" : "");
+        roomtypeSelect.appendChild(opt);
+      });
+      roomtypeSelect.value = keep || "";
+
+      // Validate the seeded type (?room= / draft) against the real catalog.
+      var seeded = findType(selectedRoomType);
+      if (seeded) {
+        urlRoomValidated = seeded.slug;
+        setSelectedType(seeded.slug, { persist: false, load: true });
+      } else if (selectedRoomType) {
+        // Unknown ?room= value — behave like a direct entry, nothing lost.
+        selectedRoomType = "";
+        selectedRoomName = "";
+        exactRoomId = "";
+        exactRoomNumber = "";
+        criteria.room = ""; criteria.room_name = "";
+        updateSummaryRoom();
+        loadAvailability("");
+      } else {
+        loadAvailability("");
+      }
+      return roomTypesCache;
+    }).catch(function () {
+      setStatus("The room list couldn't be loaded — you can still choose dates and search availability.");
+      return [];
+    });
+  }
+
+  /* ------------------------- Availability explainer ------------------------ */
+  var aboutBtn = document.getElementById("cal-about");
+  if (aboutBtn) aboutBtn.addEventListener("click", function () {
+    var body = document.createElement("div");
+    body.innerHTML =
+      '<ul class="cal-about-list">' +
+      "<li><strong>Sold-out dates</strong> (struck through) have no physical room of the selected type left for that night.</li>" +
+      "<li><strong>Checking out</strong> on a sold-out date is fine — the room only needs to be free for the nights you stay.</li>" +
+      "<li>A checkout day is also the next guest&rsquo;s check-in day, so back-to-back stays never clash.</li>" +
+      "<li>Availability is <strong>live from the hotel&rsquo;s system</strong> and re-checked when your booking is created, so another guest can never take your dates.</li>" +
+      "</ul>";
+    JONE.ui.modal.open({ title: "How availability works", body: body });
+  });
 
   function guestsLabel() {
     var a = Number(adults.value) || 0, c = Number(children.value) || 0;
@@ -382,7 +609,7 @@
 
   function syncNote() {
     var n = 0;
-    var coField = co.closest(".field");
+    var coField = displayOut ? displayOut.closest(".field") : null;
     if (ci.value && co.value) {
       n = JONE.nightsBetween(ci.value, co.value);
       if (n < 1) {
@@ -404,8 +631,11 @@
     criteria.check_in = ci.value; criteria.check_out = co.value;
     criteria.adults = adults.value; criteria.children = children.value;
   }
-  [ci, co, adults, children].forEach(function (el) { el.addEventListener("change", syncNote); });
+  [adults, children].forEach(function (el) { el.addEventListener("change", syncNote); });
   syncNote();
+  updateDateDisplays();
+  updateSummaryRoom();
+  loadRoomTypes();
 
   /* -------------------- Mobile collapsible summary ----------------------- */
   (function () {
@@ -425,20 +655,41 @@
   document.getElementById("stay-form").addEventListener("submit", async function (e) {
     e.preventDefault();
     errBox.style.display = "none";
-    var n = JONE.nightsBetween(ci.value, co.value);
-    if (!validateSelectedDates(false)) return;
+    clearDateError();
     if (!ci.value || !co.value) {
-      errBox.textContent = "Please choose your check-in and check-out dates.";
-      errBox.style.display = "block";
-      JONE.ui.toast("Please choose your check-in and check-out dates.", "warning");
+      showDateError("Please choose your check-in and check-out dates on the calendar.");
+      if (calendar) calendar.focus();
       return;
     }
+    var n = JONE.nightsBetween(ci.value, co.value);
     if (n < 1) {
-      errBox.textContent = "Check-out must be after check-in.";
-      errBox.style.display = "block";
-      var coField = co.closest(".field"); if (coField) coField.classList.add("has-error");
-      JONE.ui.toast("Check-out must be a later date than check-in.", "error");
+      showDateError("Check-out must be a later date than check-in.");
       return;
+    }
+    // A selected room type must have KNOWN availability before continuing.
+    // (The calendar itself already made sold-out dates unpickable; this is
+    // the guard for the "availability couldn't be loaded" case.)
+    if (selectedRoomType && availabilityFailed) {
+      errBox.textContent = "Live availability couldn't be loaded for " +
+        (selectedRoomName || "this room type") + ". Please tap “Try again” on the calendar, or switch to “Any room type”.";
+      errBox.style.display = "block";
+      JONE.ui.toast(errBox.textContent, "error");
+      return;
+    }
+    // Belt-and-braces: re-check the chosen range against the loaded data
+    // before asking the backend (which re-validates authoritatively anyway).
+    if (selectedRoomType) {
+      var entry = availabilityCache[selectedRoomType];
+      if (entry) {
+        var bad = null;
+        for (var d = ci.value; d < co.value; d = nextIsoDay(d)) {
+          if (entry.unavailable.has(d)) { bad = d; break; }
+        }
+        if (bad) {
+          showDateError("The selected room type is sold out on " + JONE.formatDate(bad, "mid") + ". Please choose dates that do not cross it.");
+          return;
+        }
+      }
     }
     var adultsN = Number(adults.value) || 1;
     var childrenN = Number(children.value) || 0;
@@ -451,7 +702,12 @@
     btn.innerHTML = 'Checking\u2026';
 
     // Persist draft (no payment secrets, no client-authoritative prices).
-    JONE.storage.set(S, { check_in: ci.value, check_out: co.value, adults: adultsN, children: childrenN, offer_code: criteria.offer || "" });
+    JONE.storage.set(S, {
+      check_in: ci.value, check_out: co.value, adults: adultsN, children: childrenN,
+      offer_code: criteria.offer || "",
+      room_type: selectedRoomType || "", room_name: selectedRoomName || "",
+      room_id: exactRoomId || "", room_number: exactRoomNumber || ""
+    });
 
     try {
       var res = await window.API.checkAvailability(payload);
@@ -471,6 +727,7 @@
 
   document.getElementById("back-to-stay").addEventListener("click", function () {
     switchPanel(2, 1);
+    syncRoomTypeUI();
     stepper.update(1);
   });
 
@@ -524,7 +781,7 @@
           note +
         '</div>' +
         '<div class="room-option-price"><div class="price">' + priceLabel + '<small> / night</small></div><div class="caption">' + JONE.esc(totalLabel) + ' total</div>' +
-          (exactRoomId && String(rt.slug || rt.id) === exactRoomType
+          (exactRoomId && String(rt.slug || rt.id) === selectedRoomType
             ? '<div class="caption" style="color:var(--color-accent);margin-top:0.25rem;">Your chosen room: ' + JONE.esc(exactRoomNumber || ("Room " + exactRoomId)) + '</div>'
             : "") +
           '<span class="room-option-select"><span class="sel-idle">Select</span><span class="sel-done"><span data-icon="check" data-size="14"></span> Selected</span></span>' +
@@ -549,12 +806,12 @@
     });
 
     /* ------------------ Auto-select the chosen room type -------------------
-       `exactRoomType` is the single source of truth and already prefers the
-       URL over a saved draft, so a guest who clicked "Book this room" on a
-       room page lands here with that room type ALREADY selected — visually
-       marked, radio checked, summary filled and Continue enabled, exactly as
-       if they had clicked it themselves. Matching accepts the slug, the id or
-       the name so ?room=deluxe-room, ?room=1 and ?room=Deluxe Room all work. */
+       `selectedRoomType` is the single source of truth: seeded from the URL
+       (?room=superior-room) or the draft, then kept in sync with whatever the
+       guest last chose. A guest who clicked "Book this room" lands here with
+       that room type ALREADY selected — visually marked, radio checked,
+       summary filled and Continue enabled, exactly as if they had clicked it
+       themselves. Matching accepts the slug, the id or the name. */
     applySelectedType();
   }
 
@@ -563,7 +820,7 @@
   function applySelectedType() {
     var holder = document.getElementById("room-results");
     var note = document.querySelector("[data-room-note]");
-    var wanted = String(exactRoomType || draft.room_type || "").trim();
+    var wanted = String(selectedRoomType || "").trim();
     if (!holder) return false;
     if (!wanted) { if (note) note.style.display = "none"; return false; }
     var lowered = wanted.toLowerCase();
@@ -610,10 +867,18 @@
     var adultsN = Number(adults.value) || 1;
     var childrenN = Number(children.value) || 0;
     // The chosen physical room only belongs to its own room type.
-    if (exactRoomId && String(slug) !== String(exactRoomType)) {
+    if (exactRoomId && String(slug) !== String(urlRoomValidated)) {
       exactRoomId = "";
       exactRoomNumber = "";
     }
+    // The guest's latest choice is authoritative from here on — the step-1
+    // selector and calendar sync to it when they go Back.
+    selectedRoomType = slug;
+    selectedRoomName = radio.dataset.name || selectedRoomName;
+    criteria.room = selectedRoomType;
+    criteria.room_name = selectedRoomName;
+    updateSummaryRoom();
+
     selRoom = {
       slug: slug, name: radio.dataset.name,
       room_id: exactRoomId || null,

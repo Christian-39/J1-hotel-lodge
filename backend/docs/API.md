@@ -75,6 +75,7 @@ Conventions: dates `YYYY-MM-DD` · datetimes ISO 8601 · money as strings
 | `GET /api/rooms/` | 🔓 | Room-type catalog (lightweight rows) |
 | `GET /api/rooms/<slug or id>/` | 🔓 | Room-type detail: images, amenities, applicable offers |
 | `GET /api/rooms/availability/?check_in&check_out&guests&rooms&room_type` | 🔓 | **Authoritative availability + live pricing**. Throttled 240/h. |
+| `GET /api/rooms/<slug or id>/unavailable-dates/?start_date&end_date` or `?days=N` | 🔓 | **Per-date calendar inventory for one room type** (powers the booking calendar). `end_date` is exclusive (check-out semantics); legacy `days=N` defaults to a today+365 window. Max span 366 days. Throttled 240/h. |
 | `POST /api/enquiries/` | 🔓 | General enquiry or structured cancellation/refund request. Cancellation body includes `enquiry_type=CANCELLATION`, `booking_reference`, optional payment/receipt refs, reason/contact fields. Returns `cancellation_reference` + secure `status_url`; does **not** cancel the booking. Throttled 10/h. |
 | `GET /api/enquiries/cancellation-status/<reference>/?token=...` | 🔓 + token | Safe public status page payload. Never says refund complete until Paystack confirms `processed`. |
 

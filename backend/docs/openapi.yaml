@@ -3310,6 +3310,53 @@ paths:
                 items:
                   $ref: '#/components/schemas/PublicRoomOption'
           description: ''
+  /api/rooms/{slug}/unavailable-dates/:
+    get:
+      operationId: rooms_unavailable_dates_retrieve
+      description: Every date in the window reports whether the room type has at least
+        one sellable physical room free that NIGHT. A date some booking merely touches
+        is NOT unavailable while another physical room of the same type is still free;
+        a date is unavailable only when every sellable room is blocked. A checkout
+        day never blocks the next guest's check-in (half-open [check_in, check_out)
+        nights).
+      summary: Per-date availability calendar for one room type
+      parameters:
+      - in: query
+        name: days
+        schema:
+          type: integer
+        description: 'Legacy shorthand: window length from today (1–366, default 365).
+          Ignored when both start_date and end_date are supplied.'
+      - in: query
+        name: end_date
+        schema:
+          type: string
+          format: date
+        description: Window end, EXCLUSIVE (check-out semantics). Required together
+          with start_date; the window may span at most 366 days.
+      - in: path
+        name: slug
+        schema:
+          type: string
+        required: true
+      - in: query
+        name: start_date
+        schema:
+          type: string
+          format: date
+        description: Window start, inclusive. Defaults to today.
+      tags:
+      - Rooms
+      security:
+      - jwtAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublicRoomOption'
+          description: ''
   /api/rooms/availability/:
     get:
       operationId: rooms_availability_retrieve

@@ -12,7 +12,7 @@ assignment that OVERLAPS:
 PENDING with a live (unexpired) hold. Expired pending holds never block
 inventory. Rooms under maintenance/out-of-service are excluded altogether.
 """
-from datetime import date
+from datetime import date, timedelta
 
 from django.db.models import Q
 from django.utils import timezone
@@ -175,6 +175,103 @@ def available_room_count(*, room_type, check_in, check_out, now=None):
     return available_rooms_queryset(
         room_type=room_type, check_in=check_in, check_out=check_out, now=now
     ).count()
+
+
+# ---------------------------------------------------------------------------
+# Per-night inventory (calendar)
+# ---------------------------------------------------------------------------
+MAX_CALENDAR_WINDOW_DAYS = 366
+
+
+def nightly_inventory(*, room_type, start, end, now=None):
+    """Per-night sellable inventory for one room type across ``[start, end)``.
+
+    This is the SAME authoritative answer the range search and booking
+    creation rely on (the blocking rules above), resolved one night at a
+    time so a calendar can disable genuinely sold-out dates:
+
+    * CONFIRMED / CHECKED_IN bookings and PENDING bookings with a live hold
+      block their ``[check_in, check_out)`` nights;
+    * cancelled, expired, checked-out and no-show reservations never block;
+    * maintenance / out-of-service rooms are not sellable at all.
+
+    A date is unavailable only when EVERY sellable physical room of the type
+    is blocked on that night — a date some booking merely touches is still
+    available while another room of the same type is free, and a checkout day
+    never blocks the next guest's check-in.
+
+    Returns::
+
+        {
+            "total_sellable": 3,               # sellable physical rooms
+            "dates": {                         # one entry PER date in window
+                "2026-09-18": {"available_rooms": 2, "available": True},
+                "2026-09-19": {"available_rooms": 0, "available": False},
+            },
+        }
+
+    Cost: exactly two queries (sellable ids + live assignments) plus an
+    O(assignments log assignments + days) in-memory sweep — never one query
+    per date.
+    """
+    from collections import defaultdict
+
+    if end <= start:
+        raise ValueError("end must be after start")
+    span = min((end - start).days, MAX_CALENDAR_WINDOW_DAYS)
+    end = start + timedelta(days=span)
+
+    now = now or timezone.now()
+    sellable_ids = list(
+        Room.objects.filter(room_type=room_type, is_active=True)
+        .exclude(status__in=OPERATIONALLY_BLOCKED)
+        .values_list("pk", flat=True)
+    )
+
+    by_room = defaultdict(list)
+    if sellable_ids:
+        for room_id, ci, co in (
+            BookingRoom.objects.filter(room_id__in=sellable_ids)
+            .filter(blocking_booking_q(now=now, prefix="booking"))
+            .filter(check_in__lt=end, check_out__gt=start)
+            .values_list("room_id", "check_in", "check_out")
+        ):
+            by_room[room_id].append((ci, co))
+
+    # Difference array over the window: each room's live assignments are
+    # merged into non-overlapping intervals, then +1/-1 events are applied at
+    # the interval edges. The running sum is the number of DISTINCT rooms
+    # blocked on each night, so overlapping data can never double-count.
+    delta = [0] * (span + 1)
+
+    def _apply(ci, co):
+        lo = max(0, (ci - start).days)
+        hi = min(span, (co - start).days)
+        if lo < hi:
+            delta[lo] += 1
+            delta[hi] -= 1
+
+    for spans in by_room.values():
+        spans.sort()
+        merged_ci, merged_co = spans[0]
+        for ci, co in spans[1:]:
+            if ci <= merged_co:  # overlap (or back-to-back) for the same room
+                merged_co = max(merged_co, co)
+            else:
+                _apply(merged_ci, merged_co)
+                merged_ci, merged_co = ci, co
+        _apply(merged_ci, merged_co)
+
+    dates = {}
+    blocked = 0
+    for offset in range(span):
+        blocked += delta[offset]
+        free = len(sellable_ids) - blocked
+        dates[(start + timedelta(days=offset)).isoformat()] = {
+            "available_rooms": max(free, 0),
+            "available": free >= 1,
+        }
+    return {"total_sellable": len(sellable_ids), "dates": dates}
 
 
 def count_active_blocking(booking):

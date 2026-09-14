@@ -55,7 +55,7 @@ backend/
 │   ├── notifications/ # in-app notifications + email task
 │   ├── reports/       # staff dashboard aggregation + revenue/occupancy reports
 │   └── audit/         # immutable audit trail (read-only)
-├── tests/             # 85 automated tests (API/integration level)
+├── tests/             # 285 automated tests (API/integration level)
 └── docs/              # API, architecture, booking flow, frontend contract
 ```
 
