@@ -10,7 +10,7 @@
 <link rel="stylesheet" href="../css/main.css">
 <script>(function(){var t;try{t=JSON.parse(localStorage.getItem("jone.theme"))}catch(e){}if(t!=="dark"&&t!=="light"){t=(window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches)?"dark":"light"}document.documentElement.setAttribute("data-theme",t);})();</script>
 </head>
-<body>
+<body class="receipt-view-page">
 <div class="dash">
   <aside class="dash-sidebar" aria-label="Staff navigation">
     <div class="dash-sidebar-brand">
@@ -47,17 +47,39 @@
     </div>
     <div class="dash-content">
 
-<div class="receipt-actions no-print">
-  <button class="btn btn-accent" data-print type="button"><span data-icon="printer" data-size="16"></span> Print receipt</button>
-  <button class="btn btn-outline" data-download-image type="button"><span data-icon="image" data-size="16"></span> Download image</button>
-  <button class="btn btn-outline" data-download-pdf type="button"><span data-icon="download" data-size="16"></span> Download PDF</button>
-  <button class="btn btn-outline" data-email type="button"><span data-icon="mail" data-size="16"></span> Email guest</button>
-  <a class="btn btn-ghost" data-booking-link href="bookings.html"><span data-icon="arrowLeft" data-size="16"></span> Booking</a>
-</div>
+<section class="receipt-viewer" aria-labelledby="receipt-view-heading">
+  <div class="receipt-view-top no-print">
+    <a class="receipt-view-icon" href="receipts.html" aria-label="Back to receipts"><span data-icon="arrowLeft" data-size="30"></span></a>
+    <time class="receipt-view-date" data-receipt-view-date datetime="">Receipt</time>
+    <a class="receipt-view-icon" href="receipts.html" aria-label="Close receipt"><span data-icon="x" data-size="32"></span></a>
+  </div>
+  <h2 class="receipt-view-heading no-print" id="receipt-view-heading">Receipt</h2>
 
-<article class="receipt-sheet rc-access" id="receipt" data-receipt>
-  <div class="loading-block"><div class="spinner" role="status"></div><p class="muted">Loading receipt&hellip;</p></div>
-</article>
+  <div class="receipt-details-shell">
+    <article class="receipt-sheet rc-access" id="receipt" data-receipt>
+      <div class="loading-block"><div class="spinner" role="status"></div><p class="muted">Loading receipt&hellip;</p></div>
+    </article>
+
+    <section class="receipt-export-panel no-print" aria-label="Receipt download and share options">
+      <div class="receipt-export-row is-image">
+        <div class="receipt-export-kind"><span data-icon="image" data-size="30"></span><strong>Image</strong></div>
+        <button class="receipt-export-action" data-download-image type="button"><span data-icon="download" data-size="28"></span><span>Download</span></button>
+        <button class="receipt-export-action is-share" data-share-image type="button"><span data-icon="share" data-size="28"></span><span>Share Receipt</span></button>
+      </div>
+      <div class="receipt-export-row is-pdf">
+        <div class="receipt-export-kind"><span class="receipt-export-file-icon" aria-hidden="true">PDF</span><strong>PDF</strong></div>
+        <button class="receipt-export-action" data-download-pdf type="button"><span data-icon="download" data-size="28"></span><span>Download</span></button>
+        <button class="receipt-export-action is-share" data-share-pdf type="button"><span data-icon="share" data-size="28"></span><span>Share Receipt</span></button>
+      </div>
+    </section>
+
+    <div class="receipt-utility-actions no-print" aria-label="Other receipt actions">
+      <button class="btn btn-accent" data-print type="button"><span data-icon="printer" data-size="16"></span> Print receipt</button>
+      <button class="btn btn-outline" data-email type="button"><span data-icon="mail" data-size="16"></span> Email guest</button>
+      <a class="btn btn-ghost" data-booking-link href="bookings.html"><span data-icon="arrowLeft" data-size="16"></span> Booking</a>
+    </div>
+  </div>
+</section>
     </div>
   </div>
 </div>
@@ -81,6 +103,7 @@
   "use strict";
   var sheet = document.querySelector("[data-receipt]");
   var subtitle = document.querySelector("[data-rc-subtitle]");
+  var viewDate = document.querySelector("[data-receipt-view-date]");
   var ref = new URLSearchParams(location.search).get("ref");
   var data = null;
 
@@ -105,10 +128,25 @@
       subtitle.textContent = (data.receipt_reference || data.booking_reference || "") +
         (data.guest && data.guest.name ? " · " + data.guest.name : "");
     }
+    if (viewDate) {
+      var dateInfo = longReceiptDate(data);
+      viewDate.textContent = dateInfo.label;
+      viewDate.setAttribute("datetime", dateInfo.iso);
+    }
     var link = document.querySelector("[data-booking-link]");
     if (link && data.booking_reference) {
       link.href = "booking-details.html?ref=" + encodeURIComponent(data.booking_reference);
     }
+  }
+
+  function longReceiptDate(d){
+    var raw = d && (d.issued_at || d.created_at || d.updated_at || (d.latest_payment && (d.latest_payment.paid_at || d.latest_payment.created_at)));
+    var parsed = raw ? new Date(raw) : new Date();
+    if (Number.isNaN(parsed.getTime())) parsed = new Date();
+    return {
+      label: parsed.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" }),
+      iso: parsed.toISOString().slice(0, 10)
+    };
   }
 
   function showError(err){
@@ -159,6 +197,33 @@
 
   var pdfBtn = document.querySelector("[data-download-pdf]");
   if (pdfBtn) pdfBtn.addEventListener("click", function(){ exportReceipt(pdfBtn, "pdf"); });
+
+  async function shareReceipt(button, kind){
+    if (!data || !window.JONE || !JONE.receipts) return;
+    if (!JONE.guardSubmit(button)) return;
+    var prev = button.innerHTML;
+    button.innerHTML = '<span class="btn-spinner"></span> Preparing…';
+    try {
+      var exportOpts = { assetPrefix: "../", sourceLabel: "J-ONE Staff Console", documentTitle: "Transaction Receipt" };
+      var result = kind === "pdf"
+        ? await JONE.receipts.sharePDF(sheet, data, exportOpts)
+        : await JONE.receipts.shareImage(sheet, data, exportOpts);
+      if (result && result.shared) JONE.ui.toast("Receipt ready to share.", "success");
+      else JONE.ui.toast("Sharing is not available on this device, so the receipt was downloaded instead.", "info");
+    } catch (err) {
+      var cancelled = err && (err.name === "AbortError" || /cancel/i.test(err.message || ""));
+      JONE.ui.toast(cancelled ? "Sharing cancelled." : ((err && err.message) || "The receipt could not be shared."), cancelled ? "info" : "error");
+    } finally {
+      JONE.releaseGuard(button);
+      button.innerHTML = prev;
+      JONE.icons.inject(button);
+    }
+  }
+
+  var shareImageBtn = document.querySelector("[data-share-image]");
+  if (shareImageBtn) shareImageBtn.addEventListener("click", function(){ shareReceipt(shareImageBtn, "image"); });
+  var sharePdfBtn = document.querySelector("[data-share-pdf]");
+  if (sharePdfBtn) sharePdfBtn.addEventListener("click", function(){ shareReceipt(sharePdfBtn, "pdf"); });
 
   var emailBtn = document.querySelector("[data-email]");
   if (emailBtn) emailBtn.addEventListener("click", async function(){

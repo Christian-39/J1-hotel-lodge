@@ -29,7 +29,7 @@
     "body{margin:0;background:#fff;color:#17202a;font-family:ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;}",
     ".receipt-sheet.rc-access{position:relative;width:720px;max-width:none;margin:0;background:#fff;color:#17202a;border:0;border-radius:0;box-shadow:none;padding:52px 60px 62px;overflow:hidden;isolation:isolate;font-size:14px;line-height:1.42;}",
     ".rc-access *{box-sizing:border-box}",
-    ".rc-head{display:flex;align-items:flex-start;justify-content:space-between;gap:24px;padding:0;border:0;}",
+    ".rc-head{display:flex;align-items:flex-start;justify-content:flex-start;gap:24px;padding:0;border:0;}",
     ".rc-logo-lockup{display:flex;align-items:center;gap:12px;min-width:0;}",
     ".rc-logo{width:28px;height:52px;max-width:28px;object-fit:contain;flex:none;}",
     ".rc-wordmark{font-size:30px;line-height:.9;font-weight:800;letter-spacing:-.04em;color:#143d69;text-transform:uppercase;white-space:nowrap;}",
@@ -492,7 +492,7 @@
     ctx.fillStyle = "#ffffff";
     ctx.fillRect(0, 0, width, height);
 
-    // Header lockup and Access-like gold slash.
+    // Header lockup uses the official J-ONE logo asset.
     await drawOfficialLogo(ctx, padX, 52, 28, 52, opts);
     ctx.fillStyle = "#143d69";
     ctx.font = canvasFont("800", 30);
@@ -502,17 +502,6 @@
     ctx.letterSpacing = "2px";
     ctx.fillText("HOTEL & LODGE", padX + 42, 98);
     ctx.letterSpacing = "0px";
-    ctx.strokeStyle = "rgba(238,180,55,.18)";
-    ctx.lineWidth = 7;
-    ctx.lineCap = "round";
-    ctx.beginPath();
-    ctx.moveTo(width - 162, 58); ctx.lineTo(width - 202, 134); ctx.stroke();
-    ctx.strokeStyle = "#eeb437";
-    ctx.beginPath();
-    ctx.moveTo(width - 176, 58); ctx.lineTo(width - 216, 134); ctx.stroke();
-    ctx.fillStyle = "#9a650f";
-    ctx.font = canvasFont("800", 10);
-    ctx.fillText("comfort with care", width - 160, 96);
 
     ctx.fillStyle = "#053e75";
     ctx.font = canvasFont("800", 30);
@@ -548,6 +537,7 @@
       ctx.stroke();
       y += r.height;
     });
+
     ctx.fillStyle = "#707780";
     ctx.font = canvasFont("400", 12);
     drawWrapped(ctx, footerLines, padX, footerTop + 12, contentWidth, 16);
@@ -618,19 +608,55 @@
     return new Blob(parts, { type: "application/pdf" });
   }
 
+  async function createImageBlob(data, opts) {
+    var canvas = await drawReceiptCanvas(data || {}, opts || {});
+    return canvasToBlob(canvas, "image/png");
+  }
+
+  async function createPDFBlob(data, opts) {
+    var canvas = await drawReceiptCanvas(data || {}, opts || {});
+    var dataUrl = canvas.toDataURL("image/jpeg", 0.95);
+    return jpegPdfBlob(dataUrl, canvas.width, canvas.height, canvas.joneCssWidth, canvas.joneCssHeight);
+  }
+
   async function downloadImage(element, data, opts) {
     opts = opts || {};
-    var canvas = await drawReceiptCanvas(data || {}, opts);
-    var blob = await canvasToBlob(canvas, "image/png");
+    var blob = await createImageBlob(data, opts);
     downloadBlob(blob, opts.filename || filenameFor(data, "png"));
   }
 
   async function downloadPDF(element, data, opts) {
     opts = opts || {};
-    var canvas = await drawReceiptCanvas(data || {}, opts);
-    var dataUrl = canvas.toDataURL("image/jpeg", 0.95);
-    var blob = jpegPdfBlob(dataUrl, canvas.width, canvas.height, canvas.joneCssWidth, canvas.joneCssHeight);
+    var blob = await createPDFBlob(data, opts);
     downloadBlob(blob, opts.filename || filenameFor(data, "pdf"));
+  }
+
+  async function shareBlob(blob, filename, data, opts) {
+    opts = opts || {};
+    var title = opts.shareTitle || "J-ONE payment receipt";
+    var text = opts.shareText || "J-ONE HOTEL & LODGE payment receipt";
+    if (navigator.share && typeof File !== "undefined") {
+      var file = new File([blob], filename, { type: blob.type || "application/octet-stream" });
+      var payload = { title: title, text: text, files: [file] };
+      if (!navigator.canShare || navigator.canShare(payload)) {
+        await navigator.share(payload);
+        return { shared: true };
+      }
+    }
+    downloadBlob(blob, filename);
+    return { shared: false, downloaded: true };
+  }
+
+  async function shareImage(element, data, opts) {
+    opts = opts || {};
+    var blob = await createImageBlob(data, opts);
+    return shareBlob(blob, opts.filename || filenameFor(data, "png"), data, opts);
+  }
+
+  async function sharePDF(element, data, opts) {
+    opts = opts || {};
+    var blob = await createPDFBlob(data, opts);
+    return shareBlob(blob, opts.filename || filenameFor(data, "pdf"), data, opts);
   }
 
   function receiptOnlyDocument(element, data, opts) {
@@ -660,8 +686,12 @@
     render: render,
     normalize: normalize,
     filenameFor: filenameFor,
+    createImageBlob: createImageBlob,
+    createPDFBlob: createPDFBlob,
     downloadImage: downloadImage,
     downloadPDF: downloadPDF,
+    shareImage: shareImage,
+    sharePDF: sharePDF,
     printReceipt: printReceipt,
     exportCss: function () { return EXPORT_CSS; }
   };
