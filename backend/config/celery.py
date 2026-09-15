@@ -10,9 +10,12 @@ from celery import Celery
 from celery.schedules import crontab
 
 # Render workers must never silently boot development settings (which enable
-# eager tasks and permissive CORS). Local CLI use keeps the dev default.
-_default_settings = "config.settings.production" if os.environ.get("RENDER") else "config.settings.development"
-os.environ.setdefault("DJANGO_SETTINGS_MODULE", _default_settings)
+# eager tasks and permissive CORS). Override a stale Render environment value;
+# local CLI use keeps the developer-friendly default.
+if os.environ.get("RENDER"):
+    os.environ["DJANGO_SETTINGS_MODULE"] = "config.settings.production"
+else:
+    os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings.development")
 
 app = Celery("jone_hotel")
 app.config_from_object("django.conf:settings", namespace="CELERY")
