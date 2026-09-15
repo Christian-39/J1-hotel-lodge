@@ -57,10 +57,11 @@ envVarGroups:
       - key: MEDIA_CUSTOM_DOMAIN
         sync: false          # optional B2 friendly-URL / CDN host
       # --- Email (SMTP) — REQUIRED by the worker to deliver mail -----------
+      # Recommended: Brevo transactional SMTP (free tier). See .env.example.
       - key: EMAIL_BACKEND
         value: django.core.mail.backends.smtp.EmailBackend
       - key: EMAIL_HOST
-        sync: false          # e.g. smtp.gmail.com
+        value: smtp-relay.brevo.com    # Gmail alternative: smtp.gmail.com
       - key: EMAIL_PORT
         value: "587"
       - key: EMAIL_USE_TLS
@@ -68,11 +69,11 @@ envVarGroups:
       - key: EMAIL_USE_SSL
         value: "False"
       - key: EMAIL_HOST_USER
-        sync: false          # full email address
+        sync: false          # Brevo SMTP login, e.g. 9xxxxx@smtp-brevo.com
       - key: EMAIL_HOST_PASSWORD
-        sync: false          # Gmail: a 16-char App Password, NOT the account password
+        sync: false          # Brevo SMTP key (NOT the account password)
       - key: DEFAULT_FROM_EMAIL
-        sync: false          # e.g. "J-ONE HOTEL & LODGE <bookings@jonehotel.com>"
+        sync: false          # a Brevo-VERIFIED sender, e.g. "J-ONE HOTEL & LODGE <no-reply@yourdomain.com>"
       - key: HOTEL_NOTIFICATION_EMAILS
         sync: false          # optional; staff inbox(es) for enquiry/cancellation alerts
 

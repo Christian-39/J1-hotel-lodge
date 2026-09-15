@@ -108,24 +108,26 @@ JONE.ui.initChrome();
   var downloadBtn = document.getElementById("s-download-receipt");
   var downloadStatus = document.getElementById("s-download-status");
 
-  async function downloadReceipt(automatic) {
+  // Manual, user-initiated download only. Payment success never auto-downloads
+  // a file — the guest taps this button when they actually want a copy (and the
+  // receipt is also emailed to them).
+  async function downloadReceipt() {
     if (!verifiedReceipt || !JONE.receipts) return;
     if (downloadBtn) downloadBtn.disabled = true;
-    if (downloadStatus) downloadStatus.textContent = automatic ? "Preparing your receipt…" : "Preparing download…";
+    if (downloadStatus) downloadStatus.textContent = "Preparing download…";
     try {
       await JONE.receipts.downloadImage(null, verifiedReceipt, {
         assetPrefix: "",
         filename: "J1-Hotel-Receipt-" + verifiedReceipt.booking_reference + ".png"
       });
-      sessionStorage.setItem("jone.receipt.downloaded." + reference, "1");
       if (downloadStatus) downloadStatus.textContent = "Receipt image downloaded. Use the button if you need another copy.";
     } catch (err) {
-      if (downloadStatus) downloadStatus.textContent = "Automatic download was blocked. Use Download receipt image to try again.";
+      if (downloadStatus) downloadStatus.textContent = "The download was blocked. Tap Download receipt image to try again.";
     } finally {
       if (downloadBtn) downloadBtn.disabled = false;
     }
   }
-  if (downloadBtn) downloadBtn.addEventListener("click", function () { downloadReceipt(false); });
+  if (downloadBtn) downloadBtn.addEventListener("click", function () { downloadReceipt(); });
 
   async function verify() {
     show(elLoading);
@@ -150,12 +152,9 @@ JONE.ui.initChrome();
         verifiedReceipt = d.receipt || null;
         if (downloadBtn) downloadBtn.disabled = !verifiedReceipt;
         show(elSuccess);
-        // Download only after backend verification. The session marker prevents
-        // refreshes, webhook/browser races, and repeated verify calls from
-        // producing duplicate automatic downloads; manual download stays available.
-        if (verifiedReceipt && sessionStorage.getItem("jone.receipt.downloaded." + reference) !== "1") {
-          downloadReceipt(true);
-        }
+        // No automatic download. The receipt is available on demand via the
+        // "Download receipt image" button (and emailed to the guest), so we
+        // never force a file download the guest didn't ask for.
         // Backend-confirmed — the ONLY place a success toast is allowed.
         if (window.JONE && JONE.ui && JONE.ui.toast) {
           JONE.ui.toast("Your booking has been confirmed.", "success", {

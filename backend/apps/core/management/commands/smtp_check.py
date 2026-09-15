@@ -89,15 +89,21 @@ class Command(BaseCommand):
                 server = smtplib.SMTP_SSL(host, port, timeout=timeout, context=context)
             else:
                 server = smtplib.SMTP(host, port, timeout=timeout)
-            server.set_debuglevel(1)  # prints the full conversation to stderr
             server.ehlo()
             if use_tls and not use_ssl:
                 server.starttls(context=ssl.create_default_context())
                 server.ehlo()
+            # SECURITY: enable the wire debug ONLY around the non-credential
+            # parts of the conversation. The AUTH exchange base64-encodes the
+            # username + password, so it must never be printed (a pasted log
+            # would otherwise leak the SMTP credentials).
             if user:
+                server.set_debuglevel(0)
                 server.login(user, password)
+            server.set_debuglevel(1)  # mail/rcpt/data only — no credentials here
             # sendmail returns {} when every recipient was accepted.
             refused = server.sendmail(self._addr(from_email), [recipient], msg.as_string())
+            server.set_debuglevel(0)
             server.quit()
         except smtplib.SMTPAuthenticationError as exc:
             raise CommandError(

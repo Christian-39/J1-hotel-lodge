@@ -108,9 +108,13 @@ if EMAIL_BACKEND.endswith("smtp.EmailBackend"):
         raise ImproperlyConfigured(
             "Production SMTP is not fully configured. Missing: "
             + ", ".join(_missing)
-            + ". For a Gmail/Google account you MUST use a 16-character App "
-            "Password (not the normal account password), with EMAIL_HOST="
-            "smtp.gmail.com, EMAIL_PORT=587, EMAIL_USE_TLS=True."
+            + ". Recommended provider is Brevo (transactional SMTP): "
+            "EMAIL_HOST=smtp-relay.brevo.com, EMAIL_PORT=587, EMAIL_USE_TLS=True, "
+            "EMAIL_HOST_USER=<your Brevo SMTP login>, "
+            "EMAIL_HOST_PASSWORD=<your Brevo SMTP key>. "
+            "DEFAULT_FROM_EMAIL must use a sender address verified in the Brevo "
+            "dashboard. (Gmail SMTP also works with a 16-char App Password and "
+            "EMAIL_HOST=smtp.gmail.com, but deliverability is far weaker.)"
         )
 
 # Celery workers run tasks out-of-process in production. Guard against a broker
