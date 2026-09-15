@@ -1168,3 +1168,11 @@ body.receipt-view-page .receipt-utility-actions .btn-outline:hover {
   .table-reviews td:last-child { padding-top: 0.6rem; }
   .table-reviews td:last-child .btn { width: 100%; justify-content: center; }
 }
+
+.receipt-send-dialog { line-height: 1.5; }
+.receipt-send-summary { display:grid; grid-template-columns: minmax(5rem, auto) 1fr; gap:.55rem 1rem; margin:1rem 0; }
+.receipt-send-summary dt { font-weight:700; color:var(--text-muted, #667085); }
+.receipt-send-summary dd { margin:0; overflow-wrap:anywhere; }
+.receipt-send-dialog .spinner { display:inline-block; width:1em; height:1em; border:.15em solid currentColor; border-right-color:transparent; border-radius:50%; animation:receipt-spin .7s linear infinite; vertical-align:-.15em; }
+@keyframes receipt-spin { to { transform:rotate(360deg); } }
+@media (max-width:480px) { .receipt-send-summary { grid-template-columns:1fr; gap:.2rem; } .receipt-send-summary dd { margin-bottom:.45rem; } }

@@ -252,38 +252,44 @@
     if (!data || !data.booking_reference) return;
     var guestEmail = (data.guest && data.guest.email) || "";
     if (!guestEmail) { JONE.ui.toast("This guest has no email address on file.", "error"); return; }
-    var ok = await JONE.ui.confirm({
-      title: "Send receipt?",
-      message: "Email the payment receipt for " + data.booking_reference + " to " + guestEmail + "?",
-      confirmText: "Send receipt"
-    });
-    if (!ok) return;
     if (!JONE.guardSubmit(emailBtn)) return;
-    // Immediate, visible feedback: spinner + "Sending…" the moment work starts.
-    var prevLabel = emailBtn.innerHTML;
-    emailBtn.innerHTML = "<span>Sending…</span>";
-    var released = false;
-    function restore(){ if (released) return; released = true; JONE.releaseGuard(emailBtn); emailBtn.innerHTML = prevLabel; JONE.icons.inject(emailBtn); }
-    try {
-      var res = await window.API.sendReceipt(data.booking_reference);
-      var payload = (res && res.data) || {};
-      if (payload.status === "SENT"){
-        restore();
-        JONE.ui.toast("Receipt email sent successfully to " + guestEmail + ".", "success");
-      } else if (payload.status === "IN_PROGRESS"){
-        restore();
-        JONE.ui.toast("A receipt email for this booking is already being processed.", "info");
-      } else {
-        // Queued: keep the spinner while we confirm the real delivery outcome.
-        emailBtn.innerHTML = "<span>Delivering…</span>";
-        JONE.ui.toast("Receipt email queued. Confirming delivery…", "info");
-        if (payload.email_log_id){ pollReceiptStatus(payload.email_log_id, guestEmail, restore); }
-        else { restore(); }
+
+    var status = JONE.el("p", { class: "muted", role: "status", "aria-live": "polite", textContent: "Ready to send." });
+    var sendBtn = JONE.el("button", { class: "btn btn-accent", type: "button", textContent: "Send receipt" });
+    var closeBtn = JONE.el("button", { class: "btn btn-outline", type: "button", textContent: "Close" });
+    var body = JONE.el("div", { class: "receipt-send-dialog" },
+      JONE.el("p", { textContent: "Send payment receipt" }),
+      JONE.el("dl", { class: "receipt-send-summary" },
+        JONE.el("dt", { textContent: "Guest" }), JONE.el("dd", { textContent: (data.guest && data.guest.full_name) || "Guest" }),
+        JONE.el("dt", { textContent: "Email" }), JONE.el("dd", { textContent: guestEmail }),
+        JONE.el("dt", { textContent: "Booking" }), JONE.el("dd", { textContent: data.booking_reference }),
+        JONE.el("dt", { textContent: "Receipt" }), JONE.el("dd", { textContent: "Payment receipt" })
+      ), status
+    );
+    var footer = JONE.el("div", { class: "modal-actions" }, closeBtn, sendBtn);
+    JONE.ui.modal.open({ title: "Send payment receipt", body: body, footer: footer, size: "modal-md" });
+    closeBtn.addEventListener("click", function(){ JONE.ui.modal.close(); });
+    sendBtn.addEventListener("click", async function(){
+      if (sendBtn.disabled) return;
+      sendBtn.disabled = true; closeBtn.disabled = true;
+      sendBtn.innerHTML = '<span class="spinner" aria-hidden="true"></span> Sending receipt…';
+      status.textContent = "Sending receipt…";
+      try {
+        var res = await window.API.sendReceipt(data.booking_reference);
+        var payload = (res && res.data) || {};
+        if (payload.status === "FAILED") throw new Error("The receipt could not be queued.");
+        status.textContent = payload.status === "SENT" ? "Receipt sent successfully." : "Receipt queued successfully. Delivery is still pending.";
+        sendBtn.textContent = "Done";
+        sendBtn.disabled = false;
+        closeBtn.disabled = false;
+        sendBtn.onclick = function(){ JONE.ui.modal.close(); };
+        JONE.ui.toast(payload.status === "SENT" ? "Receipt accepted by the mail server." : "Receipt queued for delivery.", "success");
+      } catch (err) {
+        status.textContent = (err && err.message) || "Unable to send receipt.";
+        sendBtn.textContent = "Retry";
+        sendBtn.disabled = false; closeBtn.disabled = false;
       }
-    } catch (err) {
-      restore();
-      JONE.ui.toast((err && err.message) || "The receipt couldn't be sent.", "error");
-    }
+    });
   });
 })();
 </script>
