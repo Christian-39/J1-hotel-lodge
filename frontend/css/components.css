@@ -43,6 +43,27 @@
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
+/* Loading state: any guarded button that adds .is-loading shows a leading
+   spinner so the user gets immediate feedback that work has started, instead
+   of waiting silently until the success/error toast. Works for text buttons
+   and icon buttons alike; the spinner inherits the button's text colour. */
+.btn.is-loading { position: relative; pointer-events: none; }
+.btn.is-loading::before {
+  content: "";
+  width: 1em; height: 1em;
+  margin-right: 0.1em;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  flex-shrink: 0;
+}
+/* Hide any leading icon while loading so the spinner replaces it cleanly. */
+.btn.is-loading svg { display: none; }
+@media (prefers-reduced-motion: reduce) {
+  .btn.is-loading::before { animation-duration: 1.4s; }
+}
+
 .btn-outline {
   --btn-bg: transparent;
   --btn-fg: var(--color-text);

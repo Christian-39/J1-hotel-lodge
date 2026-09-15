@@ -163,8 +163,10 @@
         var ok=await JONE.ui.confirm({title:"Send receipt?",message:"Send receipt "+receipt.receipt_reference+" to "+guestEmail+"?",confirmText:"Send receipt"});
         if(!ok)return;
         send.disabled=true;
+        send.classList.add("is-loading");
+        send.setAttribute("aria-busy","true");
         var original=send.textContent;
-        send.textContent="Queueing…";
+        send.textContent="Sending…";
         try{
           // The backend performs REAL delivery on a Celery worker. It reports
           // "queued" (HTTP 202) or "sent" (HTTP 200) — never a blind success.
@@ -181,7 +183,7 @@
           }
         }
         catch(err){JONE.ui.toast((err&&err.message)||"Receipt email could not be sent.","error");}
-        finally{send.disabled=false;send.textContent=original;}
+        finally{send.disabled=false;send.classList.remove("is-loading");send.removeAttribute("aria-busy");send.textContent=original;}
       });
     }catch(err){
       if(document.body.contains(body)) body.innerHTML='<div class="empty-state"><h3>Receipt unavailable</h3><p>'+JONE.esc((err&&err.message)||"Please try again.")+'</p></div>';

@@ -13,7 +13,7 @@ import logging
 
 from celery import shared_task
 from django.conf import settings
-from django.core.mail import EmailMessage, get_connection
+from django.core.mail import EmailMessage, EmailMultiAlternatives, get_connection
 from django.utils import timezone
 
 logger = logging.getLogger("apps")
@@ -67,6 +67,35 @@ def _safe_reason(exc) -> str:
     return mapping.get(exc.__class__.__name__, f"Delivery failed ({exc.__class__.__name__}).")
 
 
+def _embed_logo(email):
+    """Attach the official J-ONE logo inline under Content-ID ``jone-logo``.
+
+    The HTML template references ``cid:jone-logo`` so the mark renders reliably
+    in email clients without hotlinking a URL or exposing any local filesystem
+    path. Failure here is non-fatal — the alt text keeps the email readable — so
+    a missing asset never blocks a receipt from being delivered.
+    """
+    import os
+    from email.mime.image import MIMEImage
+
+    from apps.bookings.services.receipt_email import LOGO_CID
+
+    try:
+        # apps/notifications/tasks.py -> apps/ -> apps/bookings/services/assets
+        assets = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            "bookings", "services", "assets", "logo-official.png",
+        )
+        with open(assets, "rb") as handle:
+            image = MIMEImage(handle.read(), _subtype="png")
+        image.add_header("Content-ID", f"<{LOGO_CID}>")
+        image.add_header("Content-Disposition", "inline", filename="jone-logo.png")
+        email.mixed_subtype = "related"
+        email.attach(image)
+    except Exception as exc:  # noqa: BLE001 - branding is best-effort
+        logger.info("Inline logo not embedded (%s); alt text will be shown", exc.__class__.__name__)
+
+
 def _build_attachment(log):
     """Regenerate the receipt PDF from the DB. Returns (filename, bytes) or None."""
     if not (log.attach_receipt_pdf and log.booking_id):
@@ -116,13 +145,29 @@ def deliver_email_log(log_id, *, allow_retry=True, task=None):
     try:
         attachment = _build_attachment(log)
         connection = get_connection(fail_silently=False)
-        email = EmailMessage(
-            subject=log.subject,
-            body=log.body,
-            from_email=settings.DEFAULT_FROM_EMAIL,
-            to=[log.to_email],
-            connection=connection,
-        )
+        html_body = (log.html_body or "").strip()
+        if html_body:
+            # Proper multipart/alternative: text/plain is the body, text/html
+            # is attached as an alternative so compliant clients render the
+            # styled version and everything else falls back to plain text.
+            # This is what prevents HTML tags from ever showing as raw text.
+            email = EmailMultiAlternatives(
+                subject=log.subject,
+                body=log.body,
+                from_email=settings.DEFAULT_FROM_EMAIL,
+                to=[log.to_email],
+                connection=connection,
+            )
+            email.attach_alternative(html_body, "text/html")
+            _embed_logo(email)
+        else:
+            email = EmailMessage(
+                subject=log.subject,
+                body=log.body,
+                from_email=settings.DEFAULT_FROM_EMAIL,
+                to=[log.to_email],
+                connection=connection,
+            )
         if attachment:
             filename, content = attachment
             email.attach(filename, content, "application/pdf")

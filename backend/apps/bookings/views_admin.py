@@ -399,24 +399,20 @@ class AdminBookingSendReceiptView(APIView):
                 message="A receipt email for this booking is already being processed.",
             )
 
+        from apps.bookings.services.receipt_email import render_receipt_email
+
         receipt = ReceiptSerializer().to_representation(booking)
-        payments = "\n".join(
-            f"{p['reference']}: {p['amount']} {p['status']} ({p['paid_at'] or 'date unavailable'})"
-            for p in receipt["payments"]
-        ) or "No successful payment recorded."
         latest_ref = receipt.get("receipt_reference") or receipt["booking_reference"]
-        message = (
-            f"{receipt['hotel']['name']}\n\nPayment receipt for booking {receipt['booking_reference']}\n"
-            f"Guest: {receipt['guest']['name']}\nStay: {receipt['check_in']} to {receipt['check_out']}\n"
-            f"Room: {receipt['room_type']}\nTotal: {receipt['total']} {receipt['currency']}\n"
-            f"Amount paid: {receipt['amount_paid']} {receipt['currency']}\n"
-            f"Outstanding: {receipt['amount_due']} {receipt['currency']}\n\nPayments:\n{payments}\n\n"
-            f"Your itemised receipt is attached as a PDF."
-        )
+        # Presentation lives in the reusable email builder + Django templates:
+        # a professional subject, a plain-text fallback, and a styled HTML body
+        # (all dynamic values auto-escaped). The itemised PDF is still attached
+        # by the delivery worker via ``attach_receipt_pdf=True``.
+        subject, text_body, html_body = render_receipt_email(receipt)
         log = send_email_safe(
-            f"Payment receipt — {receipt['booking_reference']}",
-            message,
+            subject,
+            text_body,
             [recipient],
+            html_message=html_body,
             kind=EmailLog.Kind.RECEIPT,
             booking_reference=booking.booking_reference,
             payment_reference=latest_ref,
