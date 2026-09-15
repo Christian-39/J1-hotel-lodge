@@ -2,38 +2,48 @@
 # Create a managed MySQL 8 instance separately (or point DATABASE_URL at an
 # external one) and a Render Redis instance, then fill env vars in the
 # dashboard (see .env.example).
+#
+# IMPORTANT: this platform needs THREE processes, not one. A running web
+# service does NOT mean the Celery worker is running. Emails (receipts, booking
+# confirmations, cancellations, password resets) are delivered by the *worker*.
+# The worker and beat therefore need the SAME production env vars as the web
+# service — including EMAIL_* — or queued email tasks silently fail.
+#
+# The shared configuration lives in an env var group so every service inherits
+# an identical environment (the previous blueprint gave the worker/beat only a
+# handful of vars, so they either crashed on boot — production settings require
+# DJANGO_ALLOWED_HOSTS / CORS_ALLOWED_ORIGINS / CSRF_TRUSTED_ORIGINS /
+# FRONTEND_URL at import time — or ran with EMAIL_HOST empty and could never
+# deliver mail).
 
-services:
-  - type: web
-    name: jone-hotel-api
-    runtime: python
-    plan: starter
-    buildCommand: "./build.sh"
-    startCommand: "gunicorn config.wsgi:application --bind 0.0.0.0:$PORT --workers 3 --timeout 60"
-    healthCheckPath: /api/health/
+envVarGroups:
+  - name: jone-shared
     envVars:
       - key: DJANGO_SETTINGS_MODULE
         value: config.settings.production
-      - key: DATABASE_URL
-        sync: false          # set in the dashboard (mysql://...)
       - key: DJANGO_SECRET_KEY
         generateValue: true
       - key: DJANGO_DEBUG
         value: "False"
       - key: DJANGO_ALLOWED_HOSTS
         sync: false          # e.g. j1-hotel-lodge-backend.onrender.com
+      - key: DATABASE_URL
+        sync: false          # mysql://...
+      - key: REDIS_URL
+        sync: false          # from Render Redis — Celery broker + result backend
       - key: FRONTEND_URL
         sync: false          # e.g. https://jonehotel.vercel.app
+      - key: PAYMENT_CALLBACK_URL
+        sync: false          # optional; defaults to FRONTEND_URL/payment-verify.html
       - key: CORS_ALLOWED_ORIGINS
         sync: false          # e.g. https://jonehotel.vercel.app
       - key: CSRF_TRUSTED_ORIGINS
         sync: false
-      - key: REDIS_URL
-        sync: false          # from Render Redis
       - key: PAYSTACK_SECRET_KEY
         sync: false
-      - key: PAYMENT_CALLBACK_URL
-        sync: false          # optional; defaults to FRONTEND_URL/payment-verify.html
+      - key: PAYSTACK_PUBLIC_KEY
+        sync: false
+      # --- Media (Backblaze B2) --------------------------------------------
       - key: BACKBLAZE_KEY_ID
         sync: false
       - key: BACKBLAZE_APPLICATION_KEY
@@ -46,43 +56,58 @@ services:
         sync: false          # optional; parsed from the endpoint when omitted
       - key: MEDIA_CUSTOM_DOMAIN
         sync: false          # optional B2 friendly-URL / CDN host
+      # --- Email (SMTP) — REQUIRED by the worker to deliver mail -----------
+      - key: EMAIL_BACKEND
+        value: django.core.mail.backends.smtp.EmailBackend
       - key: EMAIL_HOST
-        sync: false
+        sync: false          # e.g. smtp.gmail.com
+      - key: EMAIL_PORT
+        value: "587"
+      - key: EMAIL_USE_TLS
+        value: "True"
+      - key: EMAIL_USE_SSL
+        value: "False"
       - key: EMAIL_HOST_USER
-        sync: false
+        sync: false          # full email address
       - key: EMAIL_HOST_PASSWORD
-        sync: false
+        sync: false          # Gmail: a 16-char App Password, NOT the account password
       - key: DEFAULT_FROM_EMAIL
-        sync: false
+        sync: false          # e.g. "J-ONE HOTEL & LODGE <bookings@jonehotel.com>"
+      - key: HOTEL_NOTIFICATION_EMAILS
+        sync: false          # optional; staff inbox(es) for enquiry/cancellation alerts
 
+services:
+  # --- Web API --------------------------------------------------------------
+  - type: web
+    name: jone-hotel-api
+    runtime: python
+    plan: starter
+    buildCommand: "./build.sh"
+    startCommand: "gunicorn config.wsgi:application --bind 0.0.0.0:$PORT --workers 3 --timeout 60"
+    healthCheckPath: /api/health/
+    envVars:
+      - fromGroup: jone-shared
+
+  # --- Celery worker: consumes email + booking-expiry tasks -----------------
+  # Without this process nothing on the queue is ever executed. This is the
+  # single most important service for receipt delivery.
   - type: worker
     name: jone-hotel-worker
     runtime: python
+    plan: starter
     buildCommand: "pip install -r requirements.txt"
-    startCommand: "celery -A config worker -l info"
+    startCommand: "celery -A config worker -l info --concurrency=2"
     envVars:
-      - key: DJANGO_SETTINGS_MODULE
-        value: config.settings.production
-      - key: DATABASE_URL
-        sync: false
-      - key: DJANGO_SECRET_KEY
-        generateValue: true
-      - key: REDIS_URL
-        sync: false
-      - key: PAYSTACK_SECRET_KEY
-        sync: false
+      - fromGroup: jone-shared
 
+  # --- Celery beat: schedules periodic tasks (expiry, auto-checkout) ---------
+  # Beat only *schedules* work; the worker executes it. They are separate
+  # processes on purpose — never fold beat into the worker or the web service.
   - type: worker
     name: jone-hotel-beat
     runtime: python
+    plan: starter
     buildCommand: "pip install -r requirements.txt"
     startCommand: "celery -A config beat -l info"
     envVars:
-      - key: DJANGO_SETTINGS_MODULE
-        value: config.settings.production
-      - key: DATABASE_URL
-        sync: false
-      - key: DJANGO_SECRET_KEY
-        generateValue: true
-      - key: REDIS_URL
-        sync: false
+      - fromGroup: jone-shared

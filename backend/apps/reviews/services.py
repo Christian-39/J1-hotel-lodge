@@ -148,6 +148,8 @@ def send_review_invitation(booking):
         return
     link = f"{settings.FRONTEND_URL}{REVIEW_PAGE_LINK}?ref={booking.booking_reference}"
     send_email_safe(
+        kind="REVIEW_INVITE",
+        booking_reference=booking.booking_reference,
         subject="How was your stay at J-ONE HOTEL & LODGE?",
         message=(
             f"Dear {booking.guest.first_name},\n\n"

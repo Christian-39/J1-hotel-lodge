@@ -695,6 +695,8 @@ def _notify_refund_status(refund_pk, previous_status, new_status):
         subject=f"Refund update for {refund.booking.booking_reference} — {hotel.hotel_name}",
         message=body,
         recipients=[refund.booking.guest.email],
+        kind="REFUND",
+        booking_reference=refund.booking.booking_reference,
     )
     try:
         events.append(event_key)

@@ -358,31 +358,100 @@ class AdminGuestDetailView(generics.RetrieveUpdateAPIView):
         )
 
 class AdminBookingSendReceiptView(APIView):
-    """Send a confirmed payment receipt to the guest after staff approval."""
+    """Queue a confirmed payment receipt (with PDF) for delivery to the guest.
+
+    This endpoint intentionally reports **queued**, not "sent": the Celery
+    worker performs the actual SMTP delivery and records the true outcome on an
+    ``EmailLog`` row. The response carries the EmailLog id so the dashboard can
+    poll the real status (QUEUED → SENT / FAILED) instead of assuming success.
+    """
     permission_classes = [IsStaffRole]
     serializer_class = EmptySerializer
 
     def post(self, request, lookup):
+        from rest_framework.exceptions import ValidationError
+        from apps.core.validators import validate_email_address
+        from apps.notifications.models import EmailLog
+
         booking = _get_admin_booking(lookup)
-        if not booking.guest.email:
-            from rest_framework.exceptions import ValidationError
-            raise ValidationError({"email": ["This guest has no email address."]})
+        recipient = (booking.guest.email or "").strip()
+        # Server-side validation: never trust a frontend-supplied recipient;
+        # resolve it from the trusted booking record and reject if unusable.
+        if not recipient or not validate_email_address(recipient):
+            raise ValidationError({"email": ["This guest has no valid email address on file."]})
+
+        # Idempotency: block a duplicate while one is already in flight for
+        # this booking. A previous FAILED/SENT does not block an intentional
+        # resend (staff explicitly clicked again).
+        in_flight = EmailLog.objects.filter(
+            booking_reference=booking.booking_reference,
+            kind=EmailLog.Kind.RECEIPT,
+            status__in=[EmailLog.Status.PENDING, EmailLog.Status.QUEUED,
+                        EmailLog.Status.SENDING, EmailLog.Status.RETRYING],
+        ).exists()
+        if in_flight:
+            return success_response(
+                {
+                    "booking_reference": booking.booking_reference,
+                    "recipient": recipient,
+                    "status": "IN_PROGRESS",
+                },
+                message="A receipt email for this booking is already being processed.",
+            )
+
         receipt = ReceiptSerializer().to_representation(booking)
         payments = "\n".join(
             f"{p['reference']}: {p['amount']} {p['status']} ({p['paid_at'] or 'date unavailable'})"
             for p in receipt["payments"]
         ) or "No successful payment recorded."
+        latest_ref = receipt.get("receipt_reference") or receipt["booking_reference"]
         message = (
             f"{receipt['hotel']['name']}\n\nPayment receipt for booking {receipt['booking_reference']}\n"
             f"Guest: {receipt['guest']['name']}\nStay: {receipt['check_in']} to {receipt['check_out']}\n"
             f"Room: {receipt['room_type']}\nTotal: {receipt['total']} {receipt['currency']}\n"
             f"Amount paid: {receipt['amount_paid']} {receipt['currency']}\n"
-            f"Outstanding: {receipt['amount_due']} {receipt['currency']}\n\nPayments:\n{payments}"
+            f"Outstanding: {receipt['amount_due']} {receipt['currency']}\n\nPayments:\n{payments}\n\n"
+            f"Your itemised receipt is attached as a PDF."
         )
-        send_email_safe(
-            f"Payment receipt — {receipt['booking_reference']}", message, [booking.guest.email]
+        log = send_email_safe(
+            f"Payment receipt — {receipt['booking_reference']}",
+            message,
+            [recipient],
+            kind=EmailLog.Kind.RECEIPT,
+            booking_reference=booking.booking_reference,
+            payment_reference=latest_ref,
+            booking_id=booking.id,
+            attach_receipt_pdf=True,
+            created_by=request.user,
         )
-        return success_response(
-            {"booking_reference": booking.booking_reference, "recipient": booking.guest.email},
-            message="Receipt queued for delivery.",
+
+        from apps.audit.services import log_action
+        log_action(actor=request.user, action="RECEIPT_EMAIL_QUEUED", instance=booking,
+                   changes={"recipient": ["", recipient]}, request=request)
+
+        # Reflect the actual state. In eager/dev mode the task has already run,
+        # so surface SENT/FAILED truthfully rather than a blanket "queued".
+        fresh = EmailLog.objects.filter(pk=log.pk).first() if log else None
+        current = fresh.status if fresh else EmailLog.Status.FAILED
+        payload = {
+            "booking_reference": booking.booking_reference,
+            "recipient": recipient,
+            "email_log_id": log.pk if log else None,
+            "status": current,
+        }
+        if current == EmailLog.Status.SENT:
+            msg = f"Receipt email sent successfully to {recipient}."
+            http = status.HTTP_200_OK
+        elif current == EmailLog.Status.FAILED:
+            payload["error"] = fresh.error_message if fresh else "Delivery failed."
+            return Response(
+                {"success": False, "code": "EMAIL_DELIVERY_FAILED",
+                 "message": payload["error"], "data": payload},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+        else:
+            msg = "Receipt email queued successfully. Delivery is being processed."
+            http = status.HTTP_202_ACCEPTED
+        return Response(
+            {"success": True, "message": msg, "data": payload}, status=http
         )

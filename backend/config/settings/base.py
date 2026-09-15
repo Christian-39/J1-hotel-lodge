@@ -341,10 +341,24 @@ MAX_UPLOAD_MB = config("MAX_UPLOAD_MB", default=5, cast=int)
 # --- Email -----------------------------------------------------------------
 EMAIL_HOST = config("EMAIL_HOST", default="")
 EMAIL_PORT = config("EMAIL_PORT", default=587, cast=int)
+# TLS (STARTTLS, port 587) and SSL (implicit TLS, port 465) are mutually
+# exclusive — enabling both makes Django raise at send time. Default to TLS and
+# force SSL off whenever TLS is on so a misconfigured env can never enable both.
 EMAIL_USE_TLS = config("EMAIL_USE_TLS", default=True, cast=bool)
+EMAIL_USE_SSL = config("EMAIL_USE_SSL", default=False, cast=bool)
+if EMAIL_USE_TLS and EMAIL_USE_SSL:
+    # Contradictory: prefer the port's convention, else fall back to TLS.
+    if EMAIL_PORT == 465:
+        EMAIL_USE_TLS = False
+    else:
+        EMAIL_USE_SSL = False
 EMAIL_HOST_USER = config("EMAIL_HOST_USER", default="")
 EMAIL_HOST_PASSWORD = config("EMAIL_HOST_PASSWORD", default="")
+# Connection timeout so a stuck SMTP handshake fails fast (and, in a Celery
+# task, is retried) instead of hanging the worker.
+EMAIL_TIMEOUT = config("EMAIL_TIMEOUT", default=20, cast=int)
 DEFAULT_FROM_EMAIL = config("DEFAULT_FROM_EMAIL", default="J-ONE HOTEL & LODGE <noreply@example.com>")
+SERVER_EMAIL = DEFAULT_FROM_EMAIL
 # Comma-separated operational inbox(es) for cancellation/enquiry alerts.
 HOTEL_NOTIFICATION_EMAILS = config("HOTEL_NOTIFICATION_EMAILS", default="", cast=Csv())
 EMAIL_BACKEND = config(
@@ -357,7 +371,16 @@ REDIS_URL = config("REDIS_URL", default="redis://127.0.0.1:6379/0")
 CELERY_BROKER_URL = REDIS_URL
 CELERY_RESULT_BACKEND = REDIS_URL
 CELERY_TASK_ALWAYS_EAGER = config("CELERY_TASK_ALWAYS_EAGER", default=False, cast=bool)
-CELERY_TASK_TIME_LIMIT = 60
+# Propagate exceptions from eager tasks so failures are never silently
+# swallowed when running in-process (development / tests).
+CELERY_TASK_EAGER_PROPAGATES = config("CELERY_TASK_EAGER_PROPAGATES", default=True, cast=bool)
+# A task is only acknowledged after it returns — a worker crash mid-delivery
+# re-queues the job rather than losing it.
+CELERY_TASK_ACKS_LATE = True
+CELERY_WORKER_PREFETCH_MULTIPLIER = 1
+CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
+CELERY_TASK_TIME_LIMIT = 120
+CELERY_TASK_SOFT_TIME_LIMIT = 90
 
 CACHES = {
     "default": {

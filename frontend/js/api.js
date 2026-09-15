@@ -498,11 +498,26 @@ const API = (() => {
     return get(`${base}/staff/${encodeURIComponent(id)}/`, opts);
   }
 
-  /* Email the receipt for a booking to the guest (staff action). */
+  /* Email the receipt for a booking to the guest (staff action).
+     Returns the full response ({ status, data }). A 202 means QUEUED (delivery
+     is being processed by the worker); a 200 with data.status === "SENT" means
+     the email backend actually accepted the message; a 502 throws an APIError
+     carrying the real failure reason. Callers MUST NOT treat "queued" as
+     "delivered". */
   function sendReceipt(lookup, opts = {}) {
     const base = BOOKINGS_EP();
     if (!base) throw notConfigured("bookings");
     return post(`${base}/${encodeURIComponent(lookup)}/send-receipt/`, {}, opts);
+  }
+
+  /* Poll the real delivery status of a queued transactional email. */
+  function getEmailLog(id, opts = {}) {
+    return get(`/api/notifications/emails/${encodeURIComponent(id)}/`, opts);
+  }
+
+  /* Staff email delivery log (optionally filtered ?status=FAILED / ?booking=). */
+  function listEmailLogs(params = {}, opts = {}) {
+    return get(`/api/notifications/emails/`, { ...opts, params });
   }
 
   return {
@@ -524,7 +539,7 @@ const API = (() => {
     confirmBooking, staffCancelBooking, checkInBooking, checkOutBooking,
     noShowBooking, assignRoom, recordPayment, searchBookings, searchCheckout,
     reviewCancellationRequest, approveCancellationRequest, rejectCancellationRequest, processCancellationRefund, closeCancellationRequest, listRefunds,
-    getStaffProfile, sendReceipt, getRoomTypeRooms,
+    getStaffProfile, sendReceipt, getEmailLog, listEmailLogs, getRoomTypeRooms,
     // Helpers
     setTokenProvider, setRefreshProvider, APIError, BASE,
     normalizeList, unwrap, safe

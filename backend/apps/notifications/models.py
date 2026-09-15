@@ -1,6 +1,10 @@
 from django.conf import settings
 from django.db import models
 
+# Re-export the delivery-tracked email log so it lives in the same app
+# namespace (apps.notifications.models.EmailLog) for migrations & admin.
+from .email_models import EmailLog  # noqa: F401
+
 
 class Notification(models.Model):
     class Type(models.TextChoices):

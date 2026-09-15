@@ -86,7 +86,38 @@ CACHES = {
 }
 
 # --- Email over SMTP ----------------------------------------------------------
-EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
+# Production MUST use a real SMTP backend. If EMAIL_BACKEND is left at the
+# console default (or forced to console) the "email" would only be printed to a
+# log the guest never sees — the exact silent-failure this deploy must prevent.
+EMAIL_BACKEND = config(
+    "EMAIL_BACKEND", default="django.core.mail.backends.smtp.EmailBackend"
+)
+if "console" in EMAIL_BACKEND or "dummy" in EMAIL_BACKEND:
+    raise ImproperlyConfigured(
+        "Production must not use the console/dummy email backend — guests would "
+        "never receive receipts. Set EMAIL_BACKEND to the SMTP backend."
+    )
+if EMAIL_BACKEND.endswith("smtp.EmailBackend"):
+    # Fail fast on missing SMTP credentials instead of letting the Celery
+    # worker discover them at send time and silently fail delivery.
+    _missing = [
+        name for name in ("EMAIL_HOST", "EMAIL_HOST_USER", "EMAIL_HOST_PASSWORD")
+        if not (globals().get(name) or "").strip()
+    ]
+    if _missing:
+        raise ImproperlyConfigured(
+            "Production SMTP is not fully configured. Missing: "
+            + ", ".join(_missing)
+            + ". For a Gmail/Google account you MUST use a 16-character App "
+            "Password (not the normal account password), with EMAIL_HOST="
+            "smtp.gmail.com, EMAIL_PORT=587, EMAIL_USE_TLS=True."
+        )
 
-# Celery workers run tasks out-of-process in production.
-CELERY_TASK_ALWAYS_EAGER = False
+# Celery workers run tasks out-of-process in production. Guard against a broker
+# that was never configured — otherwise queued receipts would sit unconsumed.
+CELERY_TASK_ALWAYS_EAGER = config("CELERY_TASK_ALWAYS_EAGER", default=False, cast=bool)
+if not CELERY_TASK_ALWAYS_EAGER and not (REDIS_URL or "").strip():  # noqa: F405
+    raise ImproperlyConfigured(
+        "REDIS_URL (Celery broker) is required in production so the worker can "
+        "consume queued email tasks."
+    )

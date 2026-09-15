@@ -3,10 +3,27 @@ from pathlib import Path
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
+from django.core.validators import validate_email as _django_validate_email
 from PIL import Image
 
 ALLOWED_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
 ALLOWED_IMAGE_FORMATS = {"JPEG", "PNG", "WEBP"}
+
+
+def validate_email_address(value):
+    """Return True when ``value`` is a syntactically valid email address.
+
+    Used server-side before queueing transactional mail so a blank or malformed
+    recipient can never turn into a fake "sent" success.
+    """
+    value = str(value or "").strip()
+    if not value or "\n" in value or "\r" in value:
+        return False
+    try:
+        _django_validate_email(value)
+    except ValidationError:
+        return False
+    return True
 
 
 def validate_image_upload(file):

@@ -412,6 +412,8 @@ def create_booking(*, room_type_value, check_in, check_out, rooms, adults, child
         if booking.guest.email:
             if pending:
                 send_email_safe(
+                    kind="BOOKING_PENDING",
+                    booking_reference=booking.booking_reference,
                     subject=f"Complete your booking {booking.booking_reference} — J-ONE HOTEL & LODGE",
                     message=(
                         f"Hello {booking.guest.first_name},\n\n"
@@ -444,6 +446,8 @@ def _send_confirmation_email(booking, hotel=None):
         return
     rooms = ", ".join(a.room.room_number for a in booking.room_assignments.select_related("room"))
     send_email_safe(
+        kind="BOOKING_CONFIRMATION",
+        booking_reference=booking.booking_reference,
         subject=f"Booking confirmed: {booking.booking_reference} — J-ONE HOTEL & LODGE",
         message=(
             f"Hello {booking.guest.first_name},\n\n"
@@ -631,6 +635,8 @@ def cancel_booking(
         hotel = HotelSettings.get_settings()
         transaction.on_commit(
             lambda: send_email_safe(
+                kind="CANCELLATION",
+                booking_reference=booking.booking_reference,
                 subject=f"Booking cancelled: {booking.booking_reference} — {hotel.hotel_name}",
                 message=(
                     f"Hello {booking.guest.first_name},\n\n"

@@ -1,6 +1,24 @@
 from rest_framework import serializers
 
-from .models import Notification
+from .models import EmailLog, Notification
+
+
+class EmailLogSerializer(serializers.ModelSerializer):
+    """Delivery status of a transactional email (staff/admin visibility)."""
+
+    status_label = serializers.CharField(source="get_status_display", read_only=True)
+    kind_label = serializers.CharField(source="get_kind_display", read_only=True)
+
+    class Meta:
+        model = EmailLog
+        fields = [
+            "id", "kind", "kind_label", "to_email", "subject",
+            "booking_reference", "payment_reference",
+            "status", "status_label", "retry_count", "max_retries",
+            "error_message", "task_id",
+            "created_at", "queued_at", "sent_at", "failed_at",
+        ]
+        read_only_fields = fields
 
 
 class UnreadCountSerializer(serializers.Serializer):

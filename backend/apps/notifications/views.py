@@ -1,13 +1,16 @@
 from django.db.models import Q
 from drf_spectacular.utils import extend_schema
 from rest_framework import generics, status
+from rest_framework.exceptions import NotFound
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.views import APIView
 
+from apps.core.permissions import IsStaffRole
 from apps.core.responses import success_response
 
-from .models import Notification
+from .models import EmailLog, Notification
 from .serializers import (
+    EmailLogSerializer,
     NotificationDetailSerializer,
     NotificationSerializer,
     UnreadCountSerializer,
@@ -92,3 +95,44 @@ class MarkAllReadView(APIView):
     def post(self, request):
         Notification.objects.filter(recipient=request.user, is_read=False).update(is_read=True)
         return success_response({"unread_count": 0}, message="All notifications marked as read.")
+
+
+@extend_schema(tags=["Notifications"], summary="Email delivery log (staff/admin)")
+class EmailLogListView(generics.ListAPIView):
+    """Staff visibility into transactional email delivery.
+
+    Supports ``?status=FAILED`` and ``?booking=<ref>`` filters so staff can see
+    exactly whether a receipt/confirmation truly SENT or FAILED — the whole
+    point of the fix: the dashboard can now show real delivery state instead of
+    assuming a queued task succeeded.
+    """
+
+    permission_classes = [IsStaffRole]
+    serializer_class = EmailLogSerializer
+
+    def get_queryset(self):
+        qs = EmailLog.objects.all()
+        status_param = (self.request.query_params.get("status") or "").upper()
+        if status_param in EmailLog.Status.values:
+            qs = qs.filter(status=status_param)
+        kind_param = (self.request.query_params.get("kind") or "").upper()
+        if kind_param in EmailLog.Kind.values:
+            qs = qs.filter(kind=kind_param)
+        booking = (self.request.query_params.get("booking") or "").strip()
+        if booking:
+            qs = qs.filter(booking_reference=booking)
+        return qs.order_by("-created_at")
+
+
+@extend_schema(tags=["Notifications"], summary="Email delivery status (staff/admin)")
+class EmailLogDetailView(generics.RetrieveAPIView):
+    """Poll a single email's live delivery status (QUEUED → SENT / FAILED)."""
+
+    permission_classes = [IsStaffRole]
+    serializer_class = EmailLogSerializer
+
+    def get_queryset(self):
+        return EmailLog.objects.all()
+
+    def retrieve(self, request, *args, **kwargs):
+        return success_response(self.get_serializer(self.get_object()).data)

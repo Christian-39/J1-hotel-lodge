@@ -160,6 +160,7 @@ class PasswordResetRequestView(APIView):
             token = default_token_generator.make_token(user)
             reset_url = f"{settings.FRONTEND_URL}/reset-password.html?uid={uid}&token={token}"
             send_email_safe(
+                kind="PASSWORD_RESET",
                 subject="Reset your J-ONE HOTEL & LODGE password",
                 message=(
                     f"Hello {user.first_name},\n\n"
