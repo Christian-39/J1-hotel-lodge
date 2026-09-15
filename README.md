@@ -8,6 +8,12 @@ Production-grade Django + Django REST Framework backend powering:
 Django is used strictly as a **JSON API backend** — the frontend never touches
 Django templates, template context, or the database.
 
+The frontend (`frontend/`, deployed separately on Vercel) is an installable
+**Progressive Web App**. Its service worker is deliberately conservative and
+**never caches any `/api/` response** — availability, bookings, payments and
+authentication always go straight to this backend, which remains the single
+source of truth. See [`frontend/README.md`](frontend/README.md#progressive-web-app-pwa).
+
 - Hotel: **J-ONE HOTEL & LODGE**, Plot 566 Mgbowo Street, off Ezike Street
 - Phone: **+234803 211 2874** · Email: **jonathanonu76@gmail.com**
 - Currency: **NGN** · Timezone: **Africa/Lagos**

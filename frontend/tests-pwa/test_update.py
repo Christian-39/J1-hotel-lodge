@@ -4,8 +4,12 @@ import re, sys, time
 from pathlib import Path
 from playwright.sync_api import sync_playwright
 
-SW = Path("../sw.js")
+SW = Path("/home/user/j1/frontend/sw.js")
 orig = SW.read_text()
+# Read the CURRENT version rather than assuming "jone-v1", then simulate a deploy
+# by bumping to a throwaway version. Keeps the test valid as the real SW evolves.
+CUR = re.search(r'CACHE_VERSION = "([^"]+)"', orig).group(1)
+NEXT = "jone-testv-next"
 BASE = "http://127.0.0.1:8080"
 out = []
 def check(n, ok, d=""):
@@ -16,10 +20,10 @@ try:
         b = pw.chromium.launch(); ctx = b.new_context(service_workers="allow"); p = ctx.new_page()
         p.goto(BASE + "/index.html", wait_until="load"); p.wait_for_timeout(1500)
         v1 = p.evaluate("async()=> (await caches.keys())")
-        check("v1 caches created", any("jone-v1" in k for k in v1), str(v1))
+        check("current caches created", any(CUR in k for k in v1), f"{CUR} -> {v1}")
 
         # Deploy "v2"
-        SW.write_text(orig.replace('const CACHE_VERSION = "jone-v1"', 'const CACHE_VERSION = "jone-v2"'))
+        SW.write_text(orig.replace(f'const CACHE_VERSION = "{CUR}"', f'const CACHE_VERSION = "{NEXT}"'))
         time.sleep(0.4)
 
         state = p.evaluate("""async () => {
@@ -31,8 +35,8 @@ try:
         }""")
         # New worker must WAIT, not take over on its own (no skipWaiting in install).
         check("new SW waits (no self-activation)", state["waiting"] is True, str(state))
-        check("old v1 cache still intact while waiting",
-              any("jone-v1" in k for k in state["caches"]), str(state["caches"]))
+        check("old cache still intact while waiting",
+              any(CUR in k for k in state["caches"]), str(state["caches"]))
 
         # Page explicitly authorises the swap.
         p.evaluate("""async () => {
@@ -41,8 +45,8 @@ try:
         }""")
         p.wait_for_timeout(2500)
         after = p.evaluate("async()=> (await caches.keys())")
-        check("v2 cache created", any("jone-v2" in k for k in after), str(after))
-        check("old v1 caches cleaned up", not any("jone-v1" in k for k in after), str(after))
+        check("new-version cache created", any(NEXT in k for k in after), str(after))
+        check("old caches cleaned up", not any(CUR in k for k in after), str(after))
 
         ver = p.evaluate("""async () => {
             const r = await navigator.serviceWorker.ready;
@@ -53,7 +57,7 @@ try:
                 setTimeout(()=>res(null), 1500);
             });
         }""")
-        check("SW reports its version", ver and ver.get("version") == "jone-v2", str(ver))
+        check("SW reports its version", ver and ver.get("version") == NEXT, str(ver))
         b.close()
 finally:
     SW.write_text(orig)

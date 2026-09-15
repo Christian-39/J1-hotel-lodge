@@ -80,14 +80,33 @@
   overscroll-behavior: contain;
 }
 
+/* Sticky topbar. Translucent + blurred so content reads as passing *under* it,
+   matching the public .site-header treatment. The scroll container is
+   .dash-main (not the window) — js/dashboard.js toggles .scrolled from there. */
 .dash-topbar {
   display: flex; align-items: center; justify-content: space-between;
   gap: var(--sp-3);
   padding: 0.75rem 1.5rem;
-  border-bottom: 1px solid var(--color-border);
-  background: var(--color-surface);
+  border-bottom: 1px solid transparent;
+  background: color-mix(in srgb, var(--color-surface) 85%, transparent);
+  backdrop-filter: saturate(1.3) blur(10px);
+  -webkit-backdrop-filter: saturate(1.3) blur(10px);
   position: sticky; top: 0; z-index: 800;
   flex-shrink: 0;
+  transition: border-color var(--speed-3) var(--ease),
+              box-shadow var(--speed-3) var(--ease),
+              background var(--speed-3) var(--ease);
+}
+/* Only once the page has actually moved does the bar separate from the content. */
+.dash-topbar.scrolled {
+  border-bottom-color: var(--color-border);
+  box-shadow: var(--shadow-xs);
+}
+
+/* No backdrop-filter support (older Firefox, some in-app webviews): fall back to
+   a fully opaque bar so the topbar is never unreadable over scrolling content. */
+@supports not ((backdrop-filter: blur(10px)) or (-webkit-backdrop-filter: blur(10px))) {
+  .dash-topbar { background: var(--color-surface); }
 }
 .dash-topbar-left { display: flex; align-items: center; gap: var(--sp-3); }
 .dash-title { min-width: 0; }

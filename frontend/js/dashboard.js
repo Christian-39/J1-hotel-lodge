@@ -96,6 +96,28 @@
      survive the icon injector rewriting the toggle button's children, and the
      backdrop element is created here if the page shell didn't include one. */
   let sidebarWired = false;
+  /* Sticky topbar elevation.
+     IMPORTANT: the dashboard scrolls inside .dash-main (the .dash grid is
+     height:100dvh + overflow:hidden), so a window scroll listener would never
+     fire here. We observe the real scroll container instead, and fall back to
+     the window for any page that is not inside the dashboard shell. */
+  let topbarWired = false;
+  function setupStickyTopbar() {
+    if (topbarWired) return;
+    const topbar = document.querySelector(".dash-topbar");
+    if (!topbar) return;
+    topbarWired = true;
+
+    const scroller = document.querySelector(".dash-main");
+    const readTop = () => (scroller ? scroller.scrollTop : window.scrollY);
+
+    const apply = () => topbar.classList.toggle("scrolled", readTop() > 4);
+    const onScroll = JONE.throttle(apply, 80);
+
+    (scroller || window).addEventListener("scroll", onScroll, { passive: true });
+    apply();   // correct state on load (e.g. restored scroll position)
+  }
+
   function setupSidebar() {
     const sidebar = document.querySelector(".dash-sidebar");
     if (!sidebar) return;
@@ -357,6 +379,7 @@
     renderSidebar("[data-dash-nav]");
     renderUser("[data-dash-user]");
     setupSidebar();
+    setupStickyTopbar();
     renderTopbarBell();
     renderBottomNav();
     window.JONE.nav && window.JONE.nav.initDashboardNav();
@@ -1331,7 +1354,7 @@
 
   window.JONE = window.JONE || {};
   window.JONE.dashboard = {
-    renderSidebar, renderUser, setupSidebar, renderTopbarBell, renderBottomNav,
+    renderSidebar, renderUser, setupSidebar, setupStickyTopbar, renderTopbarBell, renderBottomNav,
     notifBadge, statusPill, boot, topbar, NAV, badge, DATA, formModal,
     // Operational components
     currentRole, hasRole, canManageRooms, canManageStaff, money,
