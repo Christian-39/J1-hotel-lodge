@@ -363,7 +363,7 @@ SERVER_EMAIL = DEFAULT_FROM_EMAIL
 HOTEL_NOTIFICATION_EMAILS = config("HOTEL_NOTIFICATION_EMAILS", default="", cast=Csv())
 EMAIL_BACKEND = config(
     "EMAIL_BACKEND",
-    default="django.core.mail.backends.smtp.EmailBackend",
+    default="django.core.mail.backends.console.EmailBackend",
 )
 
 # --- Celery / cache --------------------------------------------------------
