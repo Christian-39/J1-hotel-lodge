@@ -19,12 +19,13 @@
       page explicitly tells it to (JONE.pwa only does so when the user is idle
       and not in a booking/payment/form flow), so nobody is reloaded mid-payment.
 
-   After changing ANY file under frontend/, bump CACHE_VERSION below.
+   CACHE_VERSION is kept in lockstep with the release version by
+   frontend/build.py (--bump/--version) — release with that, never by hand.
    ========================================================================== */
 
 "use strict";
 
-const CACHE_VERSION = "jone-v2";
+const CACHE_VERSION = "jone-v1.1.0";
 const PRECACHE = `${CACHE_VERSION}-precache`;
 const PAGES_CACHE = `${CACHE_VERSION}-pages`;
 const IMAGES_CACHE = `${CACHE_VERSION}-images`;
@@ -56,6 +57,8 @@ const PRECACHE_URLS = [
   "/js/hotel-data.js",
   "/js/navigation.js",
   "/js/pwa.js",
+  "/js/version.js",
+  "/js/update-checker.js",
   "/favicon/favicon-32.png",
   "/favicon/favicon-96.png",
   "/favicon/apple-touch-icon.png",

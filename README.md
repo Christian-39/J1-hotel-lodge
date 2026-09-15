@@ -161,16 +161,31 @@ so `--` URLs render in browsers. Uploads are validated for extension, size
 
 ## 9. Background tasks & email
 
+**Development (no Redis, no worker, ever).** The development settings run
+Celery eagerly in-process (`CELERY_TASK_ALWAYS_EAGER=True` is a fixed dev
+contract, not `.env`-overridable) with an in-memory broker and NO result
+backend, so a local run never contacts Redis. Transactional emails are
+delivered on a background thread after the database transaction commits —
+emails print to the terminal with the console backend (default) and can be
+switched to real SMTP by setting `EMAIL_BACKEND` in `.env` (still no
+Redis/worker needed). The booking API therefore never waits for mail
+delivery, and no email failure can turn a created booking into a
+client-side timeout.
+
+**Production.** `celery -A config worker -l info` and
+`celery -A config beat -l info` run against Redis (`REDIS_URL`). Emails are
+queued after commit and delivered by the worker; every message is tracked on
+an `EmailLog` row (PENDING → QUEUED → SENDING → SENT / FAILED / RETRYING)
+with a failure stage (RENDER / ATTACHMENT / BROKER / SMTP). If the broker is
+momentarily down, queued emails are recorded as FAILED/BROKER — never
+silently dropped and never sent synchronously from an API request — and can
+be re-driven with `python manage.py requeue_emails` once Redis recovers.
+
 - `apps.bookings.tasks.expire_pending_bookings` (every 5 min via Celery Beat)
   releases inventory held by abandoned PENDING bookings.
-- Emails (booking confirmation, payment receipt, cancellation, password
-  reset, enquiry alerts) send asynchronously via Celery; in development they
-  print to the console.
-
-```bash
-celery -A config worker -l info
-celery -A config beat -l info
-```
+- Booking creation is **idempotent-safe**: the browser sends an
+  `Idempotency-Key` header per logical submission, so a retry after a lost
+  response returns the original booking instead of creating a duplicate.
 
 State changes are also reconciled lazily on reads (an expired hold never
 blocks inventory even before the beat task runs).
@@ -178,9 +193,20 @@ blocks inventory even before the beat task runs).
 ## 10. Testing
 
 ```bash
-python manage.py test          # 85 tests: auth, availability, pricing,
-                               # bookings, payments (mocked Paystack), staff, security
+python manage.py check               # Django system checks
+python manage.py makemigrations --check   # no missing migrations
+python manage.py test                # full backend suite (booking idempotency,
+                                      # email pipeline, payments, receipts, …)
 python manage.py spectacular --file schema.yml --validate   # OpenAPI sanity
+```
+
+Frontend (from `frontend/`):
+
+```bash
+python3 validate.py           # every HTML page + node --check on all JS
+                              # (standalone files AND inline <script> blocks)
+node --test tests-js/         # update-checker + API error-classification tests
+python3 build.py              # rebuild chrome, stamp ?v= assets, sync versions
 ```
 
 ## 11. Troubleshooting

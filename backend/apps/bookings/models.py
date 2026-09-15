@@ -132,6 +132,14 @@ class Booking(TimeStampedModel):
     guest_access_token_hash = models.CharField(max_length=128, blank=True, default="", db_index=True,
                                               help_text="Hash of the unguessable token used for guest self-service access.")
     guest_access_expires_at = models.DateTimeField(null=True, blank=True)
+    # Client-generated key that makes POST /api/bookings/ idempotent: if the
+    # browser loses the 201 response (timeout, network drop) and the user
+    # presses Retry, the SAME key returns the ORIGINAL booking instead of
+    # creating a duplicate reservation. Null for bookings created without one
+    # (staff manual bookings, older clients).
+    idempotency_key = models.CharField(max_length=64, null=True, blank=True, unique=True,
+                                       db_index=True,
+                                       help_text="Client-supplied idempotency key for safe retries of booking creation.")
     cancelled_at = models.DateTimeField(null=True, blank=True)
     checked_in_at = models.DateTimeField(null=True, blank=True)
     checked_out_at = models.DateTimeField(null=True, blank=True)

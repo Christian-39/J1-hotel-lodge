@@ -246,6 +246,31 @@ J-ONE installs as a real app — **J-ONE HOTEL & LODGE** — on Android and iOS,
 exact same multi-page HTML/CSS/vanilla-JS site. No framework, no build step, no dependencies were
 added.
 
+### Versioning, cache busting and the "new version" modal
+
+`version.json` at the frontend root is the **single source of truth** for the
+deployed version. `build.py` owns it:
+
+```bash
+python3 build.py --bump patch   # or --version 2.0.0
+```
+
+On every release, `build.py` updates `version.json`, regenerates
+`js/version.js` (the `window.JONE_VERSION` marker the pages carry), syncs the
+service-worker `CACHE_VERSION`, stamps every local `js/…`/`css/…` reference in
+every HTML page with `?v=<version>` (so a fresh deploy can never serve stale
+cached JS next to new HTML), and injects `js/version.js` +
+`js/update-checker.js` into every page.
+
+`js/update-checker.js` compares the loaded `window.JONE_VERSION` against the
+live `version.json` (fetched `no-store`, at most every 15 minutes / 5 minutes
+on tab focus). When they differ it shows the accessible
+**"A new version is available"** modal with a *Refresh now* button — and
+nothing else: it never auto-reloads, never clears booking drafts or auth
+storage, stays silent on booking/payment/dashboard pages and during active
+booking or Paystack flows, and never re-prompts for a version the user has
+already dismissed.
+
 ### The guiding rule
 
 > The Django backend is the **only** source of truth. The service worker never caches, and never

@@ -162,7 +162,13 @@
 
   async function logout() {
     const cred = getSessionCred();
-    try { await window.API.logout(cred ? cred.refresh : null); } catch (_) {}
+    try {
+      // API.logout attaches the stored access token when present (and the API
+      // layer transparently refreshes it if expired), so a normal logout does
+      // not produce a spurious 401. An already-dead session is fine too: the
+      // backend logout is idempotent and local state is cleared regardless.
+      await window.API.logout(cred ? cred.refresh : null);
+    } catch (_) { /* session already gone — still clean up locally */ }
     clearSession();
     const here = location.pathname + location.search;
     const staffArea = here.indexOf("/dashboard/") !== -1 || here.indexOf("/login") === 0;

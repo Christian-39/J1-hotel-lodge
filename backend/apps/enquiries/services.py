@@ -18,7 +18,7 @@ from rest_framework.exceptions import NotFound, ValidationError
 from apps.audit.services import log_action
 from apps.bookings.models import Booking
 from apps.bookings.services import booking_service
-from apps.core.emails import send_email_safe
+from apps.core.emails import queue_email
 from apps.core.utils import generate_cancellation_reference, money
 from apps.hotel.models import HotelSettings
 from apps.notifications.services import notify_staff, notify_users
@@ -169,7 +169,7 @@ def queue_enquiry_email(enquiry: Enquiry, key: str, *, subject: str, message: st
         return False
     if not _mark_email_queued(enquiry, key):
         return False
-    transaction.on_commit(lambda: send_email_safe(subject, message, recipients))
+    queue_email(subject, message, recipients)
     return True
 
 

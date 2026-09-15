@@ -322,7 +322,19 @@ MEDIA_ROOT = BASE_DIR / "media"
 CORS_ALLOWED_ORIGINS = config("CORS_ALLOWED_ORIGINS", default="", cast=Csv())
 CSRF_TRUSTED_ORIGINS = config("CSRF_TRUSTED_ORIGINS", default="", cast=Csv())
 CORS_ALLOW_CREDENTIALS = False  # JWT travels in Authorization headers, not cookies
-CORS_ALLOW_HEADERS = (*default_headers, "x-guest-access-token")
+# Custom request headers the independently hosted frontend sends. Keeping this
+# list explicit (instead of CORS_ALLOW_ALL_HEADERS) matters: a browser rejects
+# the ENTIRE request when a sent header is not allowed by the preflight —
+# losing any of these silently breaks the matching feature cross-origin:
+#   x-guest-access-token          guest self-service booking/payment access
+#   x-cancellation-access-token   cancellation status lookup (Contact flow)
+#   idempotency-key               safe booking-creation retries
+CORS_ALLOW_HEADERS = (
+    *default_headers,
+    "x-guest-access-token",
+    "x-cancellation-access-token",
+    "idempotency-key",
+)
 
 # ---------------------------------------------------------------------------
 # Application configuration
@@ -367,13 +379,22 @@ EMAIL_BACKEND = config(
 )
 
 # --- Celery / cache --------------------------------------------------------
+# REDIS_URL drives PRODUCTION Celery (broker + result backend) and the
+# production Redis cache. Development settings replace ALL of these with
+# eager in-process execution and no result backend, so a developer without a
+# running Redis server never sees broker reconnect loops (see
+# config/settings/development.py).
 REDIS_URL = config("REDIS_URL", default="redis://127.0.0.1:6379/0")
 CELERY_BROKER_URL = REDIS_URL
 CELERY_RESULT_BACKEND = REDIS_URL
 CELERY_TASK_ALWAYS_EAGER = config("CELERY_TASK_ALWAYS_EAGER", default=False, cast=bool)
-# Propagate exceptions from eager tasks so failures are never silently
-# swallowed when running in-process (development / tests).
-CELERY_TASK_EAGER_PROPAGATES = config("CELERY_TASK_EAGER_PROPAGATES", default=True, cast=bool)
+# In eager mode failures are recorded on the EmailLog row (and visible to
+# staff) instead of being re-raised into the caller — the delivery helper in
+# apps.core.emails handles its own outcome reporting.
+CELERY_TASK_EAGER_PROPAGATES = config("CELERY_TASK_EAGER_PROPAGATES", default=False, cast=bool)
+# Eager results are in-memory only; nothing is ever written to a result store
+# in development (this is also forced off in the development settings).
+CELERY_TASK_STORE_EAGER_RESULT = False
 # A task is only acknowledged after it returns — a worker crash mid-delivery
 # re-queues the job rather than losing it.
 CELERY_TASK_ACKS_LATE = True

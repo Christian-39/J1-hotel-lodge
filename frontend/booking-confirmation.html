@@ -14,8 +14,10 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="J-ONE Hotel">
-<link rel="stylesheet" href="css/main.css">
+<link rel="stylesheet" href="css/main.css?v=1.1.0">
 <script>(function(){var t;try{t=JSON.parse(localStorage.getItem("jone.theme"))}catch(e){}if(t!=="dark"&&t!=="light"){t=(window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches)?"dark":"light"}document.documentElement.setAttribute("data-theme",t);})();</script>
+
+
 
 </head>
 <body>
@@ -208,20 +210,20 @@
   </div>
 </div>
 
-<script src="js/config.js"></script>
-<script src="js/utils.js"></script>
-<script src="js/icons.js"></script>
-<script src="js/api.js"></script>
-<script src="js/theme.js"></script>
-<script src="js/ui.js"></script>
-<script src="js/auth.js"></script>
-<script src="js/hotel-data.js"></script>
-<script src="js/receipt.js"></script>
-<script src="js/contact.js"></script>
-<script src="js/navigation.js"></script>
+<script src="js/config.js?v=1.1.0"></script>
+<script src="js/utils.js?v=1.1.0"></script>
+<script src="js/icons.js?v=1.1.0"></script>
+<script src="js/api.js?v=1.1.0"></script>
+<script src="js/theme.js?v=1.1.0"></script>
+<script src="js/ui.js?v=1.1.0"></script>
+<script src="js/auth.js?v=1.1.0"></script>
+<script src="js/hotel-data.js?v=1.1.0"></script>
+<script src="js/receipt.js?v=1.1.0"></script>
+<script src="js/contact.js?v=1.1.0"></script>
+<script src="js/navigation.js?v=1.1.0"></script>
 <script>JONE.ui.initChrome(); JONE.nav.init();</script>
-<script src="js/site.js"></script>
-<script src="js/booking-stepper.js"></script>
+<script src="js/site.js?v=1.1.0"></script>
+<script src="js/booking-stepper.js?v=1.1.0"></script>
 <script>
 (function () {
   "use strict";
@@ -417,6 +419,38 @@
     }
   }
 
+  /* ---------------------- idempotent booking creation -----------------------
+     One key per LOGICAL booking submission: generated before the first
+     createBooking call and reused by every retry of that same submission. If
+     the first response is lost (timeout / network drop) the server has
+     usually already created the booking — a retry carrying the same key
+     returns THAT booking instead of creating a duplicate reservation. The key
+     is bound to a signature of the submitted stay (room/dates/guest), so an
+     abandoned attempt's key can never be replayed against a DIFFERENT
+     booking, and it is cleared once creation is confirmed. */
+  var IDEM_KEY = "jone.booking.idem";
+  function bookingIdemKey(payload) {
+    var sig = "";
+    try {
+      sig = JSON.stringify([
+        payload.room_type, payload.check_in, payload.check_out,
+        payload.adults, payload.children,
+        (payload.guest && payload.guest.email) || ""
+      ]);
+    } catch (_) {}
+    var saved = null;
+    try { saved = JSON.parse(sessionStorage.getItem(IDEM_KEY) || "null"); } catch (_) {}
+    if (saved && saved.key && saved.sig === sig) return saved.key;
+    var key = (window.crypto && crypto.randomUUID)
+      ? crypto.randomUUID()
+      : "bk-" + Date.now() + "-" + Math.random().toString(36).slice(2, 14);
+    try { sessionStorage.setItem(IDEM_KEY, JSON.stringify({ key: key, sig: sig })); } catch (_) {}
+    return key;
+  }
+  function clearBookingIdemKey() {
+    try { sessionStorage.removeItem(IDEM_KEY); } catch (_) {}
+  }
+
   async function redirectToPayment() {
     // Initialize via the backend; we never build provider URLs ourselves.
     var payRes = await window.API.initPayment(booking.booking_reference, guestOpts());
@@ -444,6 +478,9 @@
     // guardSubmit returns false on a second click while busy — this is what
     // prevents duplicate payment-initialization requests.
     if (!JONE.guardSubmit(btn)) return;
+    // Hold the PWA update lock for the whole create+initialize+redirect
+    // sequence: a service-worker swap mid-payment must never happen.
+    if (window.JONE && JONE.pwa && JONE.pwa.beginCriticalFlow) JONE.pwa.beginCriticalFlow();
     btn.disabled = true;
     var prevLabel = btn.innerHTML;
     btn.innerHTML = '<span class="btn-spinner"></span> Initializing payment\u2026';
@@ -451,10 +488,36 @@
     // Restore the button if we DON'T navigate away (only failure paths reach
     // the catch below, which releases the guard).
     btn.dataset.prevLabel = prevLabel;
+    var createdThisAttempt = false;
     try {
       if (!booking) {
+        // Step 0 — resume: if a booking for THIS exact stay was already
+        // created (payment init failed / page refreshed after creation),
+        // continue with it instead of creating a duplicate reservation.
+        var prior = null;
+        try { prior = JONE.storage.get(S + ".confirmed", null); } catch (_) {}
+        if (
+          prior && prior.booking_reference &&
+          prior.room_type_slug === criteria.room &&
+          prior.check_in === criteria.check_in && prior.check_out === criteria.check_out
+        ) {
+          try {
+            var resumed = await window.API.getBooking(prior.booking_reference, guestOpts());
+            var rb = (resumed && resumed.data) || {};
+            if (rb.booking_reference && rb.can_pay && Number(rb.amount_due || 0) > 0) {
+              booking = rb;
+              bookingRef = rb.booking_reference;
+              fillPaymentSummary();
+              showSubstitutionNotice(rb);
+            }
+          } catch (_) { /* stale/expired — fall through and create anew */ }
+        }
+      }
+      if (!booking) {
         // Step 1 — create the booking. The backend validates availability and
-        // computes every amount; we send criteria + guest contact only.
+        // computes every amount; we send criteria + guest contact only. The
+        // Idempotency-Key makes retries of a lost response safe (no duplicate
+        // reservations).
         var draft = JONE.storage.get(S, {}) || {};
         var payload = {
           room_type: criteria.room,
@@ -467,8 +530,12 @@
         // availability and may assign an equivalent room instead; when it does
         // it reports `room_substitution` and we tell the guest (never silent).
         if (criteria.room_id) payload.room_id = Number(criteria.room_id);
-        var res = await window.API.createBooking(payload);
+        var res = await window.API.createBooking(payload, {
+          headers: { "Idempotency-Key": bookingIdemKey(payload) }
+        });
         booking = res.data || {};
+        createdThisAttempt = true;
+        clearBookingIdemKey();  // creation confirmed — a future booking gets a fresh key
         if (booking.guest_access_token) {
           guestToken = booking.guest_access_token;
           sessionStorage.setItem("jone.guest_access_token", guestToken);
@@ -494,6 +561,7 @@
       JONE.releaseGuard(btn);
       btn.disabled = false;
       if (btn.dataset.prevLabel) { btn.innerHTML = btn.dataset.prevLabel; JONE.icons.inject(btn); }
+      if (window.JONE && JONE.pwa && JONE.pwa.endCriticalFlow) JONE.pwa.endCriticalFlow();
       show("failure-screen");
       stepper.update(5);
       document.querySelector("[data-fail-ref]").textContent = "Booking ref: " + (bookingRef || "—");
@@ -501,8 +569,13 @@
       var msg;
       if (err && err.status === 409 && err.code === "ROOM_UNAVAILABLE") {
         msg = "The room you selected is no longer available for those dates and no equivalent room could be held automatically. Please choose another room or different dates.";
-      } else if (err && err.status === 0) {
-        msg = "We can't reach the booking service right now. Please try again in a moment, or contact the hotel.";
+      } else if (err && (err.kind === "timeout" || err.kind === "network")) {
+        // The request outcome is genuinely unknown — the booking may already
+        // exist. Pressing Retry is SAFE: the idempotency key returns the
+        // original booking instead of creating a duplicate.
+        msg = booking
+          ? "We lost contact while starting your payment — your booking is saved. Press Retry to continue safely."
+          : "We lost contact with the booking service, so your request may already have gone through. Press Retry — it will resume your booking without creating a duplicate.";
       } else if (err && (err.status === 401 || (err.status === 404 && booking))) {
         // The booking exists but the backend no longer accepts our guest
         // credential — the booking session (guest access token) is invalid
@@ -515,6 +588,11 @@
       }
       if (p2) p2.textContent = msg;
       JONE.ui.toast(msg, "error", { assertive: true });
+      // If the booking was created but payment failed, remember it so a page
+      // refresh (or "Retry") continues from the booking instead of re-creating.
+      if (createdThisAttempt && booking && booking.booking_reference) {
+        try { JONE.storage.set(S + ".confirmed", booking); } catch (_) {}
+      }
     }
   }
 
@@ -639,6 +717,8 @@
   }
 })();
 </script>
-<script src="js/pwa.js"></script>
+<script src="js/pwa.js?v=1.1.0"></script>
+<script src="js/version.js?v=1.1.0"></script>
+<script src="js/update-checker.js?v=1.1.0"></script>
 </body>
 </html>

@@ -2,6 +2,7 @@
 import logging
 from datetime import datetime
 
+from django.db import IntegrityError
 from django.db.models import Q
 from drf_spectacular.utils import OpenApiParameter, extend_schema
 from drf_spectacular.types import OpenApiTypes
@@ -164,34 +165,101 @@ class MyBookingsView(generics.ListCreateAPIView):
             return [ScopedRateThrottle()]
         return super().get_throttles()
 
-    def create(self, request, *args, **kwargs):
-        serializer = BookingCreateSerializer(data=request.data, context={"request": request})
-        serializer.is_valid(raise_exception=True)
-        data = serializer.validated_data
-        booking = booking_service.create_booking(
-            room_type_value=data["room_type"],
-            check_in=data["check_in"],
-            check_out=data["check_out"],
-            rooms=data["rooms"],
-            adults=data["adults"],
-            children=data["children"],
-            offer_code=data.get("offer_code") or None,
-            special_requests=data.get("special_requests", ""),
-            user=request.user if request.user.is_authenticated else None,
-            guest_data=data.get("guest") or None,
-            request=request,
-            room_id=data.get("room_id"),
-        )
+    # --- Idempotency (safe retry after a lost response) ----------------------
+    # The browser generates ONE key per logical booking submission and reuses
+    # it across retries of that same submission. If the first attempt's 201 is
+    # lost (client timeout / network drop) the server already created the
+    # booking — a retry carrying the same key must return that ORIGINAL
+    # booking, never a duplicate reservation. The unique constraint on
+    # Booking.idempotency_key makes this race-safe.
+    @staticmethod
+    def _clean_idempotency_key(request):
+        key = (request.headers.get("Idempotency-Key") or "").strip()
+        if not key:
+            return None
+        if len(key) < 8 or len(key) > 64 or not all(c.isalnum() or c in "-_" for c in key):
+            raise ValidationError(
+                {"idempotency_key": ["Must be 8-64 characters (letters, digits, dash, underscore)."]}
+            )
+        return key
+
+    def _booking_created_payload(self, request, booking, *, replayed=False):
         payload = BookingDetailSerializer(booking, context={"request": request}).data
         payload["guest_access_token"] = getattr(booking, "guest_access_token", None)
-        payload["guest_access_expires_at"] = booking.guest_access_expires_at.isoformat() if booking.guest_access_expires_at else None
+        payload["guest_access_expires_at"] = (
+            booking.guest_access_expires_at.isoformat() if booking.guest_access_expires_at else None
+        )
         substitution = getattr(booking, "room_substitution", None)
         if substitution:
             # Never switch rooms silently — the guest is told on the
             # confirmation screen (and the receipt shows the assigned room).
             payload["room_substitution"] = substitution
+        if replayed:
+            payload["idempotent_replay"] = True
+        return payload
+
+    def create(self, request, *args, **kwargs):
+        idempotency_key = self._clean_idempotency_key(request)
+
+        if idempotency_key:
+            existing = (
+                Booking.objects.filter(idempotency_key=idempotency_key)
+                .select_related("guest", "room_type", "offer")
+                .prefetch_related("room_assignments__room")
+                .first()
+            )
+            if existing is not None:
+                # Safe retry after a lost/aborted first response: return the
+                # ORIGINAL booking. The one-time guest access token was likely
+                # lost with the first response, so a fresh token is issued for
+                # this response (the digest of the lost token is replaced).
+                existing.room_substitution = None
+                existing.guest_access_token = existing.issue_guest_access_token()
+                return success_response(
+                    self._booking_created_payload(request, existing, replayed=True),
+                    message="This booking was already created. Continuing with the same reservation.",
+                    status=status.HTTP_200_OK,
+                )
+
+        serializer = BookingCreateSerializer(data=request.data, context={"request": request})
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        try:
+            booking = booking_service.create_booking(
+                room_type_value=data["room_type"],
+                check_in=data["check_in"],
+                check_out=data["check_out"],
+                rooms=data["rooms"],
+                adults=data["adults"],
+                children=data["children"],
+                offer_code=data.get("offer_code") or None,
+                special_requests=data.get("special_requests", ""),
+                user=request.user if request.user.is_authenticated else None,
+                guest_data=data.get("guest") or None,
+                request=request,
+                room_id=data.get("room_id"),
+                idempotency_key=idempotency_key,
+            )
+        except IntegrityError:
+            # Another request with the SAME idempotency key committed first
+            # (double-click / racing retry) — return its booking, not a second one.
+            existing = (
+                Booking.objects.filter(idempotency_key=idempotency_key)
+                .select_related("guest", "room_type", "offer")
+                .prefetch_related("room_assignments__room")
+                .first()
+            )
+            if existing is not None:
+                existing.room_substitution = None
+                existing.guest_access_token = existing.issue_guest_access_token()
+                return success_response(
+                    self._booking_created_payload(request, existing, replayed=True),
+                    message="This booking was already created. Continuing with the same reservation.",
+                    status=status.HTTP_200_OK,
+                )
+            raise
         return success_response(
-            payload,
+            self._booking_created_payload(request, booking),
             message="Booking created. Complete payment to confirm your reservation.",
             status=status.HTTP_201_CREATED,
         )

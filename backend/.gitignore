@@ -47,3 +47,7 @@ dist/
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# Render/Railway persistent-disk mount artifacts (never commit databases)
+jone_hotel-*
+*.sqlite3*

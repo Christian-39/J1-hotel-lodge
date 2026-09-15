@@ -22,6 +22,16 @@ def _secret_key():
     key = getattr(settings, "PAYSTACK_SECRET_KEY", "").strip()
     if not key:
         raise PaymentNotConfiguredError()
+    # A Paystack PUBLIC key (pk_…) can never authorize server-side API calls.
+    # Treating it as "configured" would send authenticated requests that
+    # always fail, so it is rejected as not-configured — loudly, server-side —
+    # instead of half-working. Secret keys start with sk_ (live) / sk_test_.
+    if key.startswith(("pk_", "pk_test_")):
+        logger.error(
+            "PAYSTACK_SECRET_KEY is a PUBLIC key (pk_…). Set the secret key "
+            "(sk_… / sk_test_…) on the backend — never expose it to the frontend."
+        )
+        raise PaymentNotConfiguredError()
     return key
 
 

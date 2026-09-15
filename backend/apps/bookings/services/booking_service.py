@@ -11,7 +11,7 @@ from django.db.models import Count, F, Prefetch, Q
 from django.utils import timezone
 
 from apps.audit.services import log_action
-from apps.core.emails import send_email_safe
+from apps.core.emails import queue_email
 from apps.core.exceptions import (
     BookingExpiredError,
     BookingStateError,
@@ -211,7 +211,7 @@ def upsert_guest(*, user=None, guest_data=None) -> Guest:
 def create_booking(*, room_type_value, check_in, check_out, rooms, adults, children,
                    offer_code=None, special_requests="", user=None, guest_data=None,
                    source=Booking.Source.WEBSITE, require_payment=True, actor=None,
-                   request=None, room_id=None) -> Booking:
+                   request=None, room_id=None, idempotency_key=None) -> Booking:
     """Create a reservation.
 
     ``room_id`` requests one EXACT physical room ("Book this room — Room 203").
@@ -326,6 +326,7 @@ def create_booking(*, room_type_value, check_in, check_out, rooms, adults, child
     pending = require_payment
     booking = Booking.objects.create(
         booking_reference=_unique_booking_reference(),
+        idempotency_key=idempotency_key,
         guest=guest,
         room_type=room_type,
         check_in=check_in,
@@ -407,31 +408,33 @@ def create_booking(*, room_type_value, check_in, check_out, rooms, adults, child
             link=guest_booking_link(booking),
         )
 
-    def _send_emails():
-        hotel = HotelSettings.get_settings()
-        if booking.guest.email:
-            if pending:
-                send_email_safe(
-                    kind="BOOKING_PENDING",
-                    booking_reference=booking.booking_reference,
-                    subject=f"Complete your booking {booking.booking_reference} — J-ONE HOTEL & LODGE",
-                    message=(
-                        f"Hello {booking.guest.first_name},\n\n"
-                        f"Your reservation is on hold until "
-                        f"{timezone.localtime(booking.expires_at):%d %b %Y %H:%M}.\n\n"
-                        f"Room: {booking.number_of_rooms} × {room_type.name}\n"
-                        f"Dates: {booking.check_in} → {booking.check_out} ({booking.nights} night(s))\n"
-                        f"Total: {booking.currency} {booking.total_amount}\n"
-                        f"Amount required to confirm: {booking.currency} {booking.required_payment}\n\n"
-                        f"Secure booking access and payment: {guest_booking_link(booking)}\n\n"
-                        f"{hotel.hotel_name} · {hotel.phone}"
-                    ),
-                    recipients=[booking.guest.email],
-                )
-            else:
-                _send_confirmation_email(booking, hotel)
+    # Emails are queued strictly AFTER the booking transaction commits
+    # (queue_email uses transaction.on_commit) and can never block or fail
+    # this request: in production a Celery worker delivers them, in eager
+    # development a daemon thread does. A rolled-back booking sends nothing.
+    if booking.guest.email:
+        if pending:
+            hotel = HotelSettings.get_settings()
+            queue_email(
+                kind="BOOKING_PENDING",
+                booking_reference=booking.booking_reference,
+                subject=f"Complete your booking {booking.booking_reference} — J-ONE HOTEL & LODGE",
+                message=(
+                    f"Hello {booking.guest.first_name},\n\n"
+                    f"Your reservation is on hold until "
+                    f"{timezone.localtime(booking.expires_at):%d %b %Y %H:%M}.\n\n"
+                    f"Room: {booking.number_of_rooms} × {room_type.name}\n"
+                    f"Dates: {booking.check_in} → {booking.check_out} ({booking.nights} night(s))\n"
+                    f"Total: {booking.currency} {booking.total_amount}\n"
+                    f"Amount required to confirm: {booking.currency} {booking.required_payment}\n\n"
+                    f"Secure booking access and payment: {guest_booking_link(booking)}\n\n"
+                    f"{hotel.hotel_name} · {hotel.phone}"
+                ),
+                recipients=[booking.guest.email],
+            )
+        else:
+            _send_confirmation_email(booking)
 
-    transaction.on_commit(_send_emails)
     logger.info(
         "Booking %s created: %s x%s %s→%s total=%s source=%s",
         booking.booking_reference, room_type.slug, rooms, check_in, check_out,
@@ -445,7 +448,7 @@ def _send_confirmation_email(booking, hotel=None):
     if not booking.guest.email:
         return
     rooms = ", ".join(a.room.room_number for a in booking.room_assignments.select_related("room"))
-    send_email_safe(
+    queue_email(
         kind="BOOKING_CONFIRMATION",
         booking_reference=booking.booking_reference,
         subject=f"Booking confirmed: {booking.booking_reference} — J-ONE HOTEL & LODGE",
@@ -633,20 +636,18 @@ def cancel_booking(
         )
     if send_guest_email and booking.guest.email:
         hotel = HotelSettings.get_settings()
-        transaction.on_commit(
-            lambda: send_email_safe(
-                kind="CANCELLATION",
-                booking_reference=booking.booking_reference,
-                subject=f"Booking cancelled: {booking.booking_reference} — {hotel.hotel_name}",
-                message=(
-                    f"Hello {booking.guest.first_name},\n\n"
-                    f"Booking {booking.booking_reference} has been cancelled.\n\n"
-                    "Refunds, if applicable, are reviewed and processed separately. "
-                    "You will receive a separate update only when a refund is submitted or confirmed.\n\n"
-                    f"{hotel.hotel_name} · {hotel.phone}"
-                ),
-                recipients=[booking.guest.email],
-            )
+        queue_email(
+            kind="CANCELLATION",
+            booking_reference=booking.booking_reference,
+            subject=f"Booking cancelled: {booking.booking_reference} — {hotel.hotel_name}",
+            message=(
+                f"Hello {booking.guest.first_name},\n\n"
+                f"Booking {booking.booking_reference} has been cancelled.\n\n"
+                "Refunds, if applicable, are reviewed and processed separately. "
+                "You will receive a separate update only when a refund is submitted or confirmed.\n\n"
+                f"{hotel.hotel_name} · {hotel.phone}"
+            ),
+            recipients=[booking.guest.email],
         )
     logger.info("Booking cancelled: %s (staff=%s, calculated_refund=%s)", booking.booking_reference, staff, refund_due)
     return booking
@@ -788,11 +789,11 @@ def _perform_checkout(booking: Booking, *, actor=None, automatic=False,
         "Check-out%s: %s by %s", " (auto)" if automatic else "",
         booking.booking_reference, actor.id if actor else "system",
     )
-    # Post-stay review invitation — after the checkout transaction commits so
-    # a delivery problem can never affect the checkout itself.
+    # Post-stay review invitation — queued after the checkout transaction
+    # commits; a delivery problem can never affect the checkout itself.
     from apps.reviews.services import send_review_invitation
 
-    transaction.on_commit(lambda: send_review_invitation(booking))
+    send_review_invitation(booking)
     return booking
 
 
@@ -931,7 +932,7 @@ def confirm_manual_booking(booking: Booking, *, staff_user, request=None):
                      title=f"Booking {booking.booking_reference} confirmed",
                      message="Your booking has been confirmed by the hotel.",
                      link=guest_booking_link(booking))
-    transaction.on_commit(lambda: _send_confirmation_email(booking))
+    _send_confirmation_email(booking)
     logger.info("Manual confirmation: %s by staff %s", booking.booking_reference, staff_user.id)
     return booking
 

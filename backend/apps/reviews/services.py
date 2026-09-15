@@ -23,7 +23,7 @@ from rest_framework.exceptions import NotFound
 from apps.audit.services import log_action
 from apps.bookings.access import GUEST_TOKEN_HEADER
 from apps.bookings.models import Booking
-from apps.core.emails import send_email_safe
+from apps.core.emails import queue_email
 from apps.core.exceptions import JOneAPIError
 from apps.notifications.services import notify_staff
 
@@ -150,15 +150,16 @@ def create_review(*, booking, rating, comment, request=None):
 def send_review_invitation(booking):
     """Post-stay 'how was your stay?' email with a direct review link.
 
-    Called from the checkout routine; must never break checkout (send_email_safe
-    already swallows delivery errors). No sensitive data in the link.
+    Called from the checkout routine; must never break checkout; delivery is deferred to after the
+    checkout transaction commits via queue_email and errors are swallowed).
+    No sensitive data in the link.
     """
     if booking.status != Booking.Status.CHECKED_OUT:
         return
     if hasattr(booking, "review"):
         return
     link = f"{settings.FRONTEND_URL}{REVIEW_PAGE_LINK}?ref={booking.booking_reference}"
-    send_email_safe(
+    queue_email(
         kind="REVIEW_INVITE",
         booking_reference=booking.booking_reference,
         subject="How was your stay at J-ONE HOTEL & LODGE?",

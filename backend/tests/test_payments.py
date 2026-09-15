@@ -41,8 +41,11 @@ class PaymentFlowTests(BaseAPITestCase):
 
     # --- Initialization ------------------------------------------------------
     def test_initialize_without_paystack_config_returns_503(self):
-        response = self.client.post("/api/payments/initialize/",
-                                    {"booking_reference": self.booking_ref})
+        # Explicitly unset the key: a developer's .env may legitimately carry a
+        # real secret, and this test must not depend on the ambient env.
+        with override_settings(PAYSTACK_SECRET_KEY=""):
+            response = self.client.post("/api/payments/initialize/",
+                                        {"booking_reference": self.booking_ref})
         self.assertEqual(response.status_code, 503)
         self.assertEqual(response.json()["code"], "PAYMENT_NOT_CONFIGURED")
         self.assertEqual(Payment.objects.count(), 0)  # rolled back, no orphan record

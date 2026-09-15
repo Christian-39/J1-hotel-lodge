@@ -1,10 +1,11 @@
 """Development settings: SQLite, console email, eager Celery, permissive CORS.
 
-Defaults are developer-friendly (emails print to the terminal, tasks run
-in-process so no Redis/worker is required). BUT every one of those defaults is
-now overridable from the environment, so a developer who has filled in real
-SMTP / Redis credentials in ``.env`` gets the real behaviour instead of having
-their configuration silently discarded.
+Defaults are developer-friendly: emails print to the terminal, background
+tasks run in-process so no Redis/worker is required, and CORS allows the
+locally hosted frontend. EMAIL_BACKEND remains overridable from .env so real
+SMTP delivery can be tested locally — the Celery eager configuration is a
+fixed development contract (see the comment in this module) so a missing Redis
+server can never break local runs.
 """
 from decouple import config
 
@@ -17,20 +18,37 @@ ALLOWED_HOSTS = ["*"]
 # This is intentionally dev-only; production uses an explicit origin allowlist.
 CORS_ALLOW_ALL_ORIGINS = True
 
-# Emails print to the terminal by default (nothing leaves the machine), but if
-# you set EMAIL_BACKEND in .env — e.g. the SMTP backend with real credentials —
-# that wins, so you can test real delivery locally. Previously this line
-# hard-coded the console backend and threw the .env value away, which meant a
-# fully-configured SMTP setup still only printed to the console and the guest
-# never received anything.
+# ---------------------------------------------------------------------------#
+# Celery — DEVELOPMENT CONTRACT (do not make these overridable from .env).
+#
+# Local development runs every task EAGERLY, IN-PROCESS:
+#   * no Redis broker is ever contacted (broker = in-process memory transport);
+#   * no Redis RESULT backend exists (eager results are in-memory EagerResult
+#     objects), so no code path can start a "Connection to Redis lost …
+#     retrying" loop when Redis is not running;
+#   * transactional email still works: it is delivered by a background thread
+#     (see apps.core.emails.queue_email) so a slow/unreachable SMTP server can
+#     never block an API response.
+#
+# To exercise the real Redis broker + Celery worker architecture locally, run
+# with production-style settings (config.settings.production) or a dedicated
+# local settings module — never by flipping these values via .env.
+# ---------------------------------------------------------------------------#
+CELERY_TASK_ALWAYS_EAGER = True
+CELERY_TASK_EAGER_PROPAGATES = False
+CELERY_TASK_STORE_EAGER_RESULT = False
+CELERY_RESULT_BACKEND = None          # eager tasks have no result store at all
+CELERY_BROKER_URL = "memory://"       # even accidental dispatch stays local
+CELERY_CACHE_BACKEND = "memory://"
+
+# Emails print to the terminal by default (nothing leaves the machine). Setting
+# EMAIL_BACKEND in .env to the SMTP backend switches to REAL delivery while
+# keeping everything else eager/threaded — the documented way to test SMTP
+# locally without Redis or a worker (see .env.example, "Email (SMTP)").
 EMAIL_BACKEND = config(
     "EMAIL_BACKEND",
     default="django.core.mail.backends.console.EmailBackend",
 )
-
-# Background tasks run synchronously by default so no Redis/worker is needed
-# locally. Override to False in .env once you are running a real Celery worker.
-CELERY_TASK_ALWAYS_EAGER = config("CELERY_TASK_ALWAYS_EAGER", default=True, cast=bool)
 
 # In-process cache is fine on a single dev machine.
 CACHES = {
@@ -39,3 +57,29 @@ CACHES = {
         "LOCATION": "jone-cache",
     }
 }
+
+# SQLite concurrency for local development: the threaded dev server plus the
+# background email-delivery threads write concurrently. WAL mode lets readers
+# proceed while a writer commits, and a busy timeout makes writers WAIT for
+# each other instead of failing instantly with "database is locked".
+#
+# transaction_mode="IMMEDIATE" is the critical part. Django's atomic() opens
+# DEFERRED transactions by default: no lock is taken until the first write, so
+# a request that READS (e.g. select_for_update on the booking) and then writes
+# must UPGRADE its lock mid-transaction. If the background email thread
+# commits a write in that window, SQLite detects the potential deadlock and
+# fails the upgrade INSTANTLY with "database is locked" — the busy timeout is
+# deliberately ignored (observed: create booking → initialize payment within
+# milliseconds of each other). BEGIN IMMEDIATE takes the write lock upfront,
+# so concurrent writers simply queue behind the busy timeout instead of ever
+# hitting an upgrade failure.
+# (Production uses MySQL, where none of these options apply.)
+if DATABASES["default"]["ENGINE"].endswith("sqlite3"):  # noqa: F405
+    DATABASES["default"].setdefault("OPTIONS", {})
+    DATABASES["default"]["OPTIONS"].update(
+        {
+            "transaction_mode": "IMMEDIATE",        # atomic() opens BEGIN IMMEDIATE
+            "timeout": 30,                            # sqlite busy timeout (s)
+            "init_command": "PRAGMA journal_mode=WAL",  # readers never block writers
+        }
+    )

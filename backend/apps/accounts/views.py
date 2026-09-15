@@ -11,10 +11,11 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
+from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenRefreshView
 
-from apps.core.emails import send_email_safe
+from apps.core.emails import queue_email
 from apps.core.responses import success_response
 
 from .models import User
@@ -88,6 +89,14 @@ class LogoutView(APIView):
     serializer_class = LogoutSerializer
 
     def post(self, request):
+        """Blacklist the supplied refresh token.
+
+        Logout is IDEMPOTENT and must always end gracefully for the client: if
+        the refresh token is already expired or already blacklisted, the
+        session is effectively dead server-side anyway, so the request still
+        succeeds (the frontend clears its local session regardless). Only a
+        missing token is a client bug worth reporting.
+        """
         refresh = request.data.get("refresh")
         if not refresh:
             from rest_framework.exceptions import ValidationError
@@ -95,10 +104,13 @@ class LogoutView(APIView):
             raise ValidationError({"refresh": ["Refresh token is required."]})
         try:
             RefreshToken(refresh).blacklist()
+        except TokenError:
+            # Expired or already-blacklisted token: nothing left to revoke.
+            logger.info("Logout with stale refresh token: user_id=%s", request.user.id)
         except Exception:
-            from rest_framework.exceptions import ValidationError
-
-            raise ValidationError({"refresh": ["Invalid or already-used refresh token."]})
+            # Malformed token: still treat as logged out — logout must never
+            # trap a user in a session they are trying to leave.
+            logger.info("Logout with unusable refresh token: user_id=%s", request.user.id)
         logger.info("User logged out: user_id=%s", request.user.id)
         return success_response(message="Logged out successfully.")
 
@@ -159,7 +171,7 @@ class PasswordResetRequestView(APIView):
             uid = urlsafe_base64_encode(force_bytes(user.pk))
             token = default_token_generator.make_token(user)
             reset_url = f"{settings.FRONTEND_URL}/reset-password.html?uid={uid}&token={token}"
-            send_email_safe(
+            queue_email(
                 kind="PASSWORD_RESET",
                 subject="Reset your J-ONE HOTEL & LODGE password",
                 message=(

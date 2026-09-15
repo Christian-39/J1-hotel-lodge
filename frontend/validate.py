@@ -42,10 +42,11 @@ def check_file(p):
     closes = len(re.findall(r"</div>", html))
     if opens != closes:
         issues.append(f"div balance {opens} open vs {closes} close")
-    # referenced local src/href assets
+    # referenced local src/href assets (cache-busting queries stripped)
     for src in re.findall(r'(?:src|href)="((?:\.\./|\./)?[^"]+)"', html):
         if src.startswith(("http", "#", "mailto:", "tel:", "data:", "javascript:", "https", "//")):
             continue
+        src = src.split("?", 1)[0]
         # Root-absolute references (/css/…, /js/…, /manifest.webmanifest) resolve
         # against the deployed site root, which is this directory.
         path = (ROOT / src.lstrip("/")).resolve() if src.startswith("/") else (p.parent / src).resolve()
@@ -61,14 +62,19 @@ def check_file(p):
                 issues.append("missing local asset: " + src)
     return issues
 
+fails_js = []
+
 def check_js(p):
     issues = []
     html = p.read_text(encoding="utf-8")
     rel = str(p.relative_to(ROOT))
-    # every locally referenced js module must exist and be parseable
+    # every locally referenced js module must exist and be parseable.
+    # (src may carry a cache-busting query — ?v=1.2.3 from build.py — which is
+    # stripped before resolving the file on disk.)
     for src in re.findall(r'<script src="([^"]+)"></script>', html):
         if src.startswith(("http", "//")):
             continue
+        src = src.split("?", 1)[0]
         f = (ROOT / src.lstrip("/")).resolve() if src.startswith("/") else (p.parent / src).resolve()
         if not f.exists():
             issues.append("missing script: " + src)
@@ -84,6 +90,14 @@ def check_js(p):
             issues.append(f"inline script #{i} syntax error: " + (r.stderr.strip().splitlines() or [""])[-1])
     return issues
 
+# every standalone JS file must be parseable by node
+for js in sorted(ROOT.glob("js/*.js")) + [ROOT / "sw.js"]:
+    r = subprocess.run(["node", "--check", str(js)], capture_output=True, text=True)
+    if r.returncode != 0:
+        print("  [FAIL] syntax error in " + str(js.relative_to(ROOT)) + ":")
+        print("         " + (r.stderr.strip().splitlines() or [""])[-1])
+        fails_js.append(str(js))
+
 fails = 0
 for p in ALL:
     rel = str(p.relative_to(ROOT))
@@ -97,6 +111,8 @@ for p in ALL:
         for i in issues:
             err(i)
 
-print(f"\nChecked {len([p for p in ALL if p.suffix=='.html'])} HTML files.")
-print("FAIL" if fails else "ALL OK")
-sys.exit(1 if fails else 0)
+js_count = len(list(ROOT.glob("js/*.js"))) + 1
+print(f"\nChecked {len([p for p in ALL if p.suffix=='.html'])} HTML files, syntax-checked {js_count} standalone JS files.")
+total_fails = fails + len(fails_js)
+print("FAIL" if total_fails else "ALL OK")
+sys.exit(1 if total_fails else 0)

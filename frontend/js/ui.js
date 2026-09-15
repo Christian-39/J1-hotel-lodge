@@ -77,12 +77,15 @@
         class: "modal-close", "aria-label": "Close dialog",
         innerHTML: JONE.icons.get("x")
       });
+      // The dialog's accessible name comes from its heading: generate a unique
+      // id for the h3 and point aria-labelledby at it.
+      const headingId = "modal-title-" + Math.random().toString(36).slice(2, 9);
       const panel = JONE.el("div", {
         class: `modal-panel ${size}`,
-        role: "dialog", "aria-modal": "true", tabindex: "-1"
+        role: "dialog", "aria-modal": "true", "aria-labelledby": headingId, tabindex: "-1"
       },
         JONE.el("div", { class: "modal-head" },
-          JONE.el("h3", { class: "h4", textContent: title }),
+          JONE.el("h3", { class: "h4", id: headingId, textContent: title }),
           closeBtn),
         JONE.el("div", { class: "modal-body" }, body),
         footer ? JONE.el("div", { class: "modal-foot no-print", style: "padding:1.25rem 1.5rem" }, footer) : null

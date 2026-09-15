@@ -29,7 +29,7 @@ from apps.core.exceptions import (
     PaymentGatewayError,
     PaymentNotConfiguredError,
 )
-from apps.core.emails import send_email_safe
+from apps.core.emails import queue_email, send_email_safe
 from apps.core.utils import generate_payment_reference, money
 from apps.notifications.services import notify_staff, notify_users
 
@@ -419,7 +419,8 @@ def process_verification(*, reference, request=None, triggered_by="api"):
             link=booking_service.guest_booking_link(booking),
         )
     if booking.status == Booking.Status.CONFIRMED:
-        transaction.on_commit(lambda: booking_service._send_confirmation_email(booking))
+        # queue_email defers to the payment transaction's commit internally.
+        booking_service._send_confirmation_email(booking)
     logger.info("Payment verified: reference=%s booking=%s amount=%s status=%s", reference, booking.booking_reference, payment.amount, booking.payment_status)
     payment.refresh_from_db()
     return _verified_receipt_payload(payment, "success")
@@ -691,7 +692,7 @@ def _notify_refund_status(refund_pk, previous_status, new_status):
 
     hotel = HotelSettings.get_settings()
     body += f"\n{hotel.hotel_name} · {hotel.phone}"
-    send_email_safe(
+    queue_email(
         subject=f"Refund update for {refund.booking.booking_reference} — {hotel.hotel_name}",
         message=body,
         recipients=[refund.booking.guest.email],

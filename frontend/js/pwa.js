@@ -414,6 +414,7 @@
     requireOnline: requireOnline,
     beginCriticalFlow: beginCriticalFlow,
     endCriticalFlow: endCriticalFlow,
+    isCriticalFlowActive: function () { return criticalFlows > 0; },
     promptInstall: doInstall,
     applyUpdate: applyUpdate,
     get registration() { return registration; }

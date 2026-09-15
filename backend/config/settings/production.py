@@ -125,3 +125,12 @@ if not CELERY_TASK_ALWAYS_EAGER and not (REDIS_URL or "").strip():  # noqa: F405
         "REDIS_URL (Celery broker) is required in production so the worker can "
         "consume queued email tasks."
     )
+
+# A Paystack PUBLIC key must never be used as the server-side secret: secret
+# keys start with sk_ (live) / sk_test_ (test); public keys start with pk_.
+if PAYSTACK_SECRET_KEY.strip().startswith(("pk_", "pk_test_")):  # noqa: F405
+    raise ImproperlyConfigured(
+        "PAYSTACK_SECRET_KEY looks like a Paystack PUBLIC key (pk_…). Public keys "
+        "belong in frontend configuration only — set the server-side secret key "
+        "(sk_… / sk_test_…) instead."
+    )

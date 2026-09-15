@@ -43,12 +43,26 @@ const API = (() => {
   function setRefreshProvider(fn) { refreshProvider = fn || null; }
 
   /* ------------------------------ Errors ----------------------------------- */
+  /* APIError carries everything callers need to react PRECISELY:
+       status — HTTP status code (0 when no response arrived)
+       kind   — machine-readable failure class:
+                  "http"     a real HTTP error response (400/401/403/409/429/500/…)
+                  "timeout"  the request exceeded its timeout and was aborted
+                  "abort"    aborted by the CALLER (its own AbortSignal)
+                  "offline"  the browser reports no network connection
+                  "network"  request never reached the server / response lost
+                             (DNS failure, connection refused, CORS block, …)
+                  "parse"    the server answered but the body was malformed
+       code   — backend contract code (e.g. ROOM_UNAVAILABLE) when present.
+     `kind` is what lets the booking flow say "your request may have succeeded,
+     press retry" (network/timeout) vs "the room is gone" (http 409). */
   class APIError extends Error {
-    constructor(status, message, data) {
+    constructor(status, message, data, kind = "http") {
       super(message);
       this.name = "APIError";
       this.status = status;
       this.data = data;
+      this.kind = kind;
       // Contract error code (e.g. ROOM_UNAVAILABLE) when present.
       this.code = (data && data.code) || null;
     }
@@ -59,6 +73,13 @@ const API = (() => {
   // user-safe; technical/token messages are replaced.
   function friendlyMessage(status, data) {
     const dmsg = data && (data.message || data.detail || data.error);
+    // Field-level errors are more useful than the generic envelope message
+    // ("Validation failed.") — surface the first one when present.
+    const errs = data && data.errors;
+    if (errs && typeof errs === "object") {
+      const first = Object.values(errs).flat()[0];
+      if (first && typeof first === "string" && !TOKEN_RE.test(first)) return first;
+    }
     if (dmsg && typeof dmsg === "string" && !TOKEN_RE.test(dmsg)) return dmsg;
     switch (status) {
       case 400: {
@@ -82,6 +103,27 @@ const API = (() => {
       case 504: return "Our services are temporarily unavailable. Please try again shortly.";
       default: return "Something went wrong. Please try again.";
     }
+  }
+
+  /* --------------------------- Diagnostics (dev only) -----------------------
+     Local development origins get one concise, secret-free console line per
+     failed request: method, path (never the query's tokens), status/kind and
+     a bounded body excerpt. Authorization headers/tokens are NEVER logged,
+     and production origins log nothing. */
+  const IS_DEV_HOST = ["localhost", "127.0.0.1", "[::1]", ""].indexOf(
+    (typeof location !== "undefined" && location.hostname) || ""
+  ) !== -1 || /\.e2b\.app$/.test(typeof location !== "undefined" ? location.hostname : "");
+
+  function debugLog(method, url, detail) {
+    if (!IS_DEV_HOST || !window.console) return;
+    try {
+      const pathOnly = String(url || "").replace(/\?.*$/, "");
+      const body = detail.bodyExcerpt === undefined ? "" : " body=" + String(detail.bodyExcerpt).slice(0, 300);
+      console.warn(
+        `[J-ONE API] ${method} ${pathOnly} -> ${detail.label}${body}`,
+        detail.errorName || ""
+      );
+    } catch (_) { /* diagnostics must never throw */ }
   }
 
   /* ----------------------------- Core request (single pass) ---------------- */
@@ -116,9 +158,16 @@ const API = (() => {
     if (auth && token) out.headers.Authorization = `Bearer ${token}`;
 
     const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), timeout);
-    const onAbort = () => ctrl.abort();
-    if (signal) signal.addEventListener("abort", onAbort);
+    // Distinguishes OUR timeout abort from a CALLER-initiated abort so the
+    // error surfaced to the UI is honest ("timed out" vs "cancelled").
+    let timedOut = false;
+    const timer = setTimeout(() => { timedOut = true; ctrl.abort(); }, timeout);
+    let callerAborted = false;
+    const onAbort = () => { callerAborted = true; ctrl.abort(); };
+    if (signal) {
+      if (signal.aborted) callerAborted = true;
+      signal.addEventListener("abort", onAbort);
+    }
 
     try {
       const res = await fetch(url, { ...out, signal: ctrl.signal });
@@ -137,14 +186,32 @@ const API = (() => {
 
       const contentType = res.headers.get("content-type") || "";
       let data = null;
+      let parseFailed = false;
       if (contentType.includes("application/json")) {
-        data = await res.json().catch(() => null);
+        try {
+          data = await res.json();
+        } catch (_) {
+          parseFailed = true; // server answered, body was not valid JSON
+        }
       } else {
         data = await res.text().catch(() => null);
+      }
+      if (parseFailed || (res.ok && contentType.includes("application/json") && data == null)) {
+        debugLog(method, url, { label: `parse error (HTTP ${res.status})`, bodyExcerpt: "" });
+        throw new APIError(
+          res.status,
+          "The server sent a response we couldn't read. Please try again.",
+          null,
+          "parse"
+        );
       }
 
       if (!res.ok) {
         // Error path keeps the FULL envelope (it carries {errors} for forms).
+        debugLog(method, url, {
+          label: `HTTP ${res.status}`,
+          bodyExcerpt: data && typeof data === "object" ? JSON.stringify(data) : data,
+        });
         throw new APIError(res.status, friendlyMessage(res.status, data), data);
       }
 
@@ -168,17 +235,41 @@ const API = (() => {
     } catch (err) {
       clearTimeout(timer);
       if (signal) signal.removeEventListener("abort", onAbort);
-      if (err.name === "AbortError") {
-        throw new APIError(0, "The request timed out. Please check your connection and try again.");
+      if (err.name === "AbortError" || err.name === "TimeoutError") {
+        if (callerAborted) {
+          debugLog(method, url, { label: "aborted by caller", errorName: err.name });
+          throw new APIError(0, "The request was cancelled.", null, "abort");
+        }
+        // OUR timeout. The request MAY have been processed by the server —
+        // callers with idempotent retries (booking creation) can safely retry.
+        debugLog(method, url, {
+          label: `timeout after ${timeout}ms (server may have processed the request)`,
+          errorName: err.name,
+        });
+        throw new APIError(
+          0,
+          "The request is taking longer than expected. It may still complete — please retry in a moment.",
+          null,
+          "timeout"
+        );
       }
       if (err instanceof APIError) throw err;
-      // Offline is a distinct, user-actionable case. The service worker never
-      // answers /api/ from cache, so a failure here is always a real network
-      // failure — never a stale "success".
+      // fetch() rejects on DNS failure, refused connections and CORS blocks:
+      // the request never completed, so its outcome is genuinely unknown.
+      debugLog(method, url, {
+        label: "network failure (no response received)",
+        errorName: err && err.name,
+        bodyExcerpt: err && err.message ? String(err.message).slice(0, 120) : "",
+      });
       if (typeof navigator !== "undefined" && navigator.onLine === false) {
-        throw new APIError(0, "You appear to be offline. An internet connection is required — please reconnect and try again.");
+        throw new APIError(0, "You appear to be offline. An internet connection is required — please reconnect and try again.", null, "offline");
       }
-      throw new APIError(0, "Unable to reach our servers. Please check your connection and try again.");
+      throw new APIError(
+        0,
+        "We couldn't reach our servers. Your connection or our service may be unavailable — please try again.",
+        null,
+        "network"
+      );
     }
   }
 
@@ -367,8 +458,14 @@ const API = (() => {
   /* ------------------------------ AUTH ------------------------------------- */
 
   function login(payload, opts = {}) { return post("/api/auth/login/", payload, { auth: false, ...opts }); }
+  /* Logout needs an authenticated call (the backend requires a valid JWT to
+     blacklist the refresh token). The access token is attached when one is
+     stored — and the standard 401→refresh→retry pass in request() covers an
+     expired access token, so a normal logout no longer trips a pointless 401.
+     With no token at all (already signed out) we still call so the backend
+     blacklist gets a chance; a 401 there is swallowed by Auth.logout(). */
   function logout(refreshToken, opts = {}) {
-    return post("/api/auth/logout/", refreshToken ? { refresh: refreshToken } : {}, { auth: false, ...opts });
+    return post("/api/auth/logout/", refreshToken ? { refresh: refreshToken } : {}, opts);
   }
   function me(opts = {}) { return get("/api/auth/profile/", opts); }
   function refreshTokenCall(refresh, opts = {}) {

@@ -13,8 +13,8 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="J-ONE Hotel">
-<link rel="stylesheet" href="../css/main.css">
-<script>(function(){var t;try{t=JSON.parse(localStorage.getItem("jone.theme"))}catch(e){}if(t!=="dark"&&t!=="light"){t=(window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches)?"dark":"light"}document.documentElement.setAttribute("data-theme",t);})();</script>
+<link rel="stylesheet" href="../css/main.css?v=1.1.0">
+
 </head>
 <body>
 <div class="dash">
@@ -66,17 +66,18 @@
     </div>
   </div>
 </div>
-<script src="../js/config.js"></script>
-<script src="../js/utils.js"></script>
-<script src="../js/icons.js"></script>
-<script src="../js/api.js"></script>
-<script src="../js/theme.js"></script>
-<script src="../js/ui.js"></script>
-<script src="../js/auth.js"></script>
-<script src="../js/hotel-data.js"></script>
-<script src="../js/navigation.js"></script>
-<script src="../js/dashboard.js"></script>
-<script src="../js/receipt.js"></script>
+<script src="../js/config.js?v=1.1.0"></script>
+<script src="../js/utils.js?v=1.1.0"></script>
+<script src="../js/icons.js?v=1.1.0"></script>
+<script src="../js/api.js?v=1.1.0"></script>
+<script src="../js/theme.js?v=1.1.0"></script>
+<script src="../js/ui.js?v=1.1.0"></script>
+<script src="../js/auth.js?v=1.1.0"></script>
+<script src="../js/hotel-data.js?v=1.1.0"></script>
+<script src="../js/navigation.js?v=1.1.0"></script>
+<script src="../js/receipt-email-modal.js?v=1.1.0"></script>
+<script src="../js/dashboard.js?v=1.1.0"></script>
+<script src="../js/receipt.js?v=1.1.0"></script>
 <script>
   JONE.ui.initChrome();
   JONE.dashboard.boot("receptionist");
@@ -90,20 +91,6 @@
      The API only ever reported "queued" — this confirms whether the Celery
      worker actually delivered it (SENT) or it FAILED, and tells staff the
      truth either way. */
-  async function pollReceiptStatus(logId,guestEmail){
-    var attempts=0,max=6;
-    async function tick(){
-      attempts++;
-      try{
-        var res=await window.API.getEmailLog(logId);
-        var d=(res&&res.data)||{};
-        if(d.status==="SENT"){JONE.ui.toast("Receipt email sent successfully to "+guestEmail+".","success");return;}
-        if(d.status==="FAILED"){JONE.ui.toast("Receipt email could not be sent: "+((d.error_message)||"delivery failed")+".","error");return;}
-      }catch(e){/* keep polling; transient */}
-      if(attempts<max){setTimeout(tick,2500);}
-    }
-    setTimeout(tick,2500);
-  }
 
   /* Receipts view = verified payment records from /api/admin/payments/.
      Row: { reference, booking_reference, guest_name, provider, amount,
@@ -160,30 +147,16 @@
       send.addEventListener("click",async function(){
         var guestEmail=(receipt.guest&&receipt.guest.email)||"";
         if(!guestEmail){JONE.ui.toast("This guest has no email address on file.","error");return;}
-        var ok=await JONE.ui.confirm({title:"Send receipt?",message:"Send receipt "+receipt.receipt_reference+" to "+guestEmail+"?",confirmText:"Send receipt"});
-        if(!ok)return;
-        send.disabled=true;
-        send.classList.add("is-loading");
-        send.setAttribute("aria-busy","true");
-        var original=send.textContent;
-        send.textContent="Sending…";
-        try{
-          // The backend performs REAL delivery on a Celery worker. It reports
-          // "queued" (HTTP 202) or "sent" (HTTP 200) — never a blind success.
-          var res=await window.API.sendReceipt(ref);
-          var data=(res&&res.data)||{};
-          if(data.status==="SENT"){
-            JONE.ui.toast("Receipt email sent successfully to "+guestEmail+".","success");
-          }else if(data.status==="IN_PROGRESS"){
-            JONE.ui.toast("A receipt email for this booking is already being processed.","info");
-          }else{
-            JONE.ui.toast("Receipt email queued. Delivery is being processed…","info");
-            // Confirm the real outcome by polling the delivery status a few times.
-            if(data.email_log_id){pollReceiptStatus(data.email_log_id,guestEmail);}
-          }
+        // Shared staff send-receipt modal: opens immediately with guest and
+        // booking details, shows a visible sending state, prevents duplicate
+        // submission and reports QUEUED vs SENT truthfully with retry.
+        if(window.JONE&&JONE.receiptEmailModal){
+          JONE.receiptEmailModal.open({
+            bookingReference:receipt.booking_reference,
+            guestName:(receipt.guest&&receipt.guest.full_name)||"Guest",
+            guestEmail:guestEmail
+          });
         }
-        catch(err){JONE.ui.toast((err&&err.message)||"Receipt email could not be sent.","error");}
-        finally{send.disabled=false;send.classList.remove("is-loading");send.removeAttribute("aria-busy");send.textContent=original;}
       });
     }catch(err){
       if(document.body.contains(body)) body.innerHTML='<div class="empty-state"><h3>Receipt unavailable</h3><p>'+JONE.esc((err&&err.message)||"Please try again.")+'</p></div>';
@@ -196,6 +169,8 @@
 })();
 
 </script>
-<script src="../js/pwa.js"></script>
+<script src="../js/pwa.js?v=1.1.0"></script>
+<script src="../js/version.js?v=1.1.0"></script>
+<script src="../js/update-checker.js?v=1.1.0"></script>
 </body>
 </html>

@@ -13,8 +13,8 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="J-ONE Hotel">
-<link rel="stylesheet" href="../css/main.css">
-<script>(function(){var t;try{t=JSON.parse(localStorage.getItem("jone.theme"))}catch(e){}if(t!=="dark"&&t!=="light"){t=(window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches)?"dark":"light"}document.documentElement.setAttribute("data-theme",t);})();</script>
+<link rel="stylesheet" href="../css/main.css?v=1.1.0">
+
 </head>
 <body class="receipt-view-page">
 <div class="dash">
@@ -89,17 +89,18 @@
     </div>
   </div>
 </div>
-<script src="../js/config.js"></script>
-<script src="../js/utils.js"></script>
-<script src="../js/icons.js"></script>
-<script src="../js/api.js"></script>
-<script src="../js/theme.js"></script>
-<script src="../js/ui.js"></script>
-<script src="../js/auth.js"></script>
-<script src="../js/hotel-data.js"></script>
-<script src="../js/receipt.js"></script>
-<script src="../js/navigation.js"></script>
-<script src="../js/dashboard.js"></script>
+<script src="../js/config.js?v=1.1.0"></script>
+<script src="../js/utils.js?v=1.1.0"></script>
+<script src="../js/icons.js?v=1.1.0"></script>
+<script src="../js/api.js?v=1.1.0"></script>
+<script src="../js/theme.js?v=1.1.0"></script>
+<script src="../js/ui.js?v=1.1.0"></script>
+<script src="../js/auth.js?v=1.1.0"></script>
+<script src="../js/hotel-data.js?v=1.1.0"></script>
+<script src="../js/receipt.js?v=1.1.0"></script>
+<script src="../js/navigation.js?v=1.1.0"></script>
+<script src="../js/receipt-email-modal.js?v=1.1.0"></script>
+<script src="../js/dashboard.js?v=1.1.0"></script>
 <script>
   JONE.ui.initChrome();
   JONE.dashboard.boot("receptionist");
@@ -231,68 +232,25 @@
   var sharePdfBtn = document.querySelector("[data-share-pdf]");
   if (sharePdfBtn) sharePdfBtn.addEventListener("click", function(){ shareReceipt(sharePdfBtn, "pdf"); });
 
-  /* Poll the REAL delivery status of a queued receipt email so staff learn
-     the true outcome (SENT / FAILED) instead of a blind "queued". */
-  function pollReceiptStatus(logId, guestEmail, done){
-    var attempts = 0, max = 6;
-    function tick(){
-      attempts++;
-      window.API.getEmailLog(logId).then(function(res){
-        var d = (res && res.data) || {};
-        if (d.status === "SENT"){ done(); JONE.ui.toast("Receipt email delivered to " + guestEmail + ".", "success"); return; }
-        if (d.status === "FAILED"){ done(); JONE.ui.toast("Receipt email could not be delivered: " + ((d.error_message) || "delivery failed") + ".", "error"); return; }
-        if (attempts < max){ setTimeout(tick, 2500); } else { done(); }
-      }).catch(function(){ if (attempts < max){ setTimeout(tick, 2500); } else { done(); } });
-    }
-    setTimeout(tick, 2500);
-  }
-
+  /* "Email guest" — the shared, accessible send-receipt modal (one flow on
+     every dashboard page: opens immediately, shows guest/booking details, has
+     a visible sending state, blocks duplicate submission, reports queued vs
+     sent truthfully and always ends in a retryable state). */
   var emailBtn = document.querySelector("[data-email]");
-  if (emailBtn) emailBtn.addEventListener("click", async function(){
+  if (emailBtn) emailBtn.addEventListener("click", function(){
     if (!data || !data.booking_reference) return;
     var guestEmail = (data.guest && data.guest.email) || "";
     if (!guestEmail) { JONE.ui.toast("This guest has no email address on file.", "error"); return; }
-    if (!JONE.guardSubmit(emailBtn)) return;
-
-    var status = JONE.el("p", { class: "muted", role: "status", "aria-live": "polite", textContent: "Ready to send." });
-    var sendBtn = JONE.el("button", { class: "btn btn-accent", type: "button", textContent: "Send receipt" });
-    var closeBtn = JONE.el("button", { class: "btn btn-outline", type: "button", textContent: "Close" });
-    var body = JONE.el("div", { class: "receipt-send-dialog" },
-      JONE.el("p", { textContent: "Send payment receipt" }),
-      JONE.el("dl", { class: "receipt-send-summary" },
-        JONE.el("dt", { textContent: "Guest" }), JONE.el("dd", { textContent: (data.guest && data.guest.full_name) || "Guest" }),
-        JONE.el("dt", { textContent: "Email" }), JONE.el("dd", { textContent: guestEmail }),
-        JONE.el("dt", { textContent: "Booking" }), JONE.el("dd", { textContent: data.booking_reference }),
-        JONE.el("dt", { textContent: "Receipt" }), JONE.el("dd", { textContent: "Payment receipt" })
-      ), status
-    );
-    var footer = JONE.el("div", { class: "modal-actions" }, closeBtn, sendBtn);
-    JONE.ui.modal.open({ title: "Send payment receipt", body: body, footer: footer, size: "modal-md" });
-    closeBtn.addEventListener("click", function(){ JONE.ui.modal.close(); });
-    sendBtn.addEventListener("click", async function(){
-      if (sendBtn.disabled) return;
-      sendBtn.disabled = true; closeBtn.disabled = true;
-      sendBtn.innerHTML = '<span class="spinner" aria-hidden="true"></span> Sending receipt…';
-      status.textContent = "Sending receipt…";
-      try {
-        var res = await window.API.sendReceipt(data.booking_reference);
-        var payload = (res && res.data) || {};
-        if (payload.status === "FAILED") throw new Error("The receipt could not be queued.");
-        status.textContent = payload.status === "SENT" ? "Receipt sent successfully." : "Receipt queued successfully. Delivery is still pending.";
-        sendBtn.textContent = "Done";
-        sendBtn.disabled = false;
-        closeBtn.disabled = false;
-        sendBtn.onclick = function(){ JONE.ui.modal.close(); };
-        JONE.ui.toast(payload.status === "SENT" ? "Receipt accepted by the mail server." : "Receipt queued for delivery.", "success");
-      } catch (err) {
-        status.textContent = (err && err.message) || "Unable to send receipt.";
-        sendBtn.textContent = "Retry";
-        sendBtn.disabled = false; closeBtn.disabled = false;
-      }
+    JONE.receiptEmailModal.open({
+      bookingReference: data.booking_reference,
+      guestName: (data.guest && data.guest.full_name) || "Guest",
+      guestEmail: guestEmail
     });
   });
 })();
 </script>
-<script src="../js/pwa.js"></script>
+<script src="../js/pwa.js?v=1.1.0"></script>
+<script src="../js/version.js?v=1.1.0"></script>
+<script src="../js/update-checker.js?v=1.1.0"></script>
 </body>
 </html>

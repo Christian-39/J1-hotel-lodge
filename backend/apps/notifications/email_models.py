@@ -30,13 +30,15 @@ class EmailLog(models.Model):
         """WHERE in the pipeline a FAILED/RETRYING email broke.
 
         This makes an admin able to tell, at a glance, whether the receipt
-        never rendered (a code/data bug), the PDF could not be generated, or the
-        SMTP server rejected the message (a delivery/config problem) — instead
-        of guessing from a generic error string.
+        never rendered (a code/data bug), the PDF could not be generated, the
+        job never reached the queue (broker/Redis outage), or the SMTP server
+        rejected the message (a delivery/config problem) — instead of guessing
+        from a generic error string.
         """
         NONE = "", "—"
         RENDER = "RENDER", "Rendering the receipt"
         ATTACHMENT = "ATTACHMENT", "Generating the PDF attachment"
+        BROKER = "BROKER", "Queueing on the task broker"
         SMTP = "SMTP", "Submitting to the mail server"
 
     class Kind(models.TextChoices):
