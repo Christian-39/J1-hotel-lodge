@@ -46,7 +46,9 @@ def check_file(p):
     for src in re.findall(r'(?:src|href)="((?:\.\./|\./)?[^"]+)"', html):
         if src.startswith(("http", "#", "mailto:", "tel:", "data:", "javascript:", "https", "//")):
             continue
-        path = (p.parent / src).resolve()
+        # Root-absolute references (/css/…, /js/…, /manifest.webmanifest) resolve
+        # against the deployed site root, which is this directory.
+        path = (ROOT / src.lstrip("/")).resolve() if src.startswith("/") else (p.parent / src).resolve()
         base_ok = (ROOT / "css").exists() or True
         if path.exists():
             continue
@@ -67,7 +69,7 @@ def check_js(p):
     for src in re.findall(r'<script src="([^"]+)"></script>', html):
         if src.startswith(("http", "//")):
             continue
-        f = (p.parent / src).resolve()
+        f = (ROOT / src.lstrip("/")).resolve() if src.startswith("/") else (p.parent / src).resolve()
         if not f.exists():
             issues.append("missing script: " + src)
             continue

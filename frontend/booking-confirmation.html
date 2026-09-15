@@ -9,8 +9,16 @@
 <meta name="theme-color" content="#373435">
 <link rel="icon" href="favicon/favicon-32.png" sizes="32x32">
 <link rel="apple-touch-icon" href="favicon/apple-touch-icon.png">
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="J-ONE Hotel">
 <link rel="stylesheet" href="css/main.css">
 <script>(function(){var t;try{t=JSON.parse(localStorage.getItem("jone.theme"))}catch(e){}if(t!=="dark"&&t!=="light"){t=(window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches)?"dark":"light"}document.documentElement.setAttribute("data-theme",t);})();</script>
+
+
+
 
 
 
@@ -435,6 +443,9 @@
 
   async function pay() {
     var btn = document.getElementById("pay-btn");
+    // Offline guard: booking creation and Paystack initialization are backend
+    // operations. Nothing is queued — the guest is told to reconnect.
+    if (window.JONE && JONE.pwa && !JONE.pwa.requireOnline(booking ? "payment" : "booking")) return;
     // guardSubmit returns false on a second click while busy — this is what
     // prevents duplicate payment-initialization requests.
     if (!JONE.guardSubmit(btn)) return;
@@ -633,5 +644,6 @@
   }
 })();
 </script>
+<script src="js/pwa.js"></script>
 </body>
 </html>

@@ -52,7 +52,8 @@ JS_BLOCK = """<script src="js/config.js"></script>
 <script src="js/hotel-data.js"></script>
 <script src="js/navigation.js"></script>
 <script src="js/contact.js"></script>
-<script>JONE.ui.initChrome(); JONE.nav.init();</script>"""
+<script>JONE.ui.initChrome(); JONE.nav.init();</script>
+<script src="js/pwa.js"></script>"""
 
 # name -> absolute root-relative path expected to exist (mirrors spec structure)
 PUBLIC_PAGES = [
@@ -63,6 +64,38 @@ PUBLIC_PAGES = [
     "cancellation-policy.html", "refund-policy.html", "review.html",
     "login.html", "my-bookings.html", "404.html", "403.html", "500.html",
 ]
+
+
+PWA_HEAD = (
+    '<link rel="manifest" href="/manifest.webmanifest">\n'
+    '<meta name="apple-mobile-web-app-capable" content="yes">\n'
+    '<meta name="mobile-web-app-capable" content="yes">\n'
+    '<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">\n'
+    '<meta name="apple-mobile-web-app-title" content="J-ONE Hotel">'
+)
+
+
+def _ensure_pwa(raw, depth=""):
+    """Idempotently guarantee the PWA head metadata and js/pwa.js are present.
+
+    The manifest is referenced with a ROOT-ABSOLUTE path so the very same tag is
+    correct at every directory depth (root pages and /dashboard/ alike).
+    """
+    if 'rel="manifest"' not in raw:
+        m = re.search(r'<link rel="apple-touch-icon"[^>]*>', raw)
+        anchor = m.group(0) if m else None
+        if anchor is None:
+            m = re.search(r'<link rel="stylesheet" href="[^"]*main\.css">', raw)
+            anchor = m.group(0) if m else None
+        if anchor:
+            raw = raw.replace(anchor, anchor + "\n" + PWA_HEAD, 1)
+    if 'name="theme-color"' not in raw:
+        raw = raw.replace('<link rel="icon"',
+                          '<meta name="theme-color" content="#373435">\n<link rel="icon"', 1)
+    tag = '<script src="%sjs/pwa.js"></script>' % depth
+    if "js/pwa.js" not in raw:
+        raw = raw.replace("</body>", tag + "\n</body>", 1)
+    return raw
 
 
 def build(path):
@@ -111,6 +144,7 @@ def build(path):
     if '<script>document.documentElement.classList.add("preload-theme");</script>' not in raw:
         raw = re.sub(r'(<link rel="stylesheet" href="css/main\.css">)', r'\1' + "\n" + THEME_BOOT, raw, count=1)
     raw = re.sub(r"<!--JS-->", JS_BLOCK, raw)
+    raw = _ensure_pwa(raw, depth="")
     f.write_text(raw, encoding="utf-8")
     return True
 

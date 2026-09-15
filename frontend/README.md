@@ -33,6 +33,8 @@ persisted per visitor.
 - **CSS3** with custom properties (design tokens) and a mobile-first, responsive grid
 - **Vanilla JavaScript** (ES modules not required; pattern-based IIFE modules on `window`)
 - **REST API** via a single centralized layer (`js/api.js`)
+- **Progressive Web App** — installable, with an offline fallback and a conservative service worker
+  (plain `sw.js` + `manifest.webmanifest`; no Workbox, no bundler, no added dependency)
 - No build step at runtime — optional `build.py` inlines shared chrome for zero component-request overhead
 - `dev_server.py` — tiny zero-dependency dev server that serves the static site and proxies
   `/api/` + `/media/` to the Django backend, so the site runs exactly as in production (same-origin API)
@@ -88,14 +90,21 @@ frontend/
 │   ├── auth.js           # staff login/session, role-aware UI, guards, one-time token refresh
 │   ├── contact.js        # public contact/enquiry form (real API submit, duplicate-safe)
 │   ├── site.js           # public page controllers (availability search, reveal)
+│   ├── pwa.js            # PWA: SW registration, safe updates, install experience
 │   └── dashboard.js      # staff dashboard shared behaviours + nav + loading/empty/error states
 ├── assets/
 │   ├── icons/            # logo-official.svg, logo-light/dark, watermark, spinner
 │   └── images/           # photography (placeholders until authentic shots are supplied)
 ├── favicon/              # official favicons (supplied)
+├── favicon/icon-192.png, icon-512.png            # PWA install icons (purpose: any)
+├── favicon/icon-maskable-192.png, -512.png       # PWA maskable icons (Android adaptive)
+├── manifest.webmanifest  # PWA web app manifest (served from the site root)
+├── sw.js                 # service worker (MUST stay at the root for scope "/")
+├── offline.html          # offline fallback page
+├── vercel.json           # Vercel static config: MIME types, cache + security headers
 ├── robots.txt
 ├── sitemap.xml
-├── build.py              # inlines components/ into public pages
+├── build.py              # inlines components/ into public pages + PWA head tags
 └── README.md
 ```
 
@@ -231,6 +240,124 @@ The frontend never fabricates production records. Specifically:
    payment/booking status**. It never treats a redirect back as success by itself.
 6. Confirmation + receipt are shown only after backend confirmation. Receipt actions export **only the receipt sheet** as image/PDF (or print only the receipt), never the full page chrome.
 
+## Progressive Web App (PWA)
+
+J-ONE installs as a real app — **J-ONE HOTEL & LODGE** — on Android and iOS, while remaining the
+exact same multi-page HTML/CSS/vanilla-JS site. No framework, no build step, no dependencies were
+added.
+
+### The guiding rule
+
+> The Django backend is the **only** source of truth. The service worker never caches, and never
+> answers, a single `/api/` request.
+
+A stale room-availability or payment response would be a serious operational and financial problem,
+so caching is deliberately conservative: static shell assets only.
+
+### Files
+
+| File | Purpose |
+| ---- | ------- |
+| `manifest.webmanifest` | Web app manifest (name, icons, `start_url`, `scope`, shortcuts) |
+| `sw.js`                | Service worker — **must remain at the site root** |
+| `offline.html`         | Branded offline fallback page |
+| `js/pwa.js`            | The *only* place that registers the SW; also the install UI |
+| `favicon/icon-*.png`   | 192/512 install icons + maskable variants, generated from the official mark |
+
+### Manifest
+
+- `name`: `J-ONE HOTEL & LODGE` · `short_name`: `J-ONE Hotel`
+- `start_url`: `/index.html` — the installed app opens the **public hotel website**, never a
+  dashboard route (which would be a broken, login-gated entry point).
+- `scope`: `/` — the whole site, so in-app navigation to `/rooms.html`, `/booking.html` etc. stays
+  inside the installed app.
+- `display`: `standalone`; `theme_color` `#373435`; `background_color` `#F8F9FA`.
+- Icons: 192×192 and 512×512 with `purpose: "any"`, plus separate **maskable** icons whose artwork
+  sits inside the Android safe zone so the mark is never clipped or distorted.
+
+Every page — root and `/dashboard/` alike — references it with the **root-absolute** path
+`/manifest.webmanifest`, so one identical tag is correct at every directory depth.
+
+### Service-worker caching strategy
+
+| Request | Strategy | Why |
+| ------- | -------- | --- |
+| Precached shell (CSS, core JS, icons, `offline.html`) | Cache-first | Small, versioned, safe to serve stale |
+| Public HTML pages | **Network-first**, cached copy as fallback | Stays fresh; still readable offline once visited |
+| Local images | Stale-while-revalidate, **capped at 40 entries** | Fast repeat views without unbounded growth |
+| `/api/**` | **Never intercepted** | Availability, bookings, payments, auth — always live |
+| `/media/**` | Never intercepted | Backend-owned uploads |
+| `/dashboard/**` | **Network-only** (no cache read or write) | Staff data must never persist in a shared cache |
+| Non-GET (POST/PUT/PATCH/DELETE) | Never intercepted | Bookings/payments are never cached or queued |
+| Cross-origin (Paystack, Maps, the API host) | Never intercepted | Third-party flows untouched |
+
+**Deliberately never cached:** room/booking availability, booking creation, payment initialization,
+Paystack responses, payment verification/status, guest and staff records, dashboard statistics,
+notifications, financial records, receipts, audit logs, authentication responses, access/refresh
+tokens, and any request carrying an `Authorization` header.
+
+### Offline behaviour
+
+- A page you have already visited opens from cache.
+- A page you have not visited falls back to **`offline.html`** — *not* `index.html`; this is a
+  multi-page site, so URLs are never rewritten to an SPA shell.
+- `/dashboard/*` offline shows the branded offline page (containing no staff data) rather than the
+  browser's error screen.
+- Booking, availability and payment actions are blocked with a plain-language message
+  ("An internet connection is required to complete a booking…"). **Nothing is ever queued for
+  later** — a silently deferred booking or payment would be unsafe.
+
+### Update strategy
+
+`sw.js` starts with:
+
+```js
+const CACHE_VERSION = "jone-v1";
+```
+
+**After changing any file under `frontend/`, bump this value** (`jone-v2`, `jone-v3`, …) and
+redeploy. On activation the worker deletes every cache that does not belong to the current version,
+so visitors are never stuck on obsolete files.
+
+The new worker deliberately does **not** call `skipWaiting()` by itself. It waits until the page
+tells it to, and `js/pwa.js` only does so when the visitor is idle — never during a booking,
+payment, check-in/out, or with a dirty form. A quiet "Refresh to update" toast is offered instead.
+Long-running flows can lock updates explicitly:
+
+```js
+JONE.pwa.beginCriticalFlow();   // e.g. entering the payment step
+JONE.pwa.endCriticalFlow();     // when it completes or aborts
+```
+
+### Installation
+
+**Android (Chrome/Edge)** — `beforeinstallprompt` is captured and the default mini-infobar
+suppressed. A hotel-branded "Install J-ONE Hotel App" control appears in the mobile drawer and the
+footer, plus a dismissible banner on the homepage only (dismissal is remembered for 30 days).
+Nothing is shown once the app is installed.
+
+**iOS/iPadOS (Safari)** — iOS exposes no install event, so tapping the same control opens
+instructions: **Share → Add to Home Screen**. Android-specific wording is never shown to iOS users.
+`apple-touch-icon` and the Apple meta tags are in place for the home-screen icon, title and status
+bar.
+
+The install UI uses the project's existing Lucide SVG icons (no emoji), real `<button>` elements
+with accessible names and visible focus states, and works in both light and dark themes.
+
+### Testing the PWA locally
+
+```bash
+cd frontend && python3 dev_server.py 5500 http://127.0.0.1:8000
+# → http://127.0.0.1:5500   (localhost counts as a secure context)
+```
+
+In Chrome DevTools → **Application**: check *Manifest* (no errors, icons render), *Service Workers*
+(activated, scope `/`), and *Cache Storage* (only `jone-v*` caches — confirm no `/api/` or
+`/dashboard/` entries). Use the **Offline** checkbox in the Network panel to exercise the fallback.
+
+> `file://` will not work — service workers require `http://localhost` or HTTPS.
+
+
 ## Theme system
 
 Light/dark themes are applied via `data-theme` on `<html>` with all colors from CSS custom
@@ -282,6 +409,41 @@ Any static host works (Netlify, Vercel static, GitHub Pages, S3, nginx). Point `
 your backend and enable CORS there for the site origin. Dashboard folders must be served as static
 files (they are plain HTML/JS/CSS).
 
+### Vercel (frontend) — the deployment this repo is configured for
+
+The frontend and backend stay **separate**: Vercel serves the static site, Django on Render remains
+the authoritative API.
+
+| Vercel setting      | Value                      |
+| ------------------- | -------------------------- |
+| Framework preset    | **Other** (no build step)  |
+| **Root directory**  | **`frontend`**             |
+| Build command       | *(leave empty)*            |
+| Output directory    | *(leave empty)*            |
+| Install command     | *(leave empty)*            |
+
+The root directory **must** be `frontend`, because `sw.js` and `manifest.webmanifest` have to be
+served from the deployed site root (`/sw.js`, `/manifest.webmanifest`) for the service worker to
+control the whole site.
+
+`vercel.json` (in `frontend/`) supplies:
+
+- the correct MIME types — `application/javascript` for `/sw.js`,
+  `application/manifest+json` for `/manifest.webmanifest`;
+- `Service-Worker-Allowed: /` so the worker's scope is the entire site;
+- `Cache-Control: must-revalidate` on HTML, `sw.js` and the manifest, so a deploy is picked up
+  immediately, and longer caching for `/assets/` and `/favicon/`;
+- `Cache-Control: no-store` for everything under `/dashboard/`;
+- baseline security headers (`X-Content-Type-Options`, `Referrer-Policy`, HSTS, etc.).
+
+`cleanUrls` is deliberately **`false`**: every internal link in this project points at an explicit
+`*.html` file, so enabling it would add a 308 redirect to every navigation. There are **no
+`rewrites`** — this is a multi-page site, not an SPA, and each `.html` file must be served directly.
+
+> **HTTPS is required.** Service workers only register on secure origins. `*.vercel.app` and any
+> custom domain with a Vercel certificate satisfy this; `localhost` is treated as secure for
+> development.
+
 ## Performance
 
 - Minimal JS/CSS, small DOM, no unnecessary dependencies.
@@ -294,9 +456,16 @@ files (they are plain HTML/JS/CSS).
 
 - Semantic landmarks, labelled forms, keyboard-friendly modals/lightbox (Escape, trap focus),
   visible focus states, aria-live toasts, skip link, sufficient contrast, reduced-motion support.
+- PWA install controls are real `<button>`s with accessible names, Lucide SVG icons (no emoji),
+  visible focus rings and WCAG AA contrast in both themes; the offline page is keyboard-navigable
+  with an `aria-live` connection status.
 
 ## Troubleshooting
 
+- **Service worker not updating / stale assets** — bump `CACHE_VERSION` in `sw.js` and redeploy.
+  Locally, use DevTools → Application → Service Workers → *Update on reload* / *Unregister*.
+- **Manifest 404 or "not installable"** — the Vercel **root directory must be `frontend`** so that
+  `/manifest.webmanifest` and `/sw.js` resolve at the site root. Installation also requires HTTPS.
 - **Blank content / "Unable to reach servers"** — the API base URL is unset or the backend is down.
   Verify `API_BASE_URL` and backend CORS. Public pages show a clear error state (or hide a section)
   rather than inventing records.

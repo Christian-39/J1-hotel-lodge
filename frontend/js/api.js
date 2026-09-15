@@ -172,6 +172,12 @@ const API = (() => {
         throw new APIError(0, "The request timed out. Please check your connection and try again.");
       }
       if (err instanceof APIError) throw err;
+      // Offline is a distinct, user-actionable case. The service worker never
+      // answers /api/ from cache, so a failure here is always a real network
+      // failure — never a stale "success".
+      if (typeof navigator !== "undefined" && navigator.onLine === false) {
+        throw new APIError(0, "You appear to be offline. An internet connection is required — please reconnect and try again.");
+      }
       throw new APIError(0, "Unable to reach our servers. Please check your connection and try again.");
     }
   }

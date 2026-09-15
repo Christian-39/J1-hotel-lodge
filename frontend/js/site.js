@@ -55,6 +55,8 @@
           const el = form.querySelector(`[name=${name}]`);
           return el ? el.value : "";
         };
+        // Availability is authoritative backend data — never answered offline.
+        if (window.JONE && JONE.pwa && !JONE.pwa.requireOnline("booking")) return;
         const ci = read("check_in"), co = read("check_out");
         if (!ci || !co) {
           JONE.ui.toast("Please choose your check-in and check-out dates.", "warning");

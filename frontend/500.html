@@ -8,8 +8,16 @@
 <meta name="theme-color" content="#373435">
 <link rel="icon" href="favicon/favicon-32.png" sizes="32x32">
 <link rel="apple-touch-icon" href="favicon/apple-touch-icon.png">
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="J-ONE Hotel">
 <link rel="stylesheet" href="css/main.css">
 <script>(function(){var t;try{t=JSON.parse(localStorage.getItem("jone.theme"))}catch(e){}if(t!=="dark"&&t!=="light"){t=(window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches)?"dark":"light"}document.documentElement.setAttribute("data-theme",t);})();</script>
+
+
+
 
 
 </head>
@@ -154,5 +162,6 @@
 <script>JONE.ui.initChrome(); JONE.nav.init();</script>
 <script src="js/site.js"></script>
 <script>(function(){var b=document.getElementById("reload-btn");if(b)b.addEventListener("click",function(){location.reload();});})();</script>
+<script src="js/pwa.js"></script>
 </body>
 </html>
