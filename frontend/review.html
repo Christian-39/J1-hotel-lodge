@@ -67,7 +67,7 @@
         <!-- STEP 1 — verify the completed stay -->
         <form data-review-verify novalidate>
           <h2 style="font-size:var(--fs-xl);margin-bottom:0.5rem;">Find your stay</h2>
-          <p class="muted" style="margin-top:0;margin-bottom:1.5rem;">Reviews can be submitted after a completed stay. Enter the booking reference from your confirmation email, together with the email used for the booking.</p>
+          <p class="muted" style="margin-top:0;margin-bottom:1.5rem;">Reviews can be submitted once you've checked in. Enter the booking reference from your confirmation email, together with the email used for the booking.</p>
           <div class="field">
             <label class="field-label" for="rv-reference">Booking reference</label>
             <input class="input" id="rv-reference" name="booking_reference" required autocomplete="off" placeholder="e.g. J1-20260913-AB12CD34">
@@ -332,7 +332,7 @@
       JONE.releaseGuard(btn);
       var msg = (err && err.message) || "We couldn't verify your stay. Please try again.";
       if (err && err.status === 404) {
-        msg = "No eligible stay found. Reviews can be submitted after a completed stay — please check your booking reference and the email used for the booking.";
+        msg = "No eligible stay found. Reviews can be submitted once you have checked in — please check your booking reference and the email used for the booking.";
       }
       showError("[data-verify-error]", msg);
     }

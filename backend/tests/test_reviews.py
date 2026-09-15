@@ -126,7 +126,7 @@ class ReviewEligibilityTests(ReviewTestBase):
         guest, booking = self._booking_with_status(Booking.Status.PENDING)
         res = self.submit(reference=booking.booking_reference, email=guest.email)
         self.assertEqual(res.status_code, 409)
-        self.assertEqual(res.data["code"], "STAY_NOT_COMPLETED")
+        self.assertEqual(res.data["code"], "STAY_NOT_STARTED")
 
     def test_confirmed_future_booking_cannot_review(self):
         guest, booking = self._booking_with_status(Booking.Status.CONFIRMED)
@@ -143,10 +143,12 @@ class ReviewEligibilityTests(ReviewTestBase):
         res = self.submit(reference=booking.booking_reference, email=guest.email)
         self.assertEqual(res.status_code, 409)
 
-    def test_checked_in_booking_cannot_review_yet(self):
+    def test_checked_in_booking_can_review(self):
+        # A guest becomes eligible to review as soon as they are checked in.
         guest, booking = self._booking_with_status(Booking.Status.CHECKED_IN)
         res = self.submit(reference=booking.booking_reference, email=guest.email)
-        self.assertEqual(res.status_code, 409)
+        self.assertEqual(res.status_code, 201, res.data)
+        self.assertEqual(Review.objects.filter(booking=booking).count(), 1)
 
 
 class ReviewValidationTests(ReviewTestBase):

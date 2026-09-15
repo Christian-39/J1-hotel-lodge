@@ -118,9 +118,30 @@
     waitingWorker.postMessage({ type: "SKIP_WAITING" });
   }
 
+  var updateWatch = null;
   function offerUpdate(worker) {
     waitingWorker = worker;
     log("update available");
+
+    // Auto-apply strategy: a newly deployed version should take over on its own
+    // so users always run the latest code without manually clearing caches or
+    // waiting. We only ever swap when it is SAFE (never mid-booking/payment or
+    // over a dirty form). If it is not safe right now, poll quietly until it is.
+    var tryAutoApply = function () {
+      if (reloading || !waitingWorker) return true;   // done
+      if (isSafeToUpdateNow()) {
+        applyUpdate();                                 // triggers controllerchange -> reload
+        return true;
+      }
+      return false;                                    // not safe yet; keep watching
+    };
+    if (!tryAutoApply()) {
+      if (updateWatch) clearInterval(updateWatch);
+      updateWatch = setInterval(function () {
+        if (tryAutoApply()) { clearInterval(updateWatch); updateWatch = null; }
+      }, 3000);
+    }
+
     // Silent path: if the page is clearly idle, swap on the next navigation.
     // Otherwise surface a quiet, dismissible prompt using the existing toast.
     var announce = function () {

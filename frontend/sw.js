@@ -24,7 +24,7 @@
 
 "use strict";
 
-const CACHE_VERSION = "jone-v1";
+const CACHE_VERSION = "jone-v2";
 const PRECACHE = `${CACHE_VERSION}-precache`;
 const PAGES_CACHE = `${CACHE_VERSION}-pages`;
 const IMAGES_CACHE = `${CACHE_VERSION}-images`;
@@ -134,8 +134,7 @@ function isPrecachedAsset(url) {
 
 /* ------------------------------- Strategies ------------------------------- */
 
-/* Cache-first — our own versioned static assets (CSS/JS/icons/fonts). Safe to
-   serve stale because CACHE_VERSION changes on every frontend deploy. */
+/* Cache-first — used only for the offline fallback page. */
 async function cacheFirst(request, cacheName) {
   const cached = await caches.match(request, { ignoreVary: true });
   if (cached) return cached;
@@ -145,6 +144,27 @@ async function cacheFirst(request, cacheName) {
     cache.put(request, response.clone()).catch(() => {});
   }
   return response;
+}
+
+/* Stale-while-revalidate for our own CSS/JS/fonts/manifest. Serves the cached
+   copy instantly for speed, but ALWAYS re-fetches in the background and stores
+   the new version, so an edit you deploy shows up on the very next load — no
+   manual cache clear and no waiting for an expiry. This is what makes updates
+   propagate automatically. */
+async function assetSWR(request, cacheName) {
+  const cache = await caches.open(cacheName);
+  const cached = await cache.match(request, { ignoreVary: true });
+  const network = fetch(request)
+    .then((response) => {
+      if (response && response.ok && response.type === "basic") {
+        cache.put(request, response.clone()).catch(() => {});
+      }
+      return response;
+    })
+    .catch(() => null);
+  // If we have a cached copy, serve it now and update in the background.
+  // Otherwise wait for the network (first visit / newly added file).
+  return cached || (await network) || Response.error();
 }
 
 /* Stale-while-revalidate for local public images (hero/gallery art). */
@@ -255,11 +275,9 @@ self.addEventListener("fetch", (event) => {
   }
 
   if (dest === "style" || dest === "script" || dest === "font" || dest === "manifest") {
-    event.respondWith(
-      isPrecachedAsset(url)
-        ? cacheFirst(request, PRECACHE)
-        : cacheFirst(request, PRECACHE)
-    );
+    // Stale-while-revalidate: instant from cache, but always refreshed in the
+    // background so a new deploy is picked up on the next load automatically.
+    event.respondWith(assetSWR(request, PRECACHE));
     return;
   }
 

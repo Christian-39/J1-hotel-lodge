@@ -36,8 +36,15 @@ STAFF_REVIEWS_LINK = "/dashboard/reviews.html"
 
 NOT_ELIGIBLE_MESSAGE = (
     "We couldn't find an eligible stay for those details. Reviews can be "
-    "submitted after a completed stay, using the booking reference and the "
+    "submitted once you have checked in, using the booking reference and the "
     "email on the booking."
+)
+
+# A stay may be reviewed from check-in onward (during the stay) and continues
+# to be reviewable after checkout.
+REVIEWABLE_STATUSES = (
+    Booking.Status.CHECKED_IN,
+    Booking.Status.CHECKED_OUT,
 )
 
 
@@ -49,8 +56,8 @@ class AlreadyReviewedError(JOneAPIError):
 
 class StayNotCompletedError(JOneAPIError):
     status_code = 409
-    default_detail = "Reviews can be submitted after a completed stay."
-    default_code = "STAY_NOT_COMPLETED"
+    default_detail = "Reviews can be submitted once you have checked in."
+    default_code = "STAY_NOT_STARTED"
 
 
 def _requester_owns_booking(request, booking, email):
@@ -83,10 +90,14 @@ def get_verified_booking(*, booking_reference, email, request):
 
 
 def check_eligibility(booking):
-    """Raise the precise (safe) domain error when the stay cannot be reviewed."""
+    """Raise the precise (safe) domain error when the stay cannot be reviewed.
+
+    A guest becomes eligible to review once they have CHECKED IN, and remains
+    eligible after CHECKED OUT.
+    """
     if hasattr(booking, "review"):
         raise AlreadyReviewedError()
-    if booking.status != Booking.Status.CHECKED_OUT:
+    if booking.status not in REVIEWABLE_STATUSES:
         raise StayNotCompletedError()
 
 
