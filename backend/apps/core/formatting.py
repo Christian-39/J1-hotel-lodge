@@ -71,20 +71,30 @@ def _parse_dt(value):
 
 
 def format_date(value):
-    """Human date, e.g. ``12 September 2026``. Empty string if unparseable."""
+    """Human date, e.g. ``14 September 2026``. Empty string if unparseable.
+
+    Built from integer components + the (cross-platform) ``%B`` month name so
+    it never relies on the glibc-only ``%-d`` directive, which raises
+    ``ValueError: Invalid format string`` on Windows. Works identically on
+    Windows development machines and Linux/Render production.
+    """
     dt = _parse_dt(value)
     if dt is None:
         return ""
-    return dt.strftime("%-d %B %Y") if hasattr(dt, "strftime") else ""
+    return f"{dt.day} {dt.strftime('%B')} {dt.year}"
 
 
 def format_datetime(value):
-    """Human date + time, e.g. ``12 September 2026, 7:09 PM``."""
+    """Human date + time, e.g. ``14 September 2026, 7:09 PM``.
+
+    Like :func:`format_date`, the day and 12-hour clock are assembled from
+    integer components so no platform-specific ``strftime`` directive
+    (``%-d`` / ``%-I``) is ever used. ``%B`` (full month name) and ``%p``-style
+    AM/PM are derived manually to stay correct on every platform and locale.
+    """
     dt = _parse_dt(value)
     if dt is None:
         return ""
-    # ``%-d`` / ``%-I`` strip leading zeros on Linux; guard for portability.
-    try:
-        return dt.strftime("%-d %B %Y, %-I:%M %p")
-    except ValueError:  # pragma: no cover - non-glibc platforms
-        return dt.strftime("%d %B %Y, %I:%M %p").lstrip("0")
+    hour_12 = dt.hour % 12 or 12          # 0/12 -> 12, 13 -> 1, ...
+    meridiem = "AM" if dt.hour < 12 else "PM"
+    return f"{dt.day} {dt.strftime('%B')} {dt.year}, {hour_12}:{dt.minute:02d} {meridiem}"

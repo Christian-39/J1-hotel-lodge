@@ -45,7 +45,6 @@ def send_email_safe(
     message,
     recipients,
     *,
-    html_message="",
     kind="GENERIC",
     booking_reference="",
     payment_reference="",
@@ -54,11 +53,6 @@ def send_email_safe(
     created_by=None,
 ):
     """Record + queue (or eagerly send) a transactional email.
-
-    ``message`` is the required plain-text body (also the fallback for clients
-    that cannot render HTML). ``html_message`` is an optional styled HTML
-    alternative — when supplied the worker delivers a proper
-    ``multipart/alternative`` message, never HTML-as-escaped-text.
 
     Returns the :class:`EmailLog` instance (or ``None`` when there is no valid
     recipient). Errors never propagate to the API caller — but unlike the old
@@ -81,7 +75,6 @@ def send_email_safe(
             to_email=addr,
             subject=subject,
             body=message or "",
-            html_body=html_message or "",
             kind=kind if kind in EmailLog.Kind.values else EmailLog.Kind.GENERIC,
             booking_reference=booking_reference or "",
             payment_reference=payment_reference or "",

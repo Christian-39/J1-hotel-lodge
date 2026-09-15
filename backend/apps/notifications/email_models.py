@@ -41,11 +41,6 @@ class EmailLog(models.Model):
     to_email = models.EmailField()
     subject = models.CharField(max_length=255)
     body = models.TextField(blank=True, default="")
-    # Optional rich HTML alternative. When present the worker sends a proper
-    # multipart/alternative message (text/plain + text/html); when blank the
-    # message stays a single text/plain part exactly as before. Storing it here
-    # keeps the worker the single source of truth for what actually gets sent.
-    html_body = models.TextField(blank=True, default="")
     kind = models.CharField(
         max_length=32, choices=Kind.choices, default=Kind.GENERIC, db_index=True
     )

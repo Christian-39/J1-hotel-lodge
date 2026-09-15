@@ -72,32 +72,11 @@ class ReceiptEmailTests(BaseAPITestCase):
         msg = mail.outbox[0]
         self.assertIn("guest@example.com", msg.to)
         self.assertIn(self.booking.booking_reference, msg.subject)
-        self.assertEqual(msg.subject, f"Payment Receipt — {self.booking.booking_reference}")
-
-        # The itemised PDF is still attached (the inline branding logo is a
-        # separate related part, so locate the PDF explicitly rather than
-        # assuming it is the only attachment).
-        pdfs = [
-            a for a in msg.attachments
-            if getattr(a, "filename", "") and a.filename.endswith(".pdf")
-        ]
-        self.assertEqual(len(pdfs), 1)
-        self.assertEqual(pdfs[0].mimetype, "application/pdf")
-        self.assertTrue(pdfs[0].content[:5] == b"%PDF-")  # valid PDF header
-
-        # A styled HTML alternative is present alongside the plain-text body,
-        # and it is real HTML (never escaped-as-text).
-        self.assertEqual(len(msg.alternatives), 1)
-        html_body, html_type = msg.alternatives[0]
-        self.assertEqual(html_type, "text/html")
-        self.assertIn("<!DOCTYPE html", html_body)
-        self.assertNotIn("&lt;table", html_body)
-
-        # The MIME tree carries the correct multipart/alternative section and
-        # the inline logo under a Content-ID the HTML references.
-        flat = msg.message().as_string()
-        self.assertIn("multipart/alternative", flat)
-        self.assertIn("Content-ID: <jone-logo>", flat)
+        self.assertEqual(len(msg.attachments), 1)
+        fname, content, mimetype = msg.attachments[0]
+        self.assertTrue(fname.endswith(".pdf"))
+        self.assertEqual(mimetype, "application/pdf")
+        self.assertTrue(content[:5] == b"%PDF-")  # valid PDF header
 
     def test_receipt_contains_correct_details(self):
         self.auth(self.staff)

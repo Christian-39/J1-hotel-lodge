@@ -6,7 +6,7 @@ de-duplicated payment history, and correct HTML auto-escaping of dynamic
 values. They exercise the real ``ReceiptSerializer`` payload — no hard-coded
 demo data.
 """
-from datetime import timedelta
+from datetime import date, timedelta
 from decimal import Decimal
 
 from django.utils import timezone
@@ -49,6 +49,50 @@ class FormattingTests(BaseAPITestCase):
         self.assertIn("12 September 2026", human)
         self.assertNotIn("T", human)
         self.assertNotIn("+00:00", human)
+
+    def test_date_has_no_leading_zero_on_single_digit_day(self):
+        # The whole point of the (previously Unix-only) %-d: no leading zero.
+        self.assertEqual(format_date("2026-09-04"), "4 September 2026")
+        self.assertEqual(format_date(date(2026, 1, 1)), "1 January 2026")
+
+    def test_datetime_12_hour_clock_edges(self):
+        # Midnight and noon must read 12 AM / 12 PM, not 0/24.
+        self.assertEqual(
+            format_datetime("2026-09-04T00:05:00+01:00"), "4 September 2026, 12:05 AM"
+        )
+        self.assertEqual(
+            format_datetime("2026-09-04T12:00:00+01:00"), "4 September 2026, 12:00 PM"
+        )
+        self.assertEqual(
+            format_datetime("2026-09-04T13:07:00+01:00"), "4 September 2026, 1:07 PM"
+        )
+
+    def test_date_formatting_uses_no_unix_only_directives(self):
+        """Regression guard for the Windows ``ValueError: Invalid format string``.
+
+        The formatting helpers must build the day/hour from integer components,
+        never from the glibc-only ``%-d`` / ``%-I`` directives (which raise on
+        Windows). We assert the source contains no such directive so the bug
+        cannot silently return.
+        """
+        import inspect
+
+        from apps.core import formatting
+
+        source = inspect.getsource(formatting)
+        # Strip docstrings/comments mentioning the directive on purpose; check
+        # only executable ``strftime("...")`` / ``strftime('...')`` calls.
+        import re
+
+        for call in re.findall(r"strftime\(\s*[\"']([^\"']*)[\"']", source):
+            self.assertNotIn("%-", call, f"Unix-only directive in strftime({call!r})")
+            self.assertNotIn("%#", call, f"Windows-only directive in strftime({call!r})")
+
+    def test_empty_and_bad_dates_are_safe(self):
+        self.assertEqual(format_date(None), "")
+        self.assertEqual(format_date(""), "")
+        self.assertEqual(format_date("not-a-date"), "")
+        self.assertEqual(format_datetime(None), "")
 
 
 class ReceiptEmailBuilderTests(BaseAPITestCase):
