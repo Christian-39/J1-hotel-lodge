@@ -120,7 +120,13 @@ if EMAIL_BACKEND.endswith("smtp.EmailBackend"):
 # Celery workers run tasks out-of-process in production. Guard against a broker
 # that was never configured — otherwise queued receipts would sit unconsumed.
 CELERY_TASK_ALWAYS_EAGER = config("CELERY_TASK_ALWAYS_EAGER", default=False, cast=bool)
-if not CELERY_TASK_ALWAYS_EAGER and not (REDIS_URL or "").strip():  # noqa: F405
+if CELERY_TASK_ALWAYS_EAGER:
+    raise ImproperlyConfigured(
+        "CELERY_TASK_ALWAYS_EAGER must be False in production. Eager email tasks "
+        "run SMTP inside the booking/payment HTTP request and can trigger the "
+        "frontend timeout before Paystack initialization starts."
+    )
+if not (REDIS_URL or "").strip():  # noqa: F405
     raise ImproperlyConfigured(
         "REDIS_URL (Celery broker) is required in production so the worker can "
         "consume queued email tasks."

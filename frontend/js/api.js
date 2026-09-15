@@ -44,14 +44,22 @@ const API = (() => {
 
   /* ------------------------------ Errors ----------------------------------- */
   class APIError extends Error {
-    constructor(status, message, data) {
+    constructor(status, message, data, category) {
       super(message);
       this.name = "APIError";
       this.status = status;
       this.data = data;
+      this.category = category || (status ? `http_${status}` : "network");
       // Contract error code (e.g. ROOM_UNAVAILABLE) when present.
       this.code = (data && data.code) || null;
     }
+  }
+
+  function debugFailure(method, url, err) {
+    // Safe diagnostics only: no headers, tokens, request body or response data.
+    if (window.console && console.warn) console.warn("API request failed", {
+      method, url, status: err.status || 0, category: err.category || "unknown", code: err.code || null
+    });
   }
 
   // Map HTTP status codes to human-friendly, non-technical messages.
@@ -116,7 +124,8 @@ const API = (() => {
     if (auth && token) out.headers.Authorization = `Bearer ${token}`;
 
     const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), timeout);
+    let timedOut = false;
+    const timer = setTimeout(() => { timedOut = true; ctrl.abort(); }, timeout);
     const onAbort = () => ctrl.abort();
     if (signal) signal.addEventListener("abort", onAbort);
 
@@ -169,16 +178,24 @@ const API = (() => {
       clearTimeout(timer);
       if (signal) signal.removeEventListener("abort", onAbort);
       if (err.name === "AbortError") {
-        throw new APIError(0, "The request timed out. Please check your connection and try again.");
+        const apiErr = timedOut
+          ? new APIError(0, "The request timed out. Please check your connection and try again.", null, "timeout")
+          : new APIError(0, "The request was cancelled.", null, "aborted");
+        debugFailure(method, url, apiErr);
+        throw apiErr;
       }
-      if (err instanceof APIError) throw err;
-      // Offline is a distinct, user-actionable case. The service worker never
-      // answers /api/ from cache, so a failure here is always a real network
-      // failure — never a stale "success".
+      if (err instanceof APIError) { debugFailure(method, url, err); throw err; }
+      // Browsers intentionally do not reveal whether TypeError came from DNS,
+      // connection refusal/reset, TLS, or CORS. Preserve that honest category
+      // rather than pretending all status=0 failures are timeouts.
       if (typeof navigator !== "undefined" && navigator.onLine === false) {
-        throw new APIError(0, "You appear to be offline. An internet connection is required — please reconnect and try again.");
+        const offlineErr = new APIError(0, "You appear to be offline. An internet connection is required — please reconnect and try again.", null, "offline");
+        debugFailure(method, url, offlineErr);
+        throw offlineErr;
       }
-      throw new APIError(0, "Unable to reach our servers. Please check your connection and try again.");
+      const networkErr = new APIError(0, "Unable to reach our servers. Please check your connection and try again.", null, "network_or_cors");
+      debugFailure(method, url, networkErr);
+      throw networkErr;
     }
   }
 
@@ -358,7 +375,9 @@ const API = (() => {
      ever confirmed by verifyPayment (or the server-side webhook). */
 
   function initPayment(bookingReference, opts = {}) {
-    return post("/api/payments/initialize/", { booking_reference: bookingReference }, opts);
+    // Longer than the backend's bounded Paystack connect+read budget, so a
+    // gateway 502 reaches the UI instead of being misclassified as status=0.
+    return post("/api/payments/initialize/", { booking_reference: bookingReference }, { timeout: 30000, ...opts });
   }
   function verifyPayment(paymentReference, opts = {}) {
     return get(`/api/payments/verify/${encodeURIComponent(paymentReference)}/`, opts);

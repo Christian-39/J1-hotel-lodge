@@ -77,59 +77,63 @@ def send_email_safe(
     # One EmailLog row per recipient so status is meaningful per mailbox.
     log = None
     for addr in recipients:
-        row = EmailLog.objects.create(
-            to_email=addr,
-            subject=subject,
-            body=message or "",
-            html_body=html_message or "",
-            kind=kind if kind in EmailLog.Kind.values else EmailLog.Kind.GENERIC,
-            booking_reference=booking_reference or "",
-            payment_reference=payment_reference or "",
-            booking_id=booking_id,
-            attach_receipt_pdf=bool(attach_receipt_pdf),
-            created_by=created_by if getattr(created_by, "pk", None) else None,
-            status=EmailLog.Status.PENDING,
-        )
-        _dispatch(row)
-        log = log or row
+        try:
+            row = EmailLog.objects.create(
+                to_email=addr,
+                subject=subject,
+                body=message or "",
+                html_body=html_message or "",
+                kind=kind if kind in EmailLog.Kind.values else EmailLog.Kind.GENERIC,
+                booking_reference=booking_reference or "",
+                payment_reference=payment_reference or "",
+                booking_id=booking_id,
+                attach_receipt_pdf=bool(attach_receipt_pdf),
+                created_by=created_by if getattr(created_by, "pk", None) else None,
+                status=EmailLog.Status.PENDING,
+            )
+            _dispatch(row)
+            log = log or row
+        except Exception as exc:  # email bookkeeping must not break core state
+            logger.error(
+                "EMAIL_FAILED email_log_id=- stage=LOG category=%s kind=%s booking=%s",
+                exc.__class__.__name__, kind, booking_reference or "-",
+            )
     return log
 
 
 def _dispatch(log):
-    """Hand a single EmailLog row to the worker, or run it eagerly."""
+    """Hand one EmailLog to Celery without ever falling back to SMTP inline.
+
+    Eager execution is retained only for local development/test settings. The
+    production settings reject eager mode at startup. A broker outage is
+    recorded as FAILED at the queue stage; it must never turn an HTTP worker
+    into an SMTP worker or delay booking/payment state changes.
+    """
     from apps.notifications.models import EmailLog
     from apps.notifications.tasks import send_email_task
 
-    eager = getattr(settings, "CELERY_TASK_ALWAYS_EAGER", False)
-
-    if eager:
-        # .delay() executes the task inline. The task records its own final
-        # status (SENT / FAILED / RETRYING) and, when retries are exhausted,
-        # may raise — that exception means the task RAN, not that the broker
-        # was unreachable, so we must NOT fall back to a duplicate send.
+    logger.info("EMAIL_QUEUE_START email_log_id=%s kind=%s booking=%s", log.pk, log.kind, log.booking_reference or "-")
+    if getattr(settings, "CELERY_TASK_ALWAYS_EAGER", False):
         try:
             send_email_task.delay(log.id)
-        except Exception as exc:  # noqa: BLE001 - status already persisted by task
-            logger.info(
-                "Eager email task for EmailLog#%s ended with %s (status already recorded)",
-                log.pk, exc.__class__.__name__,
-            )
+        except Exception as exc:  # task records its own delivery status
+            logger.info("Eager EmailLog#%s ended with %s", log.pk, exc.__class__.__name__)
         return
 
-    # Real async path: enqueue on the broker. An exception here means the
-    # broker is unreachable and the task never ran — mark it visibly and make a
-    # best-effort synchronous send so a broker outage cannot silently swallow a
-    # critical transactional email.
     try:
-        result = send_email_task.delay(log.id)
-    except Exception as exc:
-        logger.warning(
-            "Could not queue email task for EmailLog#%s (%s); sending synchronously",
-            log.pk, exc.__class__.__name__,
+        # retry=False prevents Kombu's producer retry loop from pinning a web
+        # worker when Redis is unavailable. Broker socket timeouts are bounded
+        # separately in settings.
+        result = send_email_task.apply_async(args=[log.id], retry=False)
+    except Exception as exc:  # broker unavailable; SMTP is deliberately NOT called
+        EmailLog.objects.filter(pk=log.pk).update(
+            status=EmailLog.Status.FAILED,
+            failure_stage=EmailLog.FailureStage.QUEUE,
+            error_class=exc.__class__.__name__,
+            error_message="Email delivery could not be queued. Please retry later.",
+            failed_at=timezone.now(),
         )
-        from apps.notifications.tasks import deliver_email_log
-
-        deliver_email_log(log.pk, allow_retry=False)
+        logger.warning("EMAIL_FAILED email_log_id=%s stage=QUEUE category=%s", log.pk, exc.__class__.__name__)
         return
 
     EmailLog.objects.filter(pk=log.pk, status=EmailLog.Status.PENDING).update(
@@ -137,3 +141,4 @@ def _dispatch(log):
         queued_at=timezone.now(),
         task_id=getattr(result, "id", "") or "",
     )
+    logger.info("EMAIL_QUEUED email_log_id=%s task_id=%s", log.pk, getattr(result, "id", "") or "-")

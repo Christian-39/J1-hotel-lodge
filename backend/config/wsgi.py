@@ -6,5 +6,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings.production")
+if os.environ.get("RENDER") and os.environ.get("DJANGO_SETTINGS_MODULE") != "config.settings.production":
+    raise RuntimeError("Render web service must use config.settings.production.")
 
 application = get_wsgi_application()

@@ -1,4 +1,5 @@
 from datetime import timedelta
+from unittest.mock import patch
 
 from apps.bookings.models import Booking, Guest
 from apps.core.utils import hotel_today
@@ -37,6 +38,14 @@ class AnonymousGuestCheckoutTests(BaseAPITestCase):
         self.assertIsNone(booking.guest.user_id)
         self.assertTrue(booking.guest_access_token_hash)
         self.assertEqual(Guest.objects.get(pk=booking.guest_id).email, "amina@example.test")
+
+    @patch("apps.bookings.services.booking_service.send_email_safe", side_effect=RuntimeError("smtp setup failed"))
+    def test_email_failure_after_commit_does_not_break_booking(self, _send):
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.client.post("/api/bookings/", self.payload, format="json")
+        self.assertEqual(response.status_code, 201, response.json())
+        reference = response.json()["data"]["booking_reference"]
+        self.assertTrue(Booking.objects.filter(booking_reference=reference).exists())
 
     def test_reference_alone_does_not_expose_booking(self):
         response = self.client.post("/api/bookings/", self.payload, format="json")

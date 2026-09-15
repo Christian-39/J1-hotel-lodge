@@ -419,6 +419,8 @@
 
   async function redirectToPayment() {
     // Initialize via the backend; we never build provider URLs ourselves.
+    var payBtn = document.getElementById("pay-btn");
+    if (payBtn) payBtn.innerHTML = '<span class="btn-spinner"></span> Preparing secure payment…';
     var payRes = await window.API.initPayment(booking.booking_reference, guestOpts());
     var pay = payRes.data || {};
     var authUrl = pay.authorization_url || pay.payment_url;
@@ -432,6 +434,7 @@
       sessionStorage.setItem(bookingTokenKey(booking.booking_reference), guestToken);
       sessionStorage.setItem("jone.payment_access." + pay.reference, guestToken);
     }
+    if (payBtn) payBtn.innerHTML = '<span class="btn-spinner"></span> Redirecting to Paystack…';
     location.href = authUrl;
     return true;
   }
@@ -446,7 +449,7 @@
     if (!JONE.guardSubmit(btn)) return;
     btn.disabled = true;
     var prevLabel = btn.innerHTML;
-    btn.innerHTML = '<span class="btn-spinner"></span> Initializing payment\u2026';
+    btn.innerHTML = '<span class="btn-spinner"></span> Connecting to secure payment…';
     show("payment-loading");
     // Restore the button if we DON'T navigate away (only failure paths reach
     // the catch below, which releases the guard).
