@@ -53,12 +53,12 @@ class EmailLog(models.Model):
     # --- Envelope ----------------------------------------------------------
     to_email = models.EmailField()
     subject = models.CharField(max_length=255)
-    body = models.TextField(blank=True, default="")
+    body = models.TextField(blank=True, default="", db_default="")
     # Optional rich HTML alternative. When present the worker sends a proper
     # multipart/alternative message (text/plain + text/html); when blank the
     # message stays a single text/plain part exactly as before. Storing it here
     # keeps the worker the single source of truth for what actually gets sent.
-    html_body = models.TextField(blank=True, default="")
+    html_body = models.TextField(blank=True, default="", db_default="")
     kind = models.CharField(
         max_length=32, choices=Kind.choices, default=Kind.GENERIC, db_index=True
     )
@@ -85,7 +85,7 @@ class EmailLog(models.Model):
     # email has not failed. Lets staff distinguish a receipt that never rendered
     # from one the mail server rejected.
     failure_stage = models.CharField(
-        max_length=16, choices=FailureStage.choices, blank=True, default=""
+        max_length=16, choices=FailureStage.choices, blank=True, default="", db_default=""
     )
 
     created_by = models.ForeignKey(

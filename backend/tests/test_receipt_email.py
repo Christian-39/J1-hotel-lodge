@@ -302,3 +302,35 @@ class EmailPipelineUnitTests(BaseAPITestCase):
         result = deliver_email_log(log.pk)
         self.assertEqual(result, EmailLog.Status.SENT)
         self.assertEqual(len(mail.outbox), 0)  # not re-sent
+
+    def test_text_columns_declare_db_default(self):
+        """Regression: MySQL strict mode raises 1364 ("Field 'x' doesn't have a
+        default value") when a NOT NULL text column is added without a *database*
+        default and an insert path omits it. That crashed POST /api/bookings/
+        (confirmation email log) and send-receipt on MySQL while passing on
+        SQLite. Every text column an insert path may omit must carry db_default.
+        """
+        from django.db.models import NOT_PROVIDED
+
+        for name in ("body", "html_body", "failure_stage"):
+            field = EmailLog._meta.get_field(name)
+            self.assertIsNot(
+                field.db_default, NOT_PROVIDED,
+                f"EmailLog.{name} must declare db_default so MySQL never "
+                f"rejects an insert that omits it (error 1364).",
+            )
+            self.assertEqual(field.db_default, "")
+
+    def test_email_log_insert_omitting_new_columns(self):
+        """A create() that omits body/html_body/failure_stage must succeed and
+        the columns default to '' (never NULL / never a DB error)."""
+        log = EmailLog.objects.create(
+            to_email="a@example.com",
+            subject="s",
+            kind=EmailLog.Kind.GENERIC,
+            status=EmailLog.Status.PENDING,
+        )
+        log.refresh_from_db()
+        self.assertEqual(log.body, "")
+        self.assertEqual(log.html_body, "")
+        self.assertEqual(log.failure_stage, "")
