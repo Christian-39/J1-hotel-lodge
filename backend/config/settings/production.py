@@ -10,7 +10,7 @@ from .base import *  # noqa: F401,F403
 
 DEBUG = False
 SECRET_KEY = config("DJANGO_SECRET_KEY")  # required — no insecure default
-ALLOWED_HOSTS = config("DJANGO_ALLOWED_HOSTS", cast=Csv())
+ALLOWED_HOSTS = config("DJANGO_ALLOWED_HOSTS", default="j1-hotel-lodge-backend.onrender.com",cast=Csv())
 
 # --- Database: MySQL 8+ via DATABASE_URL or components ----------------------
 _database_url = config("DATABASE_URL", default="")
