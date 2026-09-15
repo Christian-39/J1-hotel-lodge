@@ -9,7 +9,6 @@ Invariants guarded here:
 import hashlib
 import hmac
 import logging
-import time
 from datetime import timedelta
 from decimal import Decimal, InvalidOperation
 
@@ -158,23 +157,11 @@ def _reserve_initialization(*, booking, user):
 
 def initialize_booking_payment(*, booking: Booking, user, request=None):
     """Initialize one idempotent Paystack attempt without a long DB lock."""
-    started = time.monotonic()
-    logger.info("PAYMENT_INIT_START booking=%s", booking.booking_reference)
     if not getattr(settings, "PAYSTACK_SECRET_KEY", "").strip():
-        logger.error("PAYMENT_INIT_FAILURE booking=%s category=NOT_CONFIGURED", booking.booking_reference)
         raise PaymentNotConfiguredError()
-    logger.info("PAYMENT_INIT_BOOKING_FOUND booking=%s amount_due=%s", booking.booking_reference, booking.amount_due)
     booking, payment, should_call_gateway = _reserve_initialization(booking=booking, user=user)
-    logger.info(
-        "PAYMENT_INIT_PAYMENT_CREATED booking=%s reference=%s amount=%s gateway_call=%s",
-        booking.booking_reference, payment.reference, payment.amount, should_call_gateway,
-    )
     if not should_call_gateway:
-        logger.info(
-            "PAYMENT_INIT_SUCCESS booking=%s reference=%s reused=true elapsed_ms=%s",
-            booking.booking_reference, payment.reference,
-            round((time.monotonic() - started) * 1000),
-        )
+        logger.info("Reused initialized payment: %s booking=%s", payment.reference, booking.booking_reference)
         return _initialization_payload(payment)
 
     try:
@@ -201,11 +188,7 @@ def initialize_booking_payment(*, booking: Booking, user, request=None):
                 "initialization_failed_at": timezone.now().isoformat(),
             }
             current.save(update_fields=["metadata", "updated_at"])
-        logger.exception(
-            "PAYMENT_INIT_FAILURE booking=%s reference=%s category=GATEWAY elapsed_ms=%s",
-            booking.booking_reference, payment.reference,
-            round((time.monotonic() - started) * 1000),
-        )
+        logger.exception("Payment initialization failed: reference=%s booking=%s", payment.reference, booking.booking_reference)
         raise
 
     if (
@@ -233,11 +216,7 @@ def initialize_booking_payment(*, booking: Booking, user, request=None):
         metadata={"reference": payment.reference, "booking": booking.booking_reference,
                   "amount": str(payment.amount)}, request=request,
     )
-    logger.info(
-        "PAYMENT_INIT_SUCCESS booking=%s reference=%s amount=%s reused=false elapsed_ms=%s",
-        booking.booking_reference, payment.reference, payment.amount,
-        round((time.monotonic() - started) * 1000),
-    )
+    logger.info("Payment initialized: reference=%s booking=%s amount=%s", payment.reference, booking.booking_reference, payment.amount)
     payload = _initialization_payload(payment)
     payload["reused"] = False
     return payload

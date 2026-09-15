@@ -5,7 +5,6 @@ is never returned to clients. Network calls have bounded timeouts and every
 response is validated before the payment service sees it.
 """
 import logging
-import time
 from urllib.parse import quote
 
 import requests
@@ -16,14 +15,7 @@ from apps.core.exceptions import PaymentError, PaymentGatewayError, PaymentNotCo
 logger = logging.getLogger("paystack")
 
 BASE_URL = "https://api.paystack.co"
-
-
-def _timeout():
-    """Bounded below the browser's payment-init timeout so errors reach it."""
-    return (
-        getattr(settings, "PAYSTACK_CONNECT_TIMEOUT", 4),
-        getattr(settings, "PAYSTACK_READ_TIMEOUT", 12),
-    )
+TIMEOUT = (5, 25)  # connect, read
 
 
 def _secret_key():
@@ -55,8 +47,6 @@ def _json(response, operation):
 
 def initialize_transaction(*, email, amount_kobo, reference, callback_url, metadata=None):
     """POST /transaction/initialize and return validated Paystack data."""
-    started = time.monotonic()
-    logger.info("PAYMENT_INIT_PAYSTACK_REQUEST reference=%s amount_kobo=%s", reference, amount_kobo)
     try:
         response = requests.post(
             f"{BASE_URL}/transaction/initialize",
@@ -69,31 +59,12 @@ def initialize_transaction(*, email, amount_kobo, reference, callback_url, metad
                 "metadata": metadata or {},
             },
             headers=_headers(),
-            timeout=_timeout(),
+            timeout=TIMEOUT,
         )
-    except requests.Timeout as exc:
-        logger.error(
-            "PAYMENT_INIT_FAILURE reference=%s category=GATEWAY_TIMEOUT elapsed_ms=%s",
-            reference, round((time.monotonic() - started) * 1000),
-        )
-        raise PaymentGatewayError("The payment provider timed out. Please try again.") from exc
-    except requests.ConnectionError as exc:
-        logger.error(
-            "PAYMENT_INIT_FAILURE reference=%s category=GATEWAY_CONNECTION elapsed_ms=%s",
-            reference, round((time.monotonic() - started) * 1000),
-        )
-        raise PaymentGatewayError() from exc
     except requests.RequestException as exc:
-        logger.error(
-            "PAYMENT_INIT_FAILURE reference=%s category=%s elapsed_ms=%s",
-            reference, exc.__class__.__name__, round((time.monotonic() - started) * 1000),
-        )
+        logger.error("Paystack initialize unreachable: %s", exc.__class__.__name__)
         raise PaymentGatewayError() from exc
 
-    logger.info(
-        "PAYMENT_INIT_PAYSTACK_RESPONSE reference=%s http_status=%s elapsed_ms=%s",
-        reference, response.status_code, round((time.monotonic() - started) * 1000),
-    )
     payload = _json(response, "initialize")
     data = payload.get("data")
     valid = (
@@ -121,7 +92,7 @@ def verify_transaction(reference):
         response = requests.get(
             f"{BASE_URL}/transaction/verify/{quote(str(reference), safe='')}",
             headers=_headers(),
-            timeout=_timeout(),
+            timeout=TIMEOUT,
         )
     except requests.RequestException as exc:
         logger.error("Paystack verify unreachable: %s", exc.__class__.__name__)
@@ -161,7 +132,7 @@ def create_refund(*, transaction, amount_kobo=None, currency="NGN", customer_not
             f"{BASE_URL}/refund",
             json=body,
             headers=_headers(),
-            timeout=_timeout(),
+            timeout=TIMEOUT,
         )
     except requests.RequestException as exc:
         logger.error("Paystack refund unreachable: %s", exc.__class__.__name__)

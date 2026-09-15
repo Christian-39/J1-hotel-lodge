@@ -231,18 +231,18 @@
   var sharePdfBtn = document.querySelector("[data-share-pdf]");
   if (sharePdfBtn) sharePdfBtn.addEventListener("click", function(){ shareReceipt(sharePdfBtn, "pdf"); });
 
-  /* Poll the real delivery status. SMTP acceptance is SENT; queue acceptance
-     remains QUEUED and is never described as delivery. */
-  function pollReceiptStatus(logId, guestEmail, finish){
-    var attempts = 0, max = 8;
+  /* Poll the REAL delivery status of a queued receipt email so staff learn
+     the true outcome (SENT / FAILED) instead of a blind "queued". */
+  function pollReceiptStatus(logId, guestEmail, done){
+    var attempts = 0, max = 6;
     function tick(){
       attempts++;
       window.API.getEmailLog(logId).then(function(res){
         var d = (res && res.data) || {};
-        if (d.status === "SENT"){ finish("sent"); JONE.ui.toast("Receipt sent successfully to " + guestEmail + ".", "success"); return; }
-        if (d.status === "FAILED"){ finish("failed"); JONE.ui.toast("Receipt could not be sent: " + (d.error_message || "delivery failed") + ".", "error"); return; }
-        if (attempts < max){ setTimeout(tick, 2500); } else { finish("queued"); }
-      }).catch(function(){ if (attempts < max){ setTimeout(tick, 2500); } else { finish("queued"); } });
+        if (d.status === "SENT"){ done(); JONE.ui.toast("Receipt email delivered to " + guestEmail + ".", "success"); return; }
+        if (d.status === "FAILED"){ done(); JONE.ui.toast("Receipt email could not be delivered: " + ((d.error_message) || "delivery failed") + ".", "error"); return; }
+        if (attempts < max){ setTimeout(tick, 2500); } else { done(); }
+      }).catch(function(){ if (attempts < max){ setTimeout(tick, 2500); } else { done(); } });
     }
     setTimeout(tick, 2500);
   }
@@ -250,53 +250,39 @@
   var emailBtn = document.querySelector("[data-email]");
   if (emailBtn) emailBtn.addEventListener("click", async function(){
     if (!data || !data.booking_reference) return;
-    var guest = data.guest || {};
-    var guestEmail = guest.email || "";
+    var guestEmail = (data.guest && data.guest.email) || "";
     if (!guestEmail) { JONE.ui.toast("This guest has no email address on file.", "error"); return; }
     var ok = await JONE.ui.confirm({
-      title: "Send receipt",
-      message: "Confirm the recipient and authoritative payment details.",
-      details: [
-        { label: "Guest", value: guest.name || "—" },
-        { label: "Email", value: guestEmail },
-        { label: "Booking", value: data.booking_reference },
-        { label: "Amount paid", value: JONE.formatNaira(data.amount_paid || 0) }
-      ],
-      confirmText: "Send receipt",
-      cancelText: "Cancel"
+      title: "Send receipt?",
+      message: "Email the payment receipt for " + data.booking_reference + " to " + guestEmail + "?",
+      confirmText: "Send receipt"
     });
-    if (!ok || !JONE.guardSubmit(emailBtn)) return;
-    var originalLabel = emailBtn.innerHTML;
-    function setButton(state){
-      if (state === "sending") emailBtn.innerHTML = '<span class="btn-spinner" aria-hidden="true"></span> Sending receipt to ' + esc(guestEmail) + '…';
-      else if (state === "sent") emailBtn.innerHTML = '<span data-icon="checkCircle" data-size="16"></span> Receipt sent';
-      else if (state === "queued") emailBtn.innerHTML = '<span data-icon="clock" data-size="16"></span> Receipt queued';
-      else if (state === "failed") emailBtn.innerHTML = '<span data-icon="alertTriangle" data-size="16"></span> Unable to send — Retry';
-      else emailBtn.innerHTML = originalLabel;
-      JONE.icons.inject(emailBtn);
-    }
-    function finish(state){ JONE.releaseGuard(emailBtn); setButton(state); }
-    setButton("sending");
-    emailBtn.setAttribute("aria-label", "Sending receipt to " + guestEmail);
+    if (!ok) return;
+    if (!JONE.guardSubmit(emailBtn)) return;
+    // Immediate, visible feedback: spinner + "Sending…" the moment work starts.
+    var prevLabel = emailBtn.innerHTML;
+    emailBtn.innerHTML = "<span>Sending…</span>";
+    var released = false;
+    function restore(){ if (released) return; released = true; JONE.releaseGuard(emailBtn); emailBtn.innerHTML = prevLabel; JONE.icons.inject(emailBtn); }
     try {
       var res = await window.API.sendReceipt(data.booking_reference);
       var payload = (res && res.data) || {};
       if (payload.status === "SENT"){
-        finish("sent");
-        JONE.ui.toast("Receipt sent successfully to " + guestEmail + ".", "success");
+        restore();
+        JONE.ui.toast("Receipt email sent successfully to " + guestEmail + ".", "success");
       } else if (payload.status === "IN_PROGRESS"){
-        finish("queued");
+        restore();
         JONE.ui.toast("A receipt email for this booking is already being processed.", "info");
       } else {
-        setButton("sending");
-        emailBtn.innerHTML = '<span class="btn-spinner" aria-hidden="true"></span> Delivering to ' + esc(guestEmail) + '…';
-        JONE.ui.toast("Receipt queued for delivery to " + guestEmail + ".", "info");
-        if (payload.email_log_id) pollReceiptStatus(payload.email_log_id, guestEmail, finish);
-        else finish("queued");
+        // Queued: keep the spinner while we confirm the real delivery outcome.
+        emailBtn.innerHTML = "<span>Delivering…</span>";
+        JONE.ui.toast("Receipt email queued. Confirming delivery…", "info");
+        if (payload.email_log_id){ pollReceiptStatus(payload.email_log_id, guestEmail, restore); }
+        else { restore(); }
       }
     } catch (err) {
-      finish("failed");
-      JONE.ui.toast((err && err.message) || "Receipt could not be sent.", "error");
+      restore();
+      JONE.ui.toast((err && err.message) || "The receipt couldn't be sent.", "error");
     }
   });
 })();

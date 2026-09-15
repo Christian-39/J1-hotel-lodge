@@ -141,10 +141,6 @@ def deliver_email_log(log_id, *, allow_retry=True, task=None):
         return EmailLog.Status.SENT
 
     EmailLog.objects.filter(pk=log.pk).update(status=EmailLog.Status.SENDING)
-    logger.info(
-        "EMAIL_SEND_START email_log_id=%s kind=%s booking=%s",
-        log.pk, log.kind, log.booking_reference or "-",
-    )
 
     # Track WHERE a failure happens so admins can tell an attachment bug apart
     # from an SMTP/delivery problem. The PDF is built first, then SMTP.
@@ -195,9 +191,12 @@ def deliver_email_log(log_id, *, allow_retry=True, task=None):
             failed_at=timezone.now(),
         )
         logger.warning(
-            "EMAIL_FAILED email_log_id=%s stage=%s category=%s retrying=%s attempt=%s/%s",
-            log.pk, failure_stage, exc.__class__.__name__, can_retry,
-            log.retry_count + 1, log.max_retries,
+            "EmailLog#%s delivery %s: %s (attempt %s/%s)",
+            log.pk,
+            "will retry" if can_retry else "FAILED",
+            exc.__class__.__name__,  # never the message → no credential leakage
+            log.retry_count + 1,
+            log.max_retries,
         )
         if can_retry:
             raise _RetryRequested(exc)
@@ -211,7 +210,7 @@ def deliver_email_log(log_id, *, allow_retry=True, task=None):
         failure_stage="",
     )
     logger.info(
-        "EMAIL_SENT email_log_id=%s kind=%s booking=%s to=%s",
+        "EmailLog#%s SENT kind=%s booking=%s to=%s",
         log.pk, log.kind, log.booking_reference or "-", log.to_email,
     )
     return EmailLog.Status.SENT

@@ -35,7 +35,6 @@ class EmailLog(models.Model):
         of guessing from a generic error string.
         """
         NONE = "", "—"
-        QUEUE = "QUEUE", "Queueing for delivery"
         RENDER = "RENDER", "Rendering the receipt"
         ATTACHMENT = "ATTACHMENT", "Generating the PDF attachment"
         SMTP = "SMTP", "Submitting to the mail server"

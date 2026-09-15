@@ -431,16 +431,7 @@ def create_booking(*, room_type_value, check_in, check_out, rooms, adults, child
             else:
                 _send_confirmation_email(booking, hotel)
 
-    def _queue_after_commit_safely():
-        try:
-            _send_emails()
-        except Exception as exc:
-            logger.error(
-                "EMAIL_FAILED email_log_id=- stage=PREPARE category=%s kind=BOOKING_PENDING booking=%s",
-                exc.__class__.__name__, booking.booking_reference,
-            )
-
-    transaction.on_commit(_queue_after_commit_safely)
+    transaction.on_commit(_send_emails)
     logger.info(
         "Booking %s created: %s x%s %s→%s total=%s source=%s",
         booking.booking_reference, room_type.slug, rooms, check_in, check_out,
@@ -450,18 +441,6 @@ def create_booking(*, room_type_value, check_in, check_out, rooms, adults, child
 
 
 def _send_confirmation_email(booking, hotel=None):
-    """Best-effort queueing boundary; confirmation truth never depends on email."""
-    try:
-        return _send_confirmation_email_impl(booking, hotel)
-    except Exception as exc:  # email rendering/logging/queueing must stay isolated
-        logger.error(
-            "EMAIL_FAILED email_log_id=- stage=PREPARE category=%s kind=BOOKING_CONFIRMATION booking=%s",
-            exc.__class__.__name__, booking.booking_reference,
-        )
-        return None
-
-
-def _send_confirmation_email_impl(booking, hotel=None):
     hotel = hotel or HotelSettings.get_settings()
     if not booking.guest.email:
         return

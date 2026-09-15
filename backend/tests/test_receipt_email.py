@@ -8,10 +8,8 @@ the REAL outcome (SENT / FAILED / RETRYING). Celery runs eagerly in tests so the
 from datetime import timedelta
 from decimal import Decimal
 from unittest import mock
-from unittest.mock import patch
 
 from django.core import mail
-from django.test import override_settings
 from django.utils import timezone
 
 from apps.accounts.models import User
@@ -293,27 +291,6 @@ class EmailPipelineUnitTests(BaseAPITestCase):
 
         self.assertIsNone(send_email_safe("Hi", "Body", ["bad"], kind="GENERIC"))
         self.assertEqual(EmailLog.objects.count(), 0)
-
-    @override_settings(CELERY_TASK_ALWAYS_EAGER=False)
-    @patch("apps.notifications.tasks.send_email_task.apply_async")
-    @patch("apps.notifications.tasks.deliver_email_log")
-    def test_broker_failure_never_falls_back_to_synchronous_smtp(self, deliver, publish):
-        from apps.core.emails import send_email_safe
-
-        publish.side_effect = ConnectionError("broker unavailable")
-        log = send_email_safe("Hi", "Body", ["a@example.com"], kind="GENERIC")
-        self.assertIsNotNone(log)
-        log.refresh_from_db()
-        self.assertEqual(log.status, EmailLog.Status.FAILED)
-        self.assertEqual(log.failure_stage, EmailLog.FailureStage.QUEUE)
-        deliver.assert_not_called()
-        self.assertEqual(len(mail.outbox), 0)
-
-    @patch("apps.notifications.models.EmailLog.objects.create", side_effect=RuntimeError("log unavailable"))
-    def test_email_log_failure_is_swallowed(self, _create):
-        from apps.core.emails import send_email_safe
-
-        self.assertIsNone(send_email_safe("Hi", "Body", ["a@example.com"], kind="GENERIC"))
 
     def test_already_sent_is_idempotent(self):
         from apps.notifications.tasks import deliver_email_log

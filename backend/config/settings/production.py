@@ -10,7 +10,7 @@ from .base import *  # noqa: F401,F403
 
 DEBUG = False
 SECRET_KEY = config("DJANGO_SECRET_KEY")  # required — no insecure default
-ALLOWED_HOSTS = config("DJANGO_ALLOWED_HOSTS", default="j1-hotel-lodge-backend.onrender.com",cast=Csv())
+ALLOWED_HOSTS = config("DJANGO_ALLOWED_HOSTS", cast=Csv())
 
 # --- Database: MySQL 8+ via DATABASE_URL or components ----------------------
 _database_url = config("DATABASE_URL", default="")
@@ -120,13 +120,7 @@ if EMAIL_BACKEND.endswith("smtp.EmailBackend"):
 # Celery workers run tasks out-of-process in production. Guard against a broker
 # that was never configured — otherwise queued receipts would sit unconsumed.
 CELERY_TASK_ALWAYS_EAGER = config("CELERY_TASK_ALWAYS_EAGER", default=False, cast=bool)
-if CELERY_TASK_ALWAYS_EAGER:
-    raise ImproperlyConfigured(
-        "CELERY_TASK_ALWAYS_EAGER must be False in production. Eager email tasks "
-        "run SMTP inside the booking/payment HTTP request and can trigger the "
-        "frontend timeout before Paystack initialization starts."
-    )
-if not (REDIS_URL or "").strip():  # noqa: F405
+if not CELERY_TASK_ALWAYS_EAGER and not (REDIS_URL or "").strip():  # noqa: F405
     raise ImproperlyConfigured(
         "REDIS_URL (Celery broker) is required in production so the worker can "
         "consume queued email tasks."

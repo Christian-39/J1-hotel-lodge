@@ -32,11 +32,6 @@ class InitializePaymentView(APIView):
     throttle_scope = "payment_init"
 
     def post(self, request):
-        logger.info(
-            "PAYMENT_INIT_REQUEST_REACHED authenticated=%s has_guest_token=%s",
-            bool(request.user and request.user.is_authenticated),
-            bool(request.headers.get("X-Guest-Access-Token")),
-        )
         serializer = InitializePaymentSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         booking = booking_service.get_booking_by_reference_or_id(

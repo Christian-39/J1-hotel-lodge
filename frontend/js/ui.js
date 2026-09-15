@@ -130,23 +130,16 @@
   };
 
   /* --------------------------- Confirmation ------------------------------- */
-  function confirm({ title = "Are you sure?", message = "", details = [], confirmText = "Confirm", cancelText = "Back", danger = false }) {
+  function confirm({ title = "Are you sure?", message = "", confirmText = "Confirm", cancelText = "Back", danger = false }) {
     return new Promise((resolve) => {
       let decided = false;   // a button decision wins; onClose only settles dismissals
       const confirmBtn = JONE.el("button", {
         class: `btn ${danger ? "btn-danger" : ""}`, textContent: confirmText
       });
       const cancelBtn = JONE.el("button", { class: "btn btn-outline", textContent: cancelText });
-      const detailList = details && details.length ? JONE.el("dl", { class: "confirm-details" },
-        ...details.map(item => JONE.el("div", { class: "confirm-detail" },
-          JONE.el("dt", { textContent: item.label || "" }),
-          JONE.el("dd", { textContent: item.value == null || item.value === "" ? "—" : String(item.value) })
-        ))
-      ) : null;
       const body = JONE.el("div", { class: "confirm-content" },
         JONE.el("div", { class: "confirm-icon", innerHTML: JONE.icons.get(danger ? "alertTriangle" : "checkCircle") }),
         message ? JONE.el("p", { textContent: message }) : null,
-        detailList,
         JONE.el("div", { class: "confirm-actions" }, cancelBtn, confirmBtn)
       );
       modal.open({ title, body, onClose: () => { if (!decided) resolve(false); } });

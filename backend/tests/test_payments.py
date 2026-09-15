@@ -112,21 +112,6 @@ class PaymentFlowTests(BaseAPITestCase):
         self.assertIsNone(self.booking.expires_at)  # hold released
 
     @override_settings(PAYSTACK_SECRET_KEY="sk_test_mock")
-    @patch("apps.bookings.services.booking_service.send_email_safe", side_effect=RuntimeError("smtp unavailable"))
-    @patch("apps.payments.services.paystack.verify_transaction")
-    def test_payment_success_survives_confirmation_email_failure(self, mock_verify, _email):
-        payment = self._make_payment()
-        mock_verify.return_value = self._paystack_payload(payment.reference)
-        with self.captureOnCommitCallbacks(execute=True):
-            response = self.client.get(f"/api/payments/verify/{payment.reference}/")
-        self.assertEqual(response.status_code, 200, response.json())
-        payment.refresh_from_db()
-        self.booking.refresh_from_db()
-        self.assertEqual(payment.status, Payment.Status.SUCCESS)
-        self.assertEqual(self.booking.status, Booking.Status.CONFIRMED)
-        self.assertEqual(self.booking.amount_paid, Decimal("50000.00"))
-
-    @override_settings(PAYSTACK_SECRET_KEY="sk_test_mock")
     @patch("apps.payments.services.paystack.verify_transaction")
     def test_verify_is_idempotent(self, mock_verify):
         payment = self._make_payment()
@@ -581,35 +566,6 @@ class PaystackWrapperContractTests(BaseAPITestCase):
         self.assertEqual(kwargs["json"]["amount"], 6_000_000)
         self.assertEqual(kwargs["json"]["currency"], "NGN")
         self.assertNotIn("sk_test_secret", str(kwargs["json"]))
-
-    @override_settings(PAYSTACK_SECRET_KEY="sk_test_secret")
-    @patch("apps.payments.services.paystack.requests.post")
-    def test_initialize_timeout_is_bounded_and_surfaced(self, mock_post):
-        import requests
-        from apps.core.exceptions import PaymentGatewayError
-        from apps.payments.services import paystack
-
-        mock_post.side_effect = requests.Timeout("slow gateway")
-        with self.assertRaises(PaymentGatewayError):
-            paystack.initialize_transaction(
-                email="payer@example.test", amount_kobo=100,
-                reference="J1P-TIMEOUT", callback_url="https://example.test/verify",
-            )
-        self.assertEqual(mock_post.call_args.kwargs["timeout"], (4, 12))
-
-    @override_settings(PAYSTACK_SECRET_KEY="sk_test_secret")
-    @patch("apps.payments.services.paystack.requests.post")
-    def test_initialize_rejects_non_json_response(self, mock_post):
-        from apps.core.exceptions import PaymentGatewayError
-        from apps.payments.services import paystack
-
-        mock_post.return_value.status_code = 502
-        mock_post.return_value.json.side_effect = ValueError("not json")
-        with self.assertRaises(PaymentGatewayError):
-            paystack.initialize_transaction(
-                email="payer@example.test", amount_kobo=100,
-                reference="J1P-NONJSON", callback_url="https://example.test/verify",
-            )
 
     @override_settings(PAYSTACK_SECRET_KEY="sk_test_secret")
     @patch("apps.payments.services.paystack.requests.post")

@@ -21,7 +21,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 # ---------------------------------------------------------------------------
 SECRET_KEY = config("DJANGO_SECRET_KEY", default="django-insecure-dev-only-change-me")
 DEBUG = config("DJANGO_DEBUG", default=False, cast=bool)
-ALLOWED_HOSTS = config("DJANGO_ALLOWED_HOSTS", default="localhost,127.0.0.1,j1-hotel-lodge-backend.onrender.com", cast=Csv())
+ALLOWED_HOSTS = config("DJANGO_ALLOWED_HOSTS", default="localhost,127.0.0.1", cast=Csv())
 
 DJANGO_APPS = [
     "django.contrib.admin",
@@ -334,8 +334,6 @@ PAYMENT_CALLBACK_URL = (
 
 PAYSTACK_SECRET_KEY = config("PAYSTACK_SECRET_KEY", default="")
 PAYSTACK_PUBLIC_KEY = config("PAYSTACK_PUBLIC_KEY", default="")
-PAYSTACK_CONNECT_TIMEOUT = config("PAYSTACK_CONNECT_TIMEOUT", default=4, cast=int)
-PAYSTACK_READ_TIMEOUT = config("PAYSTACK_READ_TIMEOUT", default=12, cast=int)
 # Webhook signature validation uses the secret key per Paystack documentation.
 
 MAX_UPLOAD_MB = config("MAX_UPLOAD_MB", default=5, cast=int)
@@ -381,17 +379,6 @@ CELERY_TASK_EAGER_PROPAGATES = config("CELERY_TASK_EAGER_PROPAGATES", default=Tr
 CELERY_TASK_ACKS_LATE = True
 CELERY_WORKER_PREFETCH_MULTIPLIER = 1
 CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
-# Web requests only publish tiny task identifiers. If Redis is unavailable,
-# fail the publish quickly and record the EmailLog as a queue-stage failure;
-# never let broker retries consume the frontend's request timeout.
-CELERY_BROKER_CONNECTION_TIMEOUT = config("CELERY_BROKER_CONNECTION_TIMEOUT", default=2, cast=int)
-CELERY_BROKER_TRANSPORT_OPTIONS = {
-    "socket_connect_timeout": CELERY_BROKER_CONNECTION_TIMEOUT,
-    "socket_timeout": CELERY_BROKER_CONNECTION_TIMEOUT,
-    "retry_on_timeout": False,
-    "max_retries": 0,
-}
-CELERY_TASK_PUBLISH_RETRY = False
 CELERY_TASK_TIME_LIMIT = 120
 CELERY_TASK_SOFT_TIME_LIMIT = 90
 
