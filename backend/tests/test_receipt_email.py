@@ -72,11 +72,32 @@ class ReceiptEmailTests(BaseAPITestCase):
         msg = mail.outbox[0]
         self.assertIn("guest@example.com", msg.to)
         self.assertIn(self.booking.booking_reference, msg.subject)
-        self.assertEqual(len(msg.attachments), 1)
-        fname, content, mimetype = msg.attachments[0]
-        self.assertTrue(fname.endswith(".pdf"))
-        self.assertEqual(mimetype, "application/pdf")
-        self.assertTrue(content[:5] == b"%PDF-")  # valid PDF header
+        self.assertEqual(msg.subject, f"Payment Receipt — {self.booking.booking_reference}")
+
+        # The itemised PDF is still attached (the inline branding logo is a
+        # separate related part, so locate the PDF explicitly rather than
+        # assuming it is the only attachment).
+        pdfs = [
+            a for a in msg.attachments
+            if getattr(a, "filename", "") and a.filename.endswith(".pdf")
+        ]
+        self.assertEqual(len(pdfs), 1)
+        self.assertEqual(pdfs[0].mimetype, "application/pdf")
+        self.assertTrue(pdfs[0].content[:5] == b"%PDF-")  # valid PDF header
+
+        # A styled HTML alternative is present alongside the plain-text body,
+        # and it is real HTML (never escaped-as-text).
+        self.assertEqual(len(msg.alternatives), 1)
+        html_body, html_type = msg.alternatives[0]
+        self.assertEqual(html_type, "text/html")
+        self.assertIn("<!DOCTYPE html", html_body)
+        self.assertNotIn("&lt;table", html_body)
+
+        # The MIME tree carries the correct multipart/alternative section and
+        # the inline logo under a Content-ID the HTML references.
+        flat = msg.message().as_string()
+        self.assertIn("multipart/alternative", flat)
+        self.assertIn("Content-ID: <jone-logo>", flat)
 
     def test_receipt_contains_correct_details(self):
         self.auth(self.staff)
@@ -103,6 +124,40 @@ class ReceiptEmailTests(BaseAPITestCase):
         # No secret leaked into the stored reason.
         self.assertNotIn("bad creds", log.error_message)
         self.assertEqual(len(mail.outbox), 0)
+        # SMTP is the failure stage (not render / attachment).
+        self.assertEqual(log.failure_stage, EmailLog.FailureStage.SMTP)
+
+    def test_render_failure_is_tracked_failed_never_sent(self):
+        """A receipt that cannot be RENDERED must become a tracked FAILED row
+        and a truthful 502 — never an untracked 500, never SENT, no email out.
+
+        This is the exact class of bug the Windows ``ValueError: Invalid format
+        string`` produced: the render blew up before anything was queued.
+        """
+        self.auth(self.staff)
+        with mock.patch(
+            "apps.bookings.views_admin.render_receipt_email",
+            side_effect=ValueError("Invalid format string"),
+        ):
+            res = self.client.post(self._url())
+        self.assertEqual(res.status_code, 502, res.data)
+        self.assertFalse(res.data["success"])
+        self.assertEqual(res.data["code"], "RECEIPT_RENDER_FAILED")
+        self.assertEqual(res.data["data"]["status"], EmailLog.Status.FAILED)
+        self.assertEqual(
+            res.data["data"]["failure_stage"], EmailLog.FailureStage.RENDER
+        )
+        # A tracked row exists and is FAILED — not SENT.
+        log = EmailLog.objects.get(pk=res.data["data"]["email_log_id"])
+        self.assertEqual(log.status, EmailLog.Status.FAILED)
+        self.assertEqual(log.failure_stage, EmailLog.FailureStage.RENDER)
+        self.assertEqual(log.kind, EmailLog.Kind.RECEIPT)
+        self.assertEqual(log.booking_reference, self.booking.booking_reference)
+        self.assertEqual(log.to_email, "guest@example.com")
+        # Nothing was handed to the mail backend.
+        self.assertEqual(len(mail.outbox), 0)
+        # The stored reason must not leak internals but must be diagnosable.
+        self.assertNotIn("Invalid format string", log.error_message)
 
     def test_transient_failure_schedules_retry_not_false_success(self):
         """A transient SMTP failure must NEVER be reported as sent.

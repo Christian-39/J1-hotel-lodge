@@ -3,6 +3,7 @@ import logging
 from datetime import datetime
 
 from django.db.models import Count, Max, Prefetch, Q
+from django.utils import timezone
 from drf_spectacular.utils import extend_schema
 from rest_framework import generics, status
 from rest_framework.exceptions import NotFound
@@ -29,6 +30,7 @@ from .serializers_admin import (
 )
 from .serializers import ReceiptSerializer
 from .services import booking_service
+from .services.receipt_email import render_receipt_email
 
 logger = logging.getLogger("apps")
 
@@ -400,23 +402,59 @@ class AdminBookingSendReceiptView(APIView):
             )
 
         receipt = ReceiptSerializer().to_representation(booking)
-        payments = "\n".join(
-            f"{p['reference']}: {p['amount']} {p['status']} ({p['paid_at'] or 'date unavailable'})"
-            for p in receipt["payments"]
-        ) or "No successful payment recorded."
         latest_ref = receipt.get("receipt_reference") or receipt["booking_reference"]
-        message = (
-            f"{receipt['hotel']['name']}\n\nPayment receipt for booking {receipt['booking_reference']}\n"
-            f"Guest: {receipt['guest']['name']}\nStay: {receipt['check_in']} to {receipt['check_out']}\n"
-            f"Room: {receipt['room_type']}\nTotal: {receipt['total']} {receipt['currency']}\n"
-            f"Amount paid: {receipt['amount_paid']} {receipt['currency']}\n"
-            f"Outstanding: {receipt['amount_due']} {receipt['currency']}\n\nPayments:\n{payments}\n\n"
-            f"Your itemised receipt is attached as a PDF."
-        )
+        # Presentation lives in the reusable email builder + Django templates:
+        # a professional subject, a plain-text fallback, and a styled HTML body
+        # (all dynamic values auto-escaped). The itemised PDF is still attached
+        # by the delivery worker via ``attach_receipt_pdf=True``.
+        #
+        # Rendering happens BEFORE anything is queued, so a rendering failure
+        # (bad data, a template bug, a cross-platform date bug, …) must be
+        # recorded as a tracked FAILED receipt and reported truthfully — it must
+        # never surface as an untracked 500 and must never be reported as SENT.
+        try:
+            subject, text_body, html_body = render_receipt_email(receipt)
+        except Exception as exc:  # noqa: BLE001 - recorded + surfaced below
+            logger.exception(
+                "Receipt render failed for booking %s (%s)",
+                booking.booking_reference, exc.__class__.__name__,
+            )
+            failed_log = EmailLog.objects.create(
+                to_email=recipient,
+                subject=f"Payment Receipt — {booking.booking_reference}",
+                kind=EmailLog.Kind.RECEIPT,
+                booking_reference=booking.booking_reference,
+                payment_reference=latest_ref,
+                booking_id=booking.id,
+                attach_receipt_pdf=True,
+                created_by=request.user if getattr(request.user, "pk", None) else None,
+                status=EmailLog.Status.FAILED,
+                failure_stage=EmailLog.FailureStage.RENDER,
+                error_class=exc.__class__.__name__,
+                error_message="The receipt could not be generated. No email was sent.",
+                failed_at=timezone.now(),
+            )
+            return Response(
+                {
+                    "success": False,
+                    "code": "RECEIPT_RENDER_FAILED",
+                    "message": "The receipt could not be generated, so no email was sent.",
+                    "data": {
+                        "booking_reference": booking.booking_reference,
+                        "recipient": recipient,
+                        "email_log_id": failed_log.pk,
+                        "status": EmailLog.Status.FAILED,
+                        "failure_stage": EmailLog.FailureStage.RENDER,
+                    },
+                },
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+
         log = send_email_safe(
-            f"Payment receipt — {receipt['booking_reference']}",
-            message,
+            subject,
+            text_body,
             [recipient],
+            html_message=html_body,
             kind=EmailLog.Kind.RECEIPT,
             booking_reference=booking.booking_reference,
             payment_reference=latest_ref,

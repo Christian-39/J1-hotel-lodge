@@ -8,6 +8,9 @@ class EmailLogSerializer(serializers.ModelSerializer):
 
     status_label = serializers.CharField(source="get_status_display", read_only=True)
     kind_label = serializers.CharField(source="get_kind_display", read_only=True)
+    failure_stage_label = serializers.CharField(
+        source="get_failure_stage_display", read_only=True
+    )
 
     class Meta:
         model = EmailLog
@@ -15,7 +18,7 @@ class EmailLogSerializer(serializers.ModelSerializer):
             "id", "kind", "kind_label", "to_email", "subject",
             "booking_reference", "payment_reference",
             "status", "status_label", "retry_count", "max_retries",
-            "error_message", "task_id",
+            "error_message", "failure_stage", "failure_stage_label", "task_id",
             "created_at", "queued_at", "sent_at", "failed_at",
         ]
         read_only_fields = fields

@@ -26,6 +26,19 @@ class EmailLog(models.Model):
         FAILED = "FAILED", "Failed"           # permanent / retries exhausted
         RETRYING = "RETRYING", "Retrying"     # transient failure, will retry
 
+    class FailureStage(models.TextChoices):
+        """WHERE in the pipeline a FAILED/RETRYING email broke.
+
+        This makes an admin able to tell, at a glance, whether the receipt
+        never rendered (a code/data bug), the PDF could not be generated, or the
+        SMTP server rejected the message (a delivery/config problem) — instead
+        of guessing from a generic error string.
+        """
+        NONE = "", "—"
+        RENDER = "RENDER", "Rendering the receipt"
+        ATTACHMENT = "ATTACHMENT", "Generating the PDF attachment"
+        SMTP = "SMTP", "Submitting to the mail server"
+
     class Kind(models.TextChoices):
         RECEIPT = "RECEIPT", "Payment receipt"
         BOOKING_CONFIRMATION = "BOOKING_CONFIRMATION", "Booking confirmation"
@@ -41,6 +54,11 @@ class EmailLog(models.Model):
     to_email = models.EmailField()
     subject = models.CharField(max_length=255)
     body = models.TextField(blank=True, default="")
+    # Optional rich HTML alternative. When present the worker sends a proper
+    # multipart/alternative message (text/plain + text/html); when blank the
+    # message stays a single text/plain part exactly as before. Storing it here
+    # keeps the worker the single source of truth for what actually gets sent.
+    html_body = models.TextField(blank=True, default="")
     kind = models.CharField(
         max_length=32, choices=Kind.choices, default=Kind.GENERIC, db_index=True
     )
@@ -63,6 +81,12 @@ class EmailLog(models.Model):
     error_class = models.CharField(max_length=120, blank=True, default="")
     # Human-readable, credential-free reason (safe to surface to admins).
     error_message = models.TextField(blank=True, default="")
+    # WHERE the failure happened (render / attachment / SMTP). Empty when the
+    # email has not failed. Lets staff distinguish a receipt that never rendered
+    # from one the mail server rejected.
+    failure_stage = models.CharField(
+        max_length=16, choices=FailureStage.choices, blank=True, default=""
+    )
 
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
