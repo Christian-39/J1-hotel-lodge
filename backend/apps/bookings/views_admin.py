@@ -477,8 +477,8 @@ class AdminBookingSendReceiptView(APIView):
             )
 
         # The row is committed before broker publication.  Broker connect and
-        # publish retries are bounded by settings, so this cannot run up to the
-        # 60-second Gunicorn/browser timeout when Upstash is unavailable.
+        # publish retries are bounded by settings, so this finishes below the
+        # 20-second browser and 30-second Gunicorn deadlines when Upstash fails.
         dispatch_email_log(log)
 
         from apps.audit.services import log_action

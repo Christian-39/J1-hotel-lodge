@@ -31,16 +31,19 @@
      outcome (SENT / FAILED) instead of a blind "queued". Bounded attempts. */
   function pollReceiptStatus(logId, onUpdate) {
     var attempts = 0;
-    var max = 8;
+    // SMTP retries are scheduled at 30s, 60s and 120s. Keep polling for five
+    // minutes so the modal can show the terminal SENT/FAILED state rather than
+    // stopping while EmailLog truthfully says RETRYING.
+    var max = 60;
     function tick() {
       attempts += 1;
       window.API.getEmailLog(logId).then(function (res) {
         var d = (res && res.data) || {};
         onUpdate(d);
         if (d.status === "SENT" || d.status === "FAILED" || attempts >= max) return;
-        setTimeout(tick, 2500);
+        setTimeout(tick, 5000);
       }).catch(function () {
-        if (attempts < max) setTimeout(tick, 2500);
+        if (attempts < max) setTimeout(tick, 5000);
       });
     }
     setTimeout(tick, 2500);
@@ -118,17 +121,42 @@
             status.textContent = "Receipt sent — the mail server accepted the message for " + guestEmail + ".";
             JONE.ui.toast("Receipt email delivered to " + guestEmail + ".", "success");
           } else if (d.status === "FAILED") {
-            status.textContent = "Delivery failed: " + (d.error_message || "the mail server rejected the message.");
+            if (d.failure_stage === "ATTACHMENT" || d.failure_stage === "RENDER") {
+              status.textContent = "The receipt PDF could not be generated. No email was sent.";
+            } else if (d.failure_stage === "BROKER") {
+              status.textContent = "The receipt could not be queued because the email service is unavailable. No email was sent.";
+            } else {
+              status.textContent = "Delivery failed: " + (d.error_message || "the mail server rejected the message.");
+            }
             JONE.ui.toast("Receipt email could not be delivered.", "error");
+          } else if (d.status === "RETRYING") {
+            status.textContent = "The email service is retrying a temporary delivery failure.";
           }
         });
       }
     }
 
     function fail(err) {
-      status.textContent = "Unable to queue receipt: " +
-        ((err && err.message) || "the email service could not be reached. Please try again.");
-      JONE.ui.toast("Receipt could not be sent — please retry.", "error", { assertive: true });
+      var envelope = err && err.data;
+      var details = envelope && envelope.data;
+      var stage = (details && details.failure_stage) || "";
+      var message;
+      if (stage === "BROKER" || (err && err.code === "EMAIL_BROKER_UNAVAILABLE")) {
+        message = "The receipt could not be queued because the email service is temporarily unavailable. No email was sent.";
+      } else if (stage === "RENDER" || stage === "ATTACHMENT") {
+        message = "The receipt PDF could not be generated. No email was sent.";
+      } else if (stage === "SMTP") {
+        message = (details && details.error) || (err && err.message) ||
+          "The email server rejected the message. No email was sent.";
+      } else if (err && err.kind === "timeout") {
+        message = "The server did not respond in time. Check the email log before retrying because the request may already have been processed.";
+      } else if (err && (err.kind === "network" || err.kind === "offline")) {
+        message = "No response was received. Check the email log before retrying because the request outcome is unknown.";
+      } else {
+        message = (err && err.message) || "The receipt could not be processed. No email was sent.";
+      }
+      status.textContent = message;
+      JONE.ui.toast("Receipt email was not confirmed. Review the status before retrying.", "error", { assertive: true });
     }
 
     sendBtn.addEventListener("click", async function () {
@@ -144,6 +172,15 @@
           finalLabel = "Retry";
         } else if (payload.status === "IN_PROGRESS") {
           status.textContent = "A receipt for this booking is already being processed.";
+          if (payload.email_log_id) {
+            pollReceiptStatus(payload.email_log_id, function (d) {
+              if (d.status === "SENT") {
+                status.textContent = "Receipt sent — the mail server accepted the message for " + guestEmail + ".";
+              } else if (d.status === "FAILED") {
+                status.textContent = "Delivery failed: " + (d.error_message || "no email was sent.");
+              }
+            });
+          }
           sendBtn.textContent = "Done";
           sendBtn.onclick = function () { JONE.ui.modal.close(); };
           finalLabel = "Done";

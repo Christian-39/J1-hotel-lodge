@@ -88,7 +88,7 @@ services:
     runtime: python
     plan: starter
     buildCommand: "./build.sh"
-    startCommand: "gunicorn config.wsgi:application --bind 0.0.0.0:$PORT --workers 3 --timeout 60"
+    startCommand: "gunicorn config.wsgi:application --bind 0.0.0.0:$PORT --workers 3 --threads 2 --worker-class gthread --timeout 30 --max-requests 1000 --max-requests-jitter 50"
     healthCheckPath: /api/health/
     envVars:
       - fromGroup: jone-shared
