@@ -322,19 +322,7 @@ MEDIA_ROOT = BASE_DIR / "media"
 CORS_ALLOWED_ORIGINS = config("CORS_ALLOWED_ORIGINS", default="", cast=Csv())
 CSRF_TRUSTED_ORIGINS = config("CSRF_TRUSTED_ORIGINS", default="", cast=Csv())
 CORS_ALLOW_CREDENTIALS = False  # JWT travels in Authorization headers, not cookies
-# Custom request headers the independently hosted frontend sends. Keeping this
-# list explicit (instead of CORS_ALLOW_ALL_HEADERS) matters: a browser rejects
-# the ENTIRE request when a sent header is not allowed by the preflight —
-# losing any of these silently breaks the matching feature cross-origin:
-#   x-guest-access-token          guest self-service booking/payment access
-#   x-cancellation-access-token   cancellation status lookup (Contact flow)
-#   idempotency-key               safe booking-creation retries
-CORS_ALLOW_HEADERS = (
-    *default_headers,
-    "x-guest-access-token",
-    "x-cancellation-access-token",
-    "idempotency-key",
-)
+CORS_ALLOW_HEADERS = (*default_headers, "x-guest-access-token")
 
 # ---------------------------------------------------------------------------
 # Application configuration
@@ -368,61 +356,29 @@ EMAIL_HOST_USER = config("EMAIL_HOST_USER", default="")
 EMAIL_HOST_PASSWORD = config("EMAIL_HOST_PASSWORD", default="")
 # Connection timeout so a stuck SMTP handshake fails fast (and, in a Celery
 # task, is retried) instead of hanging the worker.
-EMAIL_TIMEOUT = config("EMAIL_TIMEOUT", default=60, cast=int)
+EMAIL_TIMEOUT = config("EMAIL_TIMEOUT", default=20, cast=int)
 DEFAULT_FROM_EMAIL = config("DEFAULT_FROM_EMAIL", default="J-ONE HOTEL & LODGE <agbo33010@gmail.com>")
 SERVER_EMAIL = DEFAULT_FROM_EMAIL
 # Comma-separated operational inbox(es) for cancellation/enquiry alerts.
 HOTEL_NOTIFICATION_EMAILS = config("HOTEL_NOTIFICATION_EMAILS", default="", cast=Csv())
 EMAIL_BACKEND = config(
     "EMAIL_BACKEND",
-    default="django.core.mail.backends.smtp.EmailBackend",
+    default="django.core.mail.backends.console.EmailBackend",
 )
 
 # --- Celery / cache --------------------------------------------------------
-# REDIS_URL drives PRODUCTION Celery (broker + result backend) and the
-# production Redis cache. Development settings replace ALL of these with
-# eager in-process execution and no result backend, so a developer without a
-# running Redis server never sees broker reconnect loops (see
-# config/settings/development.py).
 REDIS_URL = config("REDIS_URL", default="redis://127.0.0.1:6379/0")
 CELERY_BROKER_URL = REDIS_URL
 CELERY_RESULT_BACKEND = REDIS_URL
 CELERY_TASK_ALWAYS_EAGER = config("CELERY_TASK_ALWAYS_EAGER", default=False, cast=bool)
-# In eager mode failures are recorded on the EmailLog row (and visible to
-# staff) instead of being re-raised into the caller — the delivery helper in
-# apps.core.emails handles its own outcome reporting.
-CELERY_TASK_EAGER_PROPAGATES = config("CELERY_TASK_EAGER_PROPAGATES", default=False, cast=bool)
-# Eager results are in-memory only; nothing is ever written to a result store
-# in development (this is also forced off in the development settings).
-CELERY_TASK_STORE_EAGER_RESULT = False
+# Propagate exceptions from eager tasks so failures are never silently
+# swallowed when running in-process (development / tests).
+CELERY_TASK_EAGER_PROPAGATES = config("CELERY_TASK_EAGER_PROPAGATES", default=True, cast=bool)
 # A task is only acknowledged after it returns — a worker crash mid-delivery
 # re-queues the job rather than losing it.
 CELERY_TASK_ACKS_LATE = True
 CELERY_WORKER_PREFETCH_MULTIPLIER = 1
 CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
-# Publishing is part of the HTTP path, so it must be tightly bounded.  Kombu's
-# defaults can spend close to (or beyond) Gunicorn's 60-second request limit in
-# reconnect loops when DNS, TLS, authentication, or the broker is broken.  A
-# healthy managed Redis connection normally completes well below one second;
-# allow five seconds per connection attempt and one retry for a transient
-# network flap.  A real outage therefore becomes a tracked FAILED/BROKER result
-# in roughly ten seconds instead of an ambiguous browser timeout.
-CELERY_BROKER_CONNECTION_TIMEOUT = config(
-    "CELERY_BROKER_CONNECTION_TIMEOUT", default=5, cast=float
-)
-CELERY_BROKER_TRANSPORT_OPTIONS = {
-    "socket_connect_timeout": CELERY_BROKER_CONNECTION_TIMEOUT,
-    "socket_timeout": CELERY_BROKER_CONNECTION_TIMEOUT,
-    "retry_on_timeout": False,
-    "health_check_interval": 30,
-}
-CELERY_TASK_PUBLISH_RETRY = True
-CELERY_TASK_PUBLISH_RETRY_POLICY = {
-    "max_retries": 1,
-    "interval_start": 0,
-    "interval_step": 0.5,
-    "interval_max": 0.5,
-}
 CELERY_TASK_TIME_LIMIT = 120
 CELERY_TASK_SOFT_TIME_LIMIT = 90
 
