@@ -368,14 +368,18 @@ EMAIL_HOST_USER = config("EMAIL_HOST_USER", default="")
 EMAIL_HOST_PASSWORD = config("EMAIL_HOST_PASSWORD", default="")
 # Connection timeout so a stuck SMTP handshake fails fast (and, in a Celery
 # task, is retried) instead of hanging the worker.
+<<<<<<< Updated upstream
 EMAIL_TIMEOUT = config("EMAIL_TIMEOUT", default=40, cast=int)
+=======
+EMAIL_TIMEOUT = config("EMAIL_TIMEOUT", default=20, cast=int)
+>>>>>>> Stashed changes
 DEFAULT_FROM_EMAIL = config("DEFAULT_FROM_EMAIL", default="J-ONE HOTEL & LODGE <agbo33010@gmail.com>")
 SERVER_EMAIL = DEFAULT_FROM_EMAIL
 # Comma-separated operational inbox(es) for cancellation/enquiry alerts.
 HOTEL_NOTIFICATION_EMAILS = config("HOTEL_NOTIFICATION_EMAILS", default="", cast=Csv())
 EMAIL_BACKEND = config(
     "EMAIL_BACKEND",
-    default="django.core.mail.backends.smtp.EmailBackend",
+    default="django.core.mail.backends.console.EmailBackend",
 )
 
 # --- Celery / cache --------------------------------------------------------
