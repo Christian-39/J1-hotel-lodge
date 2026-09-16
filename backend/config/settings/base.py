@@ -400,6 +400,29 @@ CELERY_TASK_STORE_EAGER_RESULT = False
 CELERY_TASK_ACKS_LATE = True
 CELERY_WORKER_PREFETCH_MULTIPLIER = 1
 CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
+# Publishing is part of the HTTP path, so it must be tightly bounded.  Kombu's
+# defaults can spend close to (or beyond) Gunicorn's 60-second request limit in
+# reconnect loops when DNS, TLS, authentication, or the broker is broken.  A
+# healthy managed Redis connection normally completes well below one second;
+# allow five seconds per connection attempt and one retry for a transient
+# network flap.  A real outage therefore becomes a tracked FAILED/BROKER result
+# in roughly ten seconds instead of an ambiguous browser timeout.
+CELERY_BROKER_CONNECTION_TIMEOUT = config(
+    "CELERY_BROKER_CONNECTION_TIMEOUT", default=5, cast=float
+)
+CELERY_BROKER_TRANSPORT_OPTIONS = {
+    "socket_connect_timeout": CELERY_BROKER_CONNECTION_TIMEOUT,
+    "socket_timeout": CELERY_BROKER_CONNECTION_TIMEOUT,
+    "retry_on_timeout": False,
+    "health_check_interval": 30,
+}
+CELERY_TASK_PUBLISH_RETRY = True
+CELERY_TASK_PUBLISH_RETRY_POLICY = {
+    "max_retries": 1,
+    "interval_start": 0,
+    "interval_step": 0.5,
+    "interval_max": 0.5,
+}
 CELERY_TASK_TIME_LIMIT = 120
 CELERY_TASK_SOFT_TIME_LIMIT = 90
 

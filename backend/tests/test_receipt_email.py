@@ -10,6 +10,7 @@ from decimal import Decimal
 from unittest import mock
 
 from django.core import mail
+from django.test import override_settings
 from django.utils import timezone
 
 from apps.accounts.models import User
@@ -218,6 +219,66 @@ class ReceiptEmailTests(BaseAPITestCase):
         ):
             result = deliver_email_log(log.pk, allow_retry=True)
         self.assertEqual(result, EmailLog.Status.FAILED)  # permanent → no RETRYING
+
+    def test_pdf_generation_failure_is_tracked_as_attachment(self):
+        self.auth(self.staff)
+        with mock.patch(
+            "apps.bookings.services.receipt_pdf.render_receipt_pdf",
+            side_effect=OSError("asset unavailable"),
+        ):
+            res = self.client.post(self._url())
+        self.assertEqual(res.status_code, 502, res.data)
+        log = EmailLog.objects.latest("id")
+        self.assertEqual(log.status, EmailLog.Status.FAILED)
+        self.assertEqual(log.failure_stage, EmailLog.FailureStage.ATTACHMENT)
+        self.assertEqual(len(mail.outbox), 0)
+
+    @override_settings(CELERY_TASK_ALWAYS_EAGER=False)
+    def test_production_path_publishes_and_returns_queued(self):
+        self.auth(self.staff)
+        async_result = mock.Mock(id="probe-task-id")
+        with mock.patch(
+            "apps.notifications.tasks.send_email_task.delay", return_value=async_result
+        ) as delay:
+            res = self.client.post(self._url())
+        self.assertEqual(res.status_code, 202, res.data)
+        self.assertEqual(res.data["data"]["status"], EmailLog.Status.QUEUED)
+        log = EmailLog.objects.get(pk=res.data["data"]["email_log_id"])
+        delay.assert_called_once_with(log.pk)
+        self.assertEqual(log.task_id, "probe-task-id")
+        self.assertEqual(len(mail.outbox), 0)  # worker, not web, sends it
+
+    @override_settings(CELERY_TASK_ALWAYS_EAGER=False)
+    def test_production_broker_failure_fails_fast_and_is_machine_readable(self):
+        self.auth(self.staff)
+        with mock.patch(
+            "apps.notifications.tasks.send_email_task.delay",
+            side_effect=ConnectionError("broker unavailable"),
+        ):
+            res = self.client.post(self._url())
+        self.assertEqual(res.status_code, 503, res.data)
+        self.assertEqual(res.data["code"], "EMAIL_BROKER_UNAVAILABLE")
+        self.assertEqual(res.data["data"]["failure_stage"], "BROKER")
+        log = EmailLog.objects.latest("id")
+        self.assertEqual(log.status, EmailLog.Status.FAILED)
+        self.assertEqual(log.failure_stage, EmailLog.FailureStage.BROKER)
+        self.assertEqual(len(mail.outbox), 0)
+
+    def test_existing_inflight_receipt_returns_same_log_without_duplicate(self):
+        existing = EmailLog.objects.create(
+            to_email=self.guest.email,
+            subject="Payment Receipt",
+            kind=EmailLog.Kind.RECEIPT,
+            booking_reference=self.booking.booking_reference,
+            status=EmailLog.Status.QUEUED,
+        )
+        self.auth(self.staff)
+        res = self.client.post(self._url())
+        self.assertEqual(res.status_code, 200, res.data)
+        self.assertEqual(res.data["data"]["status"], "IN_PROGRESS")
+        self.assertEqual(res.data["data"]["email_log_id"], existing.pk)
+        self.assertEqual(EmailLog.objects.count(), 1)
+        self.assertEqual(len(mail.outbox), 0)
 
     # -- Guard rails --------------------------------------------------------
     def test_missing_guest_email_rejected(self):

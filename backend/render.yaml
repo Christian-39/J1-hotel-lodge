@@ -30,7 +30,9 @@ envVarGroups:
       - key: DATABASE_URL
         sync: false          # mysql://...
       - key: REDIS_URL
-        sync: false          # from Render Redis — Celery broker + result backend
+        sync: false          # Upstash rediss://...:6379 — Celery broker + result backend
+      - key: CELERY_BROKER_CONNECTION_TIMEOUT
+        value: "5"           # bounded web-service broker publication
       - key: FRONTEND_URL
         sync: false          # e.g. https://jonehotel.vercel.app
       - key: PAYMENT_CALLBACK_URL
@@ -72,6 +74,8 @@ envVarGroups:
         sync: false          # Brevo SMTP login, e.g. 9xxxxx@smtp-brevo.com
       - key: EMAIL_HOST_PASSWORD
         sync: false          # Brevo SMTP key (NOT the account password)
+      - key: EMAIL_TIMEOUT
+        value: "20"
       - key: DEFAULT_FROM_EMAIL
         sync: false          # a Brevo-VERIFIED sender, e.g. "J-ONE HOTEL & LODGE <no-reply@yourdomain.com>"
       - key: HOTEL_NOTIFICATION_EMAILS

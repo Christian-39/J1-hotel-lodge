@@ -111,6 +111,9 @@ def _build_attachment(log):
         receipt = ReceiptSerializer().to_representation(booking)
         pdf_bytes = render_receipt_pdf(receipt)
         if pdf_bytes:
+            logger.info(
+                "RECEIPT_PDF_GENERATED id=%s bytes=%s", log.pk, len(pdf_bytes)
+            )
             return (f"receipt-{booking.booking_reference}.pdf", pdf_bytes)
     except Exception as exc:
         # Attachment failure must NOT masquerade as a delivered receipt.
@@ -140,6 +143,10 @@ def deliver_email_log(log_id, *, allow_retry=True, task=None):
         logger.info("EmailLog#%s already SENT; skipping duplicate", log_id)
         return EmailLog.Status.SENT
 
+    logger.info(
+        "CELERY_RECEIPT_TASK_START id=%s kind=%s booking=%s",
+        log.pk, log.kind, log.booking_reference or "-",
+    )
     EmailLog.objects.filter(pk=log.pk).update(status=EmailLog.Status.SENDING)
 
     # Track WHERE a failure happens so admins can tell an attachment bug apart
@@ -175,6 +182,7 @@ def deliver_email_log(log_id, *, allow_retry=True, task=None):
         if attachment:
             filename, content = attachment
             email.attach(filename, content, "application/pdf")
+        logger.info("SMTP_SEND_START id=%s", log.pk)
         sent = email.send(fail_silently=False)
         if not sent:
             raise RuntimeError("Email backend reported zero messages delivered.")
@@ -191,9 +199,10 @@ def deliver_email_log(log_id, *, allow_retry=True, task=None):
             failed_at=timezone.now(),
         )
         logger.warning(
-            "EmailLog#%s delivery %s: %s (attempt %s/%s)",
+            "EMAILLOG_%s id=%s stage=%s class=%s attempt=%s/%s",
+            "RETRYING" if can_retry else "FAILED",
             log.pk,
-            "will retry" if can_retry else "FAILED",
+            failure_stage,
             exc.__class__.__name__,  # never the message → no credential leakage
             log.retry_count + 1,
             log.max_retries,
@@ -209,9 +218,10 @@ def deliver_email_log(log_id, *, allow_retry=True, task=None):
         error_message="",
         failure_stage="",
     )
+    logger.info("SMTP_SEND_SUCCESS id=%s", log.pk)
     logger.info(
-        "EmailLog#%s SENT kind=%s booking=%s to=%s",
-        log.pk, log.kind, log.booking_reference or "-", log.to_email,
+        "EMAILLOG_SENT id=%s kind=%s booking=%s",
+        log.pk, log.kind, log.booking_reference or "-",
     )
     return EmailLog.Status.SENT
 
@@ -222,6 +232,12 @@ class _RetryRequested(Exception):
     def __init__(self, original):
         super().__init__(str(original.__class__.__name__))
         self.original = original
+
+
+@shared_task(name="apps.notifications.email_pipeline_probe")
+def email_pipeline_probe():
+    """Harmless round-trip probe used by ``manage.py email_pipeline_check``."""
+    return {"ok": True, "task": "apps.notifications.email_pipeline_probe"}
 
 
 @shared_task(

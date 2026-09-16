@@ -3,6 +3,9 @@
 Fails fast on missing critical configuration instead of silently falling back
 to insecure defaults.
 """
+import ssl
+from urllib.parse import urlparse
+
 import dj_database_url
 from decouple import Csv, config
 
@@ -69,7 +72,6 @@ STORAGES["staticfiles"] = {
 
 # A deployed Paystack callback must be public HTTPS, never a development host.
 from django.core.exceptions import ImproperlyConfigured
-from urllib.parse import urlparse
 _callback = urlparse(PAYMENT_CALLBACK_URL)
 if _callback.scheme != "https" or _callback.hostname in {"localhost", "127.0.0.1", None}:
     raise ImproperlyConfigured(
@@ -77,11 +79,39 @@ if _callback.scheme != "https" or _callback.hostname in {"localhost", "127.0.0.1
     )
 
 
-# --- Redis-backed cache (throttles, settings cache, hot public content) ------
+# --- Redis-backed cache / Celery broker -------------------------------------
+# Override base.py's localhost development fallback with a REQUIRED production
+# value.  The old guard could never detect a missing Render variable because
+# base.py had already supplied redis://127.0.0.1:6379/0; the web process then
+# waited on an unreachable local broker until Gunicorn/the browser timed out.
+REDIS_URL = config("REDIS_URL", default="").strip()
+if not REDIS_URL:
+    raise ImproperlyConfigured(
+        "REDIS_URL is required in production for the Celery broker/result backend."
+    )
+_redis = urlparse(REDIS_URL)
+if _redis.scheme not in {"redis", "rediss"} or not _redis.hostname:
+    raise ImproperlyConfigured(
+        "REDIS_URL must be a valid redis:// or rediss:// URL with a hostname."
+    )
+CELERY_BROKER_URL = REDIS_URL
+CELERY_RESULT_BACKEND = REDIS_URL
+
+# Upstash supplies rediss:// endpoints.  Celery/Kombu and redis-py support
+# these natively; explicitly require certificate verification rather than
+# relying on version-specific defaults.  Credentials are never logged.
+if _redis.scheme == "rediss":
+    CELERY_BROKER_USE_SSL = {"ssl_cert_reqs": ssl.CERT_REQUIRED}
+    CELERY_REDIS_BACKEND_USE_SSL = {"ssl_cert_reqs": ssl.CERT_REQUIRED}
+
 CACHES = {
     "default": {
         "BACKEND": "django.core.cache.backends.redis.RedisCache",
-        "LOCATION": REDIS_URL,  # noqa: F405
+        "LOCATION": REDIS_URL,
+        "OPTIONS": {
+            "socket_connect_timeout": CELERY_BROKER_CONNECTION_TIMEOUT,
+            "socket_timeout": CELERY_BROKER_CONNECTION_TIMEOUT,
+        },
     }
 }
 

@@ -67,6 +67,7 @@ def send_email_safe(
     booking_id=None,
     attach_receipt_pdf=False,
     created_by=None,
+    dispatch=True,
 ):
     """Record + dispatch a transactional email; returns its EmailLog row.
 
@@ -115,12 +116,17 @@ def send_email_safe(
             created_by=created_by if getattr(created_by, "pk", None) else None,
             status=EmailLog.Status.PENDING,
         )
-        _dispatch(row)
+        logger.info(
+            "EMAILLOG_CREATED id=%s kind=%s booking=%s",
+            row.pk, row.kind, row.booking_reference or "-",
+        )
+        if dispatch:
+            dispatch_email_log(row)
         log = log or row
     return log
 
 
-def _dispatch(log):
+def dispatch_email_log(log):
     """Hand a single EmailLog row to the worker, or deliver it in-process.
 
     Must only be called AFTER the row is committed (or from autocommit where
@@ -131,6 +137,7 @@ def _dispatch(log):
     from apps.notifications.tasks import deliver_email_log, send_email_task
 
     if getattr(settings, "CELERY_TASK_ALWAYS_EAGER", False):
+        logger.info("CELERY_EAGER_DELIVERY_START id=%s", log.pk)
         # Eager development/test path: deliver in-process, bypassing Celery's
         # broker AND result backend entirely. Failures (including transient
         # ones) are recorded as FAILED — there is no worker to retry, so
@@ -150,6 +157,7 @@ def _dispatch(log):
 
     # Production path: enqueue on the broker; the Celery worker performs the
     # actual SMTP delivery and records the real outcome.
+    logger.info("BROKER_PUBLISH_START id=%s", log.pk)
     try:
         result = send_email_task.delay(log.pk)
     except Exception as exc:  # noqa: BLE001 - broker unavailable, must not propagate
@@ -171,8 +179,7 @@ def _dispatch(log):
             failed_at=timezone.now(),
         )
         logger.error(
-            "Could not queue email task for EmailLog#%s (%s); recorded as FAILED/BROKER "
-            "- no synchronous fallback was attempted.",
+            "EMAILLOG_FAILED id=%s stage=BROKER class=%s no_smtp_fallback=yes",
             log.pk, exc.__class__.__name__,
         )
         return
@@ -183,6 +190,13 @@ def _dispatch(log):
         task_id=getattr(result, "id", "") or "",
     )
     log.refresh_from_db(fields=["status", "queued_at", "task_id"])
+    logger.info(
+        "BROKER_PUBLISH_SUCCESS id=%s task_id=%s", log.pk, log.task_id or "-"
+    )
+
+
+# Private-name compatibility for the existing requeue management command.
+_dispatch = dispatch_email_log
 
 
 def queue_email(subject, message, recipients, **kwargs):

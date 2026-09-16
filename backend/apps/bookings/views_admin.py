@@ -2,6 +2,7 @@
 import logging
 from datetime import datetime
 
+from django.db import transaction
 from django.db.models import Count, Max, Prefetch, Q
 from django.utils import timezone
 from drf_spectacular.utils import extend_schema
@@ -13,7 +14,7 @@ from rest_framework.views import APIView
 from apps.core.permissions import IsStaffRole
 from apps.core.responses import success_response
 from apps.core.serializers import EmptySerializer
-from apps.core.emails import send_email_safe
+from apps.core.emails import dispatch_email_log, send_email_safe
 from apps.rooms.models import Room
 
 from .models import Booking, BookingRoom, Guest
@@ -382,86 +383,103 @@ class AdminBookingSendReceiptView(APIView):
         if not recipient or not validate_email_address(recipient):
             raise ValidationError({"email": ["This guest has no valid email address on file."]})
 
-        # Idempotency: block a duplicate while one is already in flight for
-        # this booking. A previous FAILED/SENT does not block an intentional
-        # resend (staff explicitly clicked again).
-        in_flight = EmailLog.objects.filter(
-            booking_reference=booking.booking_reference,
-            kind=EmailLog.Kind.RECEIPT,
-            status__in=[EmailLog.Status.PENDING, EmailLog.Status.QUEUED,
-                        EmailLog.Status.SENDING, EmailLog.Status.RETRYING],
-        ).exists()
-        if in_flight:
-            return success_response(
-                {
-                    "booking_reference": booking.booking_reference,
-                    "recipient": recipient,
-                    "status": "IN_PROGRESS",
-                },
-                message="A receipt email for this booking is already being processed.",
-            )
+        logger.info("RECEIPT_EMAIL_START booking=%s", booking.booking_reference)
 
-        receipt = ReceiptSerializer().to_representation(booking)
-        latest_ref = receipt.get("receipt_reference") or receipt["booking_reference"]
-        # Presentation lives in the reusable email builder + Django templates:
-        # a professional subject, a plain-text fallback, and a styled HTML body
-        # (all dynamic values auto-escaped). The itemised PDF is still attached
-        # by the delivery worker via ``attach_receipt_pdf=True``.
-        #
-        # Rendering happens BEFORE anything is queued, so a rendering failure
-        # (bad data, a template bug, a cross-platform date bug, …) must be
-        # recorded as a tracked FAILED receipt and reported truthfully — it must
-        # never surface as an untracked 500 and must never be reported as SENT.
-        try:
-            subject, text_body, html_body = render_receipt_email(receipt)
-        except Exception as exc:  # noqa: BLE001 - recorded + surfaced below
-            logger.exception(
-                "Receipt render failed for booking %s (%s)",
-                booking.booking_reference, exc.__class__.__name__,
+        # Serialize requests for the same booking at the DATABASE level.  The
+        # previous exists()-then-create sequence was racy: two web workers could
+        # both observe no in-flight row and queue duplicate receipts.  Create a
+        # durable PENDING row while holding the booking row lock, commit it, and
+        # only then publish it so a fast Celery worker can always read the row.
+        with transaction.atomic():
+            booking = (
+                Booking.objects.select_for_update()
+                .select_related("guest", "room_type", "offer")
+                .get(pk=booking.pk)
             )
-            failed_log = EmailLog.objects.create(
-                to_email=recipient,
-                subject=f"Payment Receipt — {booking.booking_reference}",
+            existing = (
+                EmailLog.objects.filter(
+                    booking_reference=booking.booking_reference,
+                    kind=EmailLog.Kind.RECEIPT,
+                    status__in=[
+                        EmailLog.Status.PENDING, EmailLog.Status.QUEUED,
+                        EmailLog.Status.SENDING, EmailLog.Status.RETRYING,
+                    ],
+                )
+                .order_by("-created_at")
+                .first()
+            )
+            if existing:
+                return success_response(
+                    {
+                        "booking_reference": booking.booking_reference,
+                        "recipient": recipient,
+                        "email_log_id": existing.pk,
+                        "status": "IN_PROGRESS",
+                        "delivery_status": existing.status,
+                    },
+                    message="A receipt email for this booking is already being processed.",
+                )
+
+            receipt = ReceiptSerializer().to_representation(booking)
+            latest_ref = receipt.get("receipt_reference") or receipt["booking_reference"]
+            # Rendering happens before queue publication. A rendering failure
+            # remains a tracked terminal row and can never be called "sent".
+            try:
+                subject, text_body, html_body = render_receipt_email(receipt)
+            except Exception as exc:  # noqa: BLE001 - recorded + surfaced below
+                logger.exception(
+                    "EMAILLOG_FAILED booking=%s stage=RENDER class=%s",
+                    booking.booking_reference, exc.__class__.__name__,
+                )
+                failed_log = EmailLog.objects.create(
+                    to_email=recipient,
+                    subject=f"Payment Receipt — {booking.booking_reference}",
+                    kind=EmailLog.Kind.RECEIPT,
+                    booking_reference=booking.booking_reference,
+                    payment_reference=latest_ref,
+                    booking_id=booking.id,
+                    attach_receipt_pdf=True,
+                    created_by=request.user if getattr(request.user, "pk", None) else None,
+                    status=EmailLog.Status.FAILED,
+                    failure_stage=EmailLog.FailureStage.RENDER,
+                    error_class=exc.__class__.__name__,
+                    error_message="The receipt could not be generated. No email was sent.",
+                    failed_at=timezone.now(),
+                )
+                return Response(
+                    {
+                        "success": False,
+                        "code": "RECEIPT_RENDER_FAILED",
+                        "message": "The receipt could not be generated, so no email was sent.",
+                        "data": {
+                            "booking_reference": booking.booking_reference,
+                            "recipient": recipient,
+                            "email_log_id": failed_log.pk,
+                            "status": EmailLog.Status.FAILED,
+                            "failure_stage": EmailLog.FailureStage.RENDER,
+                        },
+                    },
+                    status=status.HTTP_502_BAD_GATEWAY,
+                )
+
+            log = send_email_safe(
+                subject,
+                text_body,
+                [recipient],
+                html_message=html_body,
                 kind=EmailLog.Kind.RECEIPT,
                 booking_reference=booking.booking_reference,
                 payment_reference=latest_ref,
                 booking_id=booking.id,
                 attach_receipt_pdf=True,
-                created_by=request.user if getattr(request.user, "pk", None) else None,
-                status=EmailLog.Status.FAILED,
-                failure_stage=EmailLog.FailureStage.RENDER,
-                error_class=exc.__class__.__name__,
-                error_message="The receipt could not be generated. No email was sent.",
-                failed_at=timezone.now(),
-            )
-            return Response(
-                {
-                    "success": False,
-                    "code": "RECEIPT_RENDER_FAILED",
-                    "message": "The receipt could not be generated, so no email was sent.",
-                    "data": {
-                        "booking_reference": booking.booking_reference,
-                        "recipient": recipient,
-                        "email_log_id": failed_log.pk,
-                        "status": EmailLog.Status.FAILED,
-                        "failure_stage": EmailLog.FailureStage.RENDER,
-                    },
-                },
-                status=status.HTTP_502_BAD_GATEWAY,
+                created_by=request.user,
+                dispatch=False,
             )
 
-        log = send_email_safe(
-            subject,
-            text_body,
-            [recipient],
-            html_message=html_body,
-            kind=EmailLog.Kind.RECEIPT,
-            booking_reference=booking.booking_reference,
-            payment_reference=latest_ref,
-            booking_id=booking.id,
-            attach_receipt_pdf=True,
-            created_by=request.user,
-        )
+        # The row is committed before broker publication.  Broker connect and
+        # publish retries are bounded by settings, so this cannot run up to the
+        # 60-second Gunicorn/browser timeout when Upstash is unavailable.
+        dispatch_email_log(log)
 
         from apps.audit.services import log_action
         log_action(actor=request.user, action="RECEIPT_EMAIL_QUEUED", instance=booking,
@@ -482,10 +500,18 @@ class AdminBookingSendReceiptView(APIView):
             http = status.HTTP_200_OK
         elif current == EmailLog.Status.FAILED:
             payload["error"] = fresh.error_message if fresh else "Delivery failed."
+            payload["failure_stage"] = fresh.failure_stage if fresh else ""
+            code = (
+                "EMAIL_BROKER_UNAVAILABLE"
+                if fresh and fresh.failure_stage == EmailLog.FailureStage.BROKER
+                else "EMAIL_DELIVERY_FAILED"
+            )
             return Response(
-                {"success": False, "code": "EMAIL_DELIVERY_FAILED",
+                {"success": False, "code": code,
                  "message": payload["error"], "data": payload},
-                status=status.HTTP_502_BAD_GATEWAY,
+                status=status.HTTP_503_SERVICE_UNAVAILABLE
+                if code == "EMAIL_BROKER_UNAVAILABLE"
+                else status.HTTP_502_BAD_GATEWAY,
             )
         else:
             msg = "Receipt email queued successfully. Delivery is being processed."
