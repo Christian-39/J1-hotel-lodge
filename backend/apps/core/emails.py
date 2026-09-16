@@ -67,7 +67,6 @@ def send_email_safe(
     booking_id=None,
     attach_receipt_pdf=False,
     created_by=None,
-    direct=False,
 ):
     """Record + dispatch a transactional email; returns its EmailLog row.
 
@@ -116,12 +115,12 @@ def send_email_safe(
             created_by=created_by if getattr(created_by, "pk", None) else None,
             status=EmailLog.Status.PENDING,
         )
-        _dispatch(row, direct=direct)
+        _dispatch(row)
         log = log or row
     return log
 
 
-def _dispatch(log, *, direct=False):
+def _dispatch(log):
     """Hand a single EmailLog row to the worker, or deliver it in-process.
 
     Must only be called AFTER the row is committed (or from autocommit where
@@ -130,22 +129,6 @@ def _dispatch(log, *, direct=False):
     """
     from apps.notifications.models import EmailLog
     from apps.notifications.tasks import deliver_email_log, send_email_task
-
-    if direct:
-        # Staff explicitly requested an immediate send. Perform the same tracked
-        # MIME/PDF/SMTP operation used by the worker, but in this HTTP request;
-        # no broker, Celery task or QUEUED state is involved. With no worker to
-        # honour a countdown, a transient error is truthfully terminal FAILED.
-        try:
-            deliver_email_log(log.pk, allow_retry=False)
-        except Exception as exc:  # status is persisted by deliver_email_log
-            logger.info(
-                "Direct email delivery for EmailLog#%s ended with %s",
-                log.pk, exc.__class__.__name__,
-            )
-        log.refresh_from_db(fields=["status", "sent_at", "failed_at", "error_class",
-                                    "error_message", "failure_stage", "retry_count"])
-        return
 
     if getattr(settings, "CELERY_TASK_ALWAYS_EAGER", False):
         # Eager development/test path: deliver in-process, bypassing Celery's

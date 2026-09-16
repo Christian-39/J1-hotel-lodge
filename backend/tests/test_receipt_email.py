@@ -10,7 +10,6 @@ from decimal import Decimal
 from unittest import mock
 
 from django.core import mail
-from django.test import override_settings
 from django.utils import timezone
 
 from apps.accounts.models import User
@@ -107,23 +106,6 @@ class ReceiptEmailTests(BaseAPITestCase):
         self.assertIn(self.booking.booking_reference, body)
         self.assertIn("Ada Obi", body)
         self.assertIn("Deluxe", body)
-
-    @override_settings(CELERY_TASK_ALWAYS_EAGER=False)
-    def test_staff_send_is_direct_and_never_calls_celery(self):
-        """Production mode must still execute SMTP in the request itself."""
-        self.auth(self.staff)
-        with mock.patch(
-            "apps.notifications.tasks.send_email_task.delay",
-            side_effect=AssertionError("staff send must not enqueue Celery"),
-        ) as delay:
-            res = self.client.post(self._url())
-        self.assertEqual(res.status_code, 200, res.data)
-        delay.assert_not_called()
-        log = EmailLog.objects.get(pk=res.data["data"]["email_log_id"])
-        self.assertEqual(log.status, EmailLog.Status.SENT)
-        self.assertIsNone(log.queued_at)
-        self.assertIsNotNone(log.sent_at)
-        self.assertEqual(len(mail.outbox), 1)
 
     # -- Failure surfaces truthfully ---------------------------------------
     def test_smtp_failure_marks_failed_and_returns_502(self):

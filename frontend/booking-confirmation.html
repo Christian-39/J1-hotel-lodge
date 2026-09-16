@@ -327,12 +327,36 @@
     return {};
   }
 
+  var confirmationCelebrated = false;
+  function celebrateConfirmation() {
+    if (confirmationCelebrated || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    confirmationCelebrated = true;
+    var layer = document.createElement("div");
+    layer.className = "bk-confetti";
+    layer.setAttribute("aria-hidden", "true");
+    var colors = ["#b08d57", "#3f4448", "#d8c7aa", "#f5f1e9"];
+    for (var i = 0; i < 34; i += 1) {
+      var piece = document.createElement("i");
+      piece.className = "bk-confetti-piece";
+      piece.style.setProperty("--confetti-x", ((i * 37) % 101) + "%");
+      piece.style.setProperty("--confetti-color", colors[i % colors.length]);
+      piece.style.setProperty("--confetti-rotate", ((i * 47) % 180) + "deg");
+      piece.style.setProperty("--confetti-duration", (1.8 + (i % 6) * .13) + "s");
+      piece.style.setProperty("--confetti-delay", ((i % 8) * .035) + "s");
+      piece.style.setProperty("--confetti-drift", (((i % 7) - 3) * 13) + "px");
+      layer.appendChild(piece);
+    }
+    document.body.appendChild(layer);
+    window.setTimeout(function () { layer.remove(); }, 2900);
+  }
+
   function renderSuccessView(opts) {
     opts = opts || {};
     show("success-screen");
     showSubstitutionNotice(booking);
-    // Advance the stepper: Payment completed -> Confirmation active.
+    // Advance the stepper and celebrate immediately when Confirmation opens.
     stepper.update(6);
+    celebrateConfirmation();
     fillReceipt();
     // Beautiful J-ONE success toast — ONLY ever called from a backend-
     // confirmed booking (paid, or a nothing-due confirmation). Never from a

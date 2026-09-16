@@ -544,6 +544,15 @@ tr.is-muted { opacity: 0.55; }
 
 /* Hide on DESKTOP, show on mobile (the mirror of .hide-sm). */
 @media (min-width: 721px) { .hide-md { display: none !important; } }
+.receipt-mobile-guest {
+  margin-top: .2rem;
+  color: var(--color-text-muted);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 720px) { .receipt-mobile-guest { display: block; } }
 
 /* Staff cell in the staff table — avatar + name/email, never overflowing. */
 .staff-cell { display: flex; align-items: center; gap: 0.6rem; min-width: 0; }
