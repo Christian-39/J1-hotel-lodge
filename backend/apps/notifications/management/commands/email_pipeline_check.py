@@ -1,7 +1,13 @@
-"""Safe production diagnostic for Redis, Celery publication and workers.
+"""Safe production diagnostic for Redis, the Celery broker and workers.
 
 Run this from a Render shell using the same environment as the web/worker:
     python manage.py email_pipeline_check --publish
+
+Historical note: this command predates synchronous email delivery. Email no
+longer travels through Celery/Redis at all; this is now the health check for
+the Celery infrastructure that still drives the scheduled booking tasks
+(expiry, auto-checkout, checkout warnings), kept under its original name so
+existing runbooks keep working.
 
 No URL, password, SMTP secret, or token is printed.
 """
@@ -11,7 +17,6 @@ from urllib.parse import urlparse
 
 import redis
 from celery import current_app
-from celery.exceptions import TimeoutError as CeleryTimeoutError
 from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 
@@ -61,7 +66,7 @@ class Command(BaseCommand):
         if options["publish"]:
             self._publish(timeout, registered)
 
-        self.stdout.write(self.style.SUCCESS("EMAIL PIPELINE CHECK: PASS"))
+        self.stdout.write(self.style.SUCCESS("CELERY INFRASTRUCTURE CHECK: PASS"))
 
     def _pdf(self, lookup):
         from django.db.models import Q
@@ -145,14 +150,23 @@ class Command(BaseCommand):
                 "WORKER AVAILABILITY: broker is reachable but no Celery worker replied. "
                 "Check the Render worker service boot/restart logs."
             )
+        # The scheduled booking tasks (expiry / auto-checkout) are the work the
+        # worker must be able to execute. Email no longer uses the broker at
+        # all (it is delivered synchronously by the web process), so no email
+        # task is expected here.
+        expected = {
+            "apps.bookings.tasks.expire_pending_bookings",
+            "apps.bookings.tasks.auto_checkout_due_bookings",
+            "apps.bookings.tasks.checkout_due_soon_warnings",
+        }
         missing = [
             name for name, tasks in registered.items()
-            if "apps.notifications.send_email" not in (tasks or [])
+            if not expected.issubset(set(tasks or []))
         ]
         if missing:
             raise CommandError(
-                "TASK REGISTRATION: worker(s) replied but apps.notifications.send_email "
-                "is not registered: " + ", ".join(sorted(missing))
+                "TASK REGISTRATION: worker(s) replied but the scheduled booking tasks "
+                "are not all registered: " + ", ".join(sorted(missing))
             )
         self.stdout.write(self.style.SUCCESS(
             f"  Worker availability/task registration: ok ({len(registered)} worker(s))"
@@ -160,21 +174,13 @@ class Command(BaseCommand):
         return registered
 
     def _publish(self, timeout, registered):
-        from apps.notifications.tasks import email_pipeline_probe
-
+        # Harmless worker round trip that needs no custom task: broadcast ping.
         try:
-            result = email_pipeline_probe.apply_async()
+            replies = current_app.control.inspect(timeout=timeout).ping()
         except Exception as exc:
-            raise CommandError(f"BROKER PUBLISH: failed ({exc.__class__.__name__}).") from None
-        self.stdout.write(self.style.SUCCESS("  Broker publish: ok"))
-        try:
-            value = result.get(timeout=timeout, disable_sync_subtasks=False)
-        except CeleryTimeoutError:
-            raise CommandError(
-                "WORKER AVAILABILITY: task published but no result arrived before timeout."
-            ) from None
-        except Exception as exc:
-            raise CommandError(f"WORKER EXECUTION/RESULT: failed ({exc.__class__.__name__}).") from None
-        if not isinstance(value, dict) or value.get("ok") is not True:
-            raise CommandError("WORKER EXECUTION: probe returned an unexpected result.")
-        self.stdout.write(self.style.SUCCESS("  Worker task/result round trip: ok"))
+            raise CommandError(f"WORKER PING: failed ({exc.__class__.__name__}).") from None
+        if not replies:
+            raise CommandError("WORKER AVAILABILITY: ping received no replies before timeout.")
+        self.stdout.write(self.style.SUCCESS(
+            f"  Worker ping round trip: ok ({len(replies)} worker(s))")
+        )

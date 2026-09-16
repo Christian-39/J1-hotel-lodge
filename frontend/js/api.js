@@ -596,23 +596,23 @@ const API = (() => {
   }
 
   /* Email the receipt for a booking to the guest (staff action).
-     Returns the full response ({ status, data }). A 202 means QUEUED (delivery
-     is being processed by the worker); a 200 with data.status === "SENT" means
-     the email backend actually accepted the message; a 502 throws an APIError
-     carrying the real failure reason. Callers MUST NOT treat "queued" as
-     "delivered". */
+     The backend delivers SYNCHRONOUSLY: it performs the SMTP send during the
+     request and only then answers — 200 with data.status === "SENT" means the
+     mail server actually accepted the message; a 502 throws an APIError
+     carrying a safe version of the real failure reason. There is no queued
+     state in this flow. */
   function sendReceipt(lookup, opts = {}) {
     const base = BOOKINGS_EP();
     if (!base) throw notConfigured("bookings");
-    // Receipt delivery can involve PDF generation and — when the async broker
-    // is unavailable — a synchronous SMTP handshake, which legitimately takes
-    // longer than a normal API call. Use a timeout that matches the server's
-    // request timeout so a slow-but-successful send is not aborted as a false
-    // "timeout" on the client. Callers may still override via opts.timeout.
+    // Receipt delivery involves PDF generation and a real SMTP handshake,
+    // which legitimately takes longer than a normal API call. Use a timeout
+    // that matches the server's request timeout so a slow-but-successful send
+    // is not aborted as a false "timeout" on the client. Callers may still
+    // override via opts.timeout.
     return post(`${base}/${encodeURIComponent(lookup)}/send-receipt/`, {}, { timeout: 60000, ...opts });
   }
 
-  /* Poll the real delivery status of a queued transactional email. */
+  /* Read the recorded delivery state of a transactional email (EmailLog). */
   function getEmailLog(id, opts = {}) {
     return get(`/api/notifications/emails/${encodeURIComponent(id)}/`, opts);
   }

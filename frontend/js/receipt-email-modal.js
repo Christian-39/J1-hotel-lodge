@@ -10,41 +10,22 @@
        → guest / booking details are displayed
        → "Send receipt" → visible "Sending receipt…" state + spinner
        → duplicate submission disabled while in flight
-       → API request → success / failure
-       → "Receipt queued for delivery" (202: honest QUEUED semantics — the
-         worker still has to deliver it) or "Receipt sent" (only when the
-         mail backend actually accepted the message)
-       → failure shows a safe, useful message with a Retry button
+       → API request — the backend now delivers SYNCHRONOUSLY: it performs
+         the SMTP send during the request and answers only with the REAL
+         outcome
+       → "Receipt sent successfully" (only when the mail server actually
+         accepted the message) or an honest failure with a Retry button
 
    Delivery status wording is deliberately precise:
-     QUEUED  → "Receipt queued for delivery"
      SENT    → "Receipt sent"
-     FAILED  → "Unable to queue receipt" + reason + Retry
+     FAILED  → "The email could not be sent. Please retry."
+   (There is no "queued" state in this flow any more.)
    ========================================================================== */
 
 (function () {
   "use strict";
 
   window.JONE = window.JONE || {};
-
-  /* Poll the REAL delivery status of a QUEUED receipt so staff learn the true
-     outcome (SENT / FAILED) instead of a blind "queued". Bounded attempts. */
-  function pollReceiptStatus(logId, onUpdate) {
-    var attempts = 0;
-    var max = 8;
-    function tick() {
-      attempts += 1;
-      window.API.getEmailLog(logId).then(function (res) {
-        var d = (res && res.data) || {};
-        onUpdate(d);
-        if (d.status === "SENT" || d.status === "FAILED" || attempts >= max) return;
-        setTimeout(tick, 2500);
-      }).catch(function () {
-        if (attempts < max) setTimeout(tick, 2500);
-      });
-    }
-    setTimeout(tick, 2500);
-  }
 
   function open(opts) {
     opts = opts || {};
@@ -96,60 +77,43 @@
       closeBtn.disabled = busy;
       if (busy) {
         sendBtn.setAttribute("aria-busy", "true");
-        sendBtn.innerHTML = '<span class="spinner" aria-hidden="true"></span> ' + (label || "Sending receipt\u2026");
+        sendBtn.innerHTML = '<span class="spinner" aria-hidden="true"></span> ' + (label || "Sending receipt…");
       } else {
         sendBtn.removeAttribute("aria-busy");
       }
     }
 
-    function succeed(payload) {
-      var sent = payload.status === "SENT";
-      status.textContent = sent
-        ? "Receipt sent — the mail server accepted the message for " + guestEmail + "."
-        : "Receipt queued for delivery to " + guestEmail + ".";
+    function succeed() {
+      status.textContent = "Receipt sent — the mail server accepted the message for " + guestEmail + ".";
       sendBtn.onclick = function () { JONE.ui.modal.close(); };
-      JONE.ui.toast(
-        sent ? "Receipt sent successfully." : "Receipt queued for delivery.",
-        "success"
-      );
-      if (!sent && payload.email_log_id) {
-        pollReceiptStatus(payload.email_log_id, function (d) {
-          if (d.status === "SENT") {
-            status.textContent = "Receipt sent — the mail server accepted the message for " + guestEmail + ".";
-            JONE.ui.toast("Receipt email delivered to " + guestEmail + ".", "success");
-          } else if (d.status === "FAILED") {
-            status.textContent = "Delivery failed: " + (d.error_message || "the mail server rejected the message.");
-            JONE.ui.toast("Receipt email could not be delivered.", "error");
-          }
-        });
-      }
+      JONE.ui.toast("Email sent successfully.", "success");
     }
 
     function fail(err) {
-      status.textContent = "Unable to queue receipt: " +
-        ((err && err.message) || "the email service could not be reached. Please try again.");
-      JONE.ui.toast("Receipt could not be sent — please retry.", "error", { assertive: true });
+      var reason = (err && err.message) || "the email service could not be reached. Please try again.";
+      status.textContent = /\.$/.test(reason) ? reason : "The email could not be sent. Please retry.";
+      JONE.ui.toast("Email could not be sent. Please retry.", "error", { assertive: true });
     }
 
     sendBtn.addEventListener("click", async function () {
       if (sendBtn.disabled) return;             // duplicate-submit guard
       setBusy(true);
-      status.textContent = "Sending receipt\u2026";
+      status.textContent = "Sending receipt…";
       var finalLabel = "Send receipt";
       try {
         var res = await window.API.sendReceipt(bookingReference);
         var payload = (res && res.data) || {};
-        if (payload.status === "FAILED") {
-          fail({ message: payload.error || "delivery failed at the mail server." });
-          finalLabel = "Retry";
+        if (payload.status === "SENT") {
+          succeed();
+          finalLabel = "Done";
         } else if (payload.status === "IN_PROGRESS") {
           status.textContent = "A receipt for this booking is already being processed.";
           sendBtn.textContent = "Done";
           sendBtn.onclick = function () { JONE.ui.modal.close(); };
           finalLabel = "Done";
         } else {
-          succeed(payload);
-          finalLabel = "Done";
+          fail({ message: payload.error || "delivery failed at the mail server." });
+          finalLabel = "Retry";
         }
       } catch (err) {
         fail(err);

@@ -87,10 +87,9 @@
   var DATA=JONE.dashboard.DATA;
   var tbody=document.querySelector("[data-tbody=receipts]");
 
-  /* Poll the backend for the REAL delivery outcome of a queued receipt email.
-     The API only ever reported "queued" — this confirms whether the Celery
-     worker actually delivered it (SENT) or it FAILED, and tells staff the
-     truth either way. */
+  /* Receipt emails are delivered SYNCHRONOUSLY by the backend (the SMTP send
+     happens inside the send request), so the API response is already the real
+     outcome — SENT or FAILED. No worker, no polling. */
 
   /* Receipts view = verified payment records from /api/admin/payments/.
      Row: { reference, booking_reference, guest_name, provider, amount,
@@ -149,7 +148,7 @@
         if(!guestEmail){JONE.ui.toast("This guest has no email address on file.","error");return;}
         // Shared staff send-receipt modal: opens immediately with guest and
         // booking details, shows a visible sending state, prevents duplicate
-        // submission and reports QUEUED vs SENT truthfully with retry.
+        // submission and reports SENT vs FAILED truthfully with retry.
         if(window.JONE&&JONE.receiptEmailModal){
           JONE.receiptEmailModal.open({
             bookingReference:receipt.booking_reference,

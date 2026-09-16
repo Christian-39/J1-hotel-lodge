@@ -176,6 +176,16 @@
         media = JONE.el("video", { src: item.src, controls: "", autoplay: "", playsinline: "" });
       } else {
         media = JONE.el("img", { src: item.src, alt: item.caption || "" });
+        // Broken/missing images degrade gracefully (icon + note) instead of a
+        // torn-image glyph; Previous/Next keeps working for the rest.
+        media.addEventListener("error", function () {
+          const fallback = JONE.el("div", { class: "lightbox-broken", role: "img",
+            "aria-label": item.caption || "Image unavailable" },
+            JONE.el("span", { class: "lightbox-broken-icon", innerHTML: JONE.icons.get("image") }),
+            JONE.el("p", { textContent: "This image couldn't be loaded." })
+          );
+          if (media.parentNode) media.replaceWith(fallback);
+        }, { once: true });
       }
       const stage = this.wrap.querySelector(".lightbox-stage");
       stage.innerHTML = "";

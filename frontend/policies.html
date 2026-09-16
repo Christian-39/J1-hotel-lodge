@@ -65,6 +65,11 @@
 
   <section class="section">
     <div class="container container-narrow">
+      <!-- Optional admin-configured policy image (hidden until one is
+           uploaded in Hotel Settings; without one the page is unchanged). -->
+      <div class="media" data-site-image-block="policy_image" style="display:none;margin-bottom:2rem;">
+        <img alt="J-ONE Hotel &amp; Lodge" loading="lazy">
+      </div>
       <!-- Policy content renders from the backend (GET /api/hotel/policies/) -->
       <div class="accordion" data-policies>
         <div data-policies-state class="loading-block"><div class="spinner" role="status"></div><p class="muted">Loading policies&hellip;</p></div>
@@ -163,6 +168,7 @@
 <script src="js/theme.js?v=1.1.0"></script>
 <script src="js/ui.js?v=1.1.0"></script>
 <script src="js/hotel-data.js?v=1.1.0"></script>
+<script src="js/site-images.js"></script>
 <script src="js/contact.js?v=1.1.0"></script>
 <script src="js/navigation.js?v=1.1.0"></script>
 <script>JONE.ui.initChrome(); JONE.nav.init();</script>

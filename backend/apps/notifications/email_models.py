@@ -1,12 +1,12 @@
 """Delivery-tracked email log.
 
 Every transactional email (receipts, booking confirmations, cancellations,
-password resets, enquiry/staff alerts) is recorded here BEFORE it is handed to
-the email backend, and the row is updated as the Celery worker actually
-processes it. This is what makes the difference between "we queued a task" and
-"the guest's mail server accepted the message" visible to staff — the bug this
-model exists to kill was the dashboard reporting success while the worker
-silently failed to deliver.
+password resets, enquiry/staff alerts) is recorded here BEFORE the SMTP send
+is attempted, and the row is updated with the REAL outcome of that send
+(synchronous delivery from the request process — no queue, no worker). This is
+what makes the difference between "we handed it to something" and "the mail
+server accepted the message" visible to staff — the bug this model exists to
+kill was the dashboard reporting success while delivery had silently failed.
 
 No secrets are ever stored here: SMTP credentials, API keys, tokens and
 passwords must never be written to ``error_message`` or any other field.

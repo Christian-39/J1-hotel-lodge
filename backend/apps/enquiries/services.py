@@ -147,7 +147,7 @@ def _notify_staff_safe(**kwargs):
     except Exception as exc:  # defensive; notifications must not roll back enquiries
         logger.warning("Could not create staff notification (%s)", exc.__class__.__name__)
 
-def _mark_email_queued(enquiry: Enquiry, key: str) -> bool:
+def _mark_email_dispatched(enquiry: Enquiry, key: str) -> bool:
     events = dict(enquiry.email_events or {})
     if events.get(key):
         return False
@@ -157,23 +157,24 @@ def _mark_email_queued(enquiry: Enquiry, key: str) -> bool:
     return True
 
 
-def queue_enquiry_email(enquiry: Enquiry, key: str, *, subject: str, message: str, recipients):
-    """Queue an idempotent enquiry/cancellation email.
+def send_enquiry_email(enquiry: Enquiry, key: str, *, subject: str, message: str, recipients):
+    """Deliver an idempotent enquiry/cancellation email.
 
-    The state flag is committed with the business transition; actual SMTP
-    delivery is queued after commit and may fail/retry without rolling back the
-    booking/payment/refund state.
+    The state flag is committed with the business transition; the SMTP
+    delivery happens after commit (synchronously from this process) and may
+    fail without rolling back the booking/payment/refund state — the outcome
+    is recorded on the EmailLog row.
     """
     recipients = [r for r in (recipients or []) if r]
     if not recipients:
         return False
-    if not _mark_email_queued(enquiry, key):
+    if not _mark_email_dispatched(enquiry, key):
         return False
     queue_email(subject, message, recipients)
     return True
 
 
-def _queue_cancellation_received_emails(enquiry: Enquiry, token: str):
+def _send_cancellation_received_emails(enquiry: Enquiry, token: str):
     hotel = HotelSettings.get_settings()
     status_url = cancellation_status_link(enquiry, token)
     guest_message = (
@@ -185,7 +186,7 @@ def _queue_cancellation_received_emails(enquiry: Enquiry, token: str):
         f"You can check the request status here: {status_url}\n\n"
         f"{hotel.hotel_name}\n{hotel.phone} · {hotel.email}"
     )
-    queue_enquiry_email(
+    send_enquiry_email(
         enquiry, "cancellation_received_guest",
         subject=f"Cancellation request received: {enquiry.cancellation_reference} — {hotel.hotel_name}",
         message=guest_message,
@@ -203,7 +204,7 @@ def _queue_cancellation_received_emails(enquiry: Enquiry, token: str):
         f"Reason:\n{enquiry.cancellation_reason or enquiry.message}\n\n"
         "Review it in the staff Enquiries dashboard before cancelling any booking or initiating a refund."
     )
-    queue_enquiry_email(
+    send_enquiry_email(
         enquiry, "cancellation_received_admin",
         subject=f"Cancellation request received: {enquiry.booking_reference or enquiry.cancellation_reference}",
         message=admin_message,
@@ -258,7 +259,7 @@ def create_enquiry(validated_data, *, request=None):
                 message=f"{enquiry.name} requested cancellation/refund review.",
                 link=_admin_enquiry_link(enquiry),
             )
-            _queue_cancellation_received_emails(enquiry, token)
+            _send_cancellation_received_emails(enquiry, token)
         else:
             _notify_staff_safe(
                 type="ENQUIRY_NEW",
@@ -411,11 +412,11 @@ def approve_cancellation(enquiry_id, *, staff_user, notes="", resolution="", req
         ),
         link=_admin_enquiry_link(enquiry),
     )
-    _queue_cancellation_approved_email(enquiry, booking, policy, payment)
+    _send_cancellation_approved_email(enquiry, booking, policy, payment)
     return enquiry
 
 
-def _queue_cancellation_approved_email(enquiry, booking, policy, payment):
+def _send_cancellation_approved_email(enquiry, booking, policy, payment):
     hotel = HotelSettings.get_settings()
     refund_line = "No refund is due based on the payment record and cancellation policy."
     if policy["refund_amount"] > 0:
@@ -429,7 +430,7 @@ def _queue_cancellation_approved_email(enquiry, booking, policy, payment):
                 f"A refund amount of {booking.currency} {money(policy['refund_amount'])} requires manual handling by the hotel team. "
                 "We will contact you with the next steps."
             )
-    queue_enquiry_email(
+    send_enquiry_email(
         enquiry,
         "cancellation_approved_guest",
         subject=f"Booking cancelled: {booking.booking_reference} — {hotel.hotel_name}",
@@ -478,7 +479,7 @@ def reject_cancellation(enquiry_id, *, staff_user, notes="", resolution="", requ
         link=_admin_enquiry_link(enquiry),
     )
     hotel = HotelSettings.get_settings()
-    queue_enquiry_email(
+    send_enquiry_email(
         enquiry,
         "cancellation_rejected_guest",
         subject=f"Cancellation request update: {enquiry.cancellation_reference} — {hotel.hotel_name}",

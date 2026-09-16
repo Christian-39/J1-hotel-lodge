@@ -240,10 +240,10 @@
       JONE.icons.inject(holder);
       return;
     }
-    holder.innerHTML = out.map(function (r) {
+    holder.innerHTML = out.map(function (r, ri) {
       const name = r.name || "Room";
       const img = r.primary_image_url
-        ? '<div class="media"><img src="' + JONE.esc(r.primary_image_url) + '" alt="' + JONE.esc(name) + '" loading="lazy"></div>'
+        ? '<button type="button" class="media" data-room-img="' + ri + '" aria-label="View photo of ' + JONE.esc(name) + '"><img src="' + JONE.esc(r.primary_image_url) + '" alt="' + JONE.esc(name) + '" loading="lazy"></button>'
         : '<div class="media placeholder"><div class="placeholder-placeholder"><span data-icon="bed" data-size="32"></span></div></div>';
       const amenities = (r.amenities || []).map(function (a) { return a && (a.name || a); }).filter(Boolean).slice(0, 4).join(" · ");
       return '<article class="card card-hover room-card">' + img +
@@ -260,6 +260,15 @@
           '</div>' +
         '</div></article>';
     }).join("");
+    // Room photos open in the shared image-preview modal.
+    holder.querySelectorAll("[data-room-img]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        const r = out[Number(btn.getAttribute("data-room-img"))];
+        if (!r || !r.primary_image_url) return;
+        JONE.ui.lightbox.open(
+          [{ src: r.primary_image_url, caption: r.name || "Room" }], 0);
+      });
+    });
     JONE.icons.inject(holder);
   }
 

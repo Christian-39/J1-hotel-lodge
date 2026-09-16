@@ -105,6 +105,17 @@
         <div class="field"><label class="field-label" for="st-cancelf">Cancellation fee %</label><input class="input" id="st-cancelf" name="cancellation_fee_percent" type="number" step="0.01" min="0" max="100"></div>
       </div>
 
+      <h3 style="font-size:var(--fs-md);margin:1.4rem 0 0.9rem;">Hotel policy</h3>
+      <div class="field">
+        <label class="field-label" for="st-policy">Custom policy text</label>
+        <textarea class="textarea" id="st-policy" name="policy_text" rows="8" placeholder="Leave empty to keep the existing published policy."></textarea>
+        <div class="hint">Plain text only — line breaks and numbering are preserved exactly on the public page.
+          <strong>Leave empty</strong> to keep the existing policy documents; when filled, this text is shown on the
+          <a href="../policies.html" target="_blank" rel="noopener">public policies page</a> instead.</div>
+        <div style="margin-top:0.5rem;"><button class="btn btn-sm btn-outline" type="button" id="st-policy-preview">Preview current public policy</button></div>
+        <div id="st-policy-preview-box" class="notice" style="display:none;margin-top:0.6rem;white-space:pre-line;max-height:16rem;overflow:auto;"></div>
+      </div>
+
       <div class="field-error" id="st-form-error" style="display:none;margin-top:0.75rem;"></div>
       <div style="display:flex;gap:0.6rem;justify-content:flex-end;margin-top:1rem;">
         <button class="btn btn-outline" type="button" id="st-reload">Reload</button>
@@ -112,6 +123,16 @@
       </div>
       <p class="caption" id="st-readonly-note" style="display:none;margin-top:0.75rem;">View-only — only administrators can change hotel settings.</p>
     </form>
+  </div>
+</section>
+
+<section class="panel" style="max-width:860px;margin-top:1.5rem;">
+  <div class="panel-head"><h2>Website images</h2></div>
+  <div class="panel-body">
+    <p class="muted" style="margin-top:0;">Optional replacements for the public site&rsquo;s images. Until a custom
+      image is uploaded, the site keeps showing its built-in image — uploading can never blank the site.</p>
+    <div id="si-list"><div class="loading-block"><div class="spinner" role="status"></div><p class="muted">Loading images&hellip;</p></div></div>
+    <p class="caption" id="si-readonly-note" style="display:none;margin-top:0.75rem;">View-only — only administrators can change website images.</p>
   </div>
 </section>
     </div>
@@ -149,7 +170,7 @@
     "phone","email","google_maps_url","google_review_url","social_links","check_in_time","check_out_time",
     "min_stay_nights","max_stay_nights","currency","tax_rate_percent","service_fee",
     "deposit_percent","pending_booking_minutes","cancellation_deadline_hours",
-    "cancellation_fee_percent"];
+    "cancellation_fee_percent","policy_text"];
 
   function role(){
     // Single source of truth for the signed-in profile: auth.js state.
@@ -188,6 +209,7 @@
       }
       hide("st-loading"); show("st-form");
       JONE.icons.inject($("st-form"));
+      renderImageManager();
     }catch(err){
       hide("st-loading");
       $("st-error").innerHTML = '<div class="empty-state"><span data-icon="alertTriangle" data-size="34"></span><h3>Settings couldn\'t be loaded</h3><p>' + ((err&&err.message)||"Please refresh the page.") + '</p></div>';
@@ -242,6 +264,128 @@
       JONE.ui.toast(msg, "error");
     }finally{ JONE.releaseGuard(btn); }
   });
+
+  /* ----- Policy: live preview of what the public page currently shows ----- */
+  $("st-policy-preview").addEventListener("click", async function () {
+    var box = $("st-policy-preview-box");
+    if (box.style.display !== "none") { box.style.display = "none"; this.textContent = "Preview current public policy"; return; }
+    this.disabled = true;
+    try {
+      var res = await window.API.getPolicies();
+      var list = (res && res.data) || [];
+      box.textContent = list.map(function (p) { return "— " + (p.title || "Policy") + " —\n" + (p.content || ""); }).join("\n\n") || "No policies published.";
+      box.style.display = "block";
+      this.textContent = "Hide preview";
+    } catch (err) {
+      JONE.ui.toast((err && err.message) || "Couldn't load the public policy.", "error");
+    } finally { this.disabled = false; }
+  });
+
+  /* ----------------------- Website image manager ----------------------- */
+  var IMAGE_FIELDS = [
+    { key: "hero_image", label: "Homepage hero image", fallback: "../assets/images/hero-1.jpg",
+      note: "Replaces the built-in hero slideshow on the homepage while set." },
+    { key: "intro_image", label: "Homepage welcome image", fallback: "../assets/images/intro.jpg" },
+    { key: "experience_image", label: "Homepage experience image", fallback: "../assets/images/experience.jpg" },
+    { key: "location_image", label: "Homepage location image", fallback: "../assets/images/location.jpg" },
+    { key: "policy_image", label: "Policy page image", fallback: "",
+      note: "Shown at the top of the policies page only when configured." },
+    { key: "contact_image", label: "Contact page image", fallback: "",
+      note: "Shown on the contact page only when configured." }
+  ];
+
+  function imageRow(spec) {
+    var customUrl = current[spec.key + "_url"];
+    var wrap = JONE.el("div", { class: "field", style: "border-top:1px solid var(--border,rgba(0,0,0,.08));padding-top:1rem;margin-top:1rem;" });
+    var preview = JONE.el("img", {
+      alt: spec.label,
+      style: "width:220px;max-width:100%;height:132px;object-fit:cover;border-radius:8px;display:block;background:var(--surface-alt,#eee);"
+    });
+    preview.src = customUrl || spec.fallback || "";
+    if (!customUrl && !spec.fallback) preview.style.display = "none";
+    preview.addEventListener("click", function () {
+      if (preview.src) JONE.ui.lightbox.open([{ src: preview.src, caption: spec.label }], 0);
+    });
+    preview.style.cursor = "zoom-in";
+    preview.onerror = function () { preview.style.display = "none"; };
+
+    var badge = JONE.el("span", {
+      class: "badge",
+      textContent: customUrl ? "Custom image" : (spec.fallback ? "Built-in default" : "No image (page shows none)")
+    });
+    var file = JONE.el("input", { class: "input", type: "file", accept: "image/*", style: "max-width:320px;" });
+    file.disabled = !isAdmin;
+    file.addEventListener("change", function () {
+      if (file.files && file.files[0]) {
+        preview.style.display = "";
+        preview.src = URL.createObjectURL(file.files[0]);   // local pre-upload preview
+      }
+    });
+
+    var status = JONE.el("p", { class: "caption", role: "status", "aria-live": "polite" });
+    var saveBtn = JONE.el("button", { class: "btn btn-sm btn-accent", type: "button", textContent: "Save image" });
+    var removeBtn = JONE.el("button", { class: "btn btn-sm btn-outline", type: "button", textContent: "Remove custom image" });
+    saveBtn.disabled = !isAdmin;
+    removeBtn.disabled = !isAdmin || !customUrl;
+
+    saveBtn.addEventListener("click", async function () {
+      if (!file.files || !file.files[0]) { JONE.ui.toast("Choose an image file first.", "warning"); return; }
+      var f = file.files[0];
+      if (!/^image\//.test(f.type)) { JONE.ui.toast("Please choose a valid image file.", "error"); return; }
+      saveBtn.disabled = true; status.textContent = "Uploading…";
+      try {
+        var fd = new FormData();
+        fd.append(spec.key, f);
+        var res = await window.API.patch(EP, fd);
+        current = res.data || current;
+        JONE.ui.toast(spec.label + " saved.", "success");
+        renderImageManager();
+      } catch (err) {
+        status.textContent = "";
+        JONE.ui.toast((err && err.message) || "The image couldn't be saved.", "error");
+        saveBtn.disabled = false;
+      }
+    });
+
+    removeBtn.addEventListener("click", async function () {
+      var ok = await JONE.ui.confirm({
+        title: "Remove custom image",
+        message: "The built-in default image will be used again for “" + spec.label + "”.",
+        confirmText: "Remove"
+      });
+      if (!ok) return;
+      removeBtn.disabled = true;
+      try {
+        var patch = {}; patch[spec.key] = null;
+        var res = await window.API.patch(EP, patch);
+        current = res.data || current;
+        JONE.ui.toast(spec.label + " reset to the default.", "success");
+        renderImageManager();
+      } catch (err) {
+        JONE.ui.toast((err && err.message) || "Couldn't remove the image.", "error");
+        removeBtn.disabled = false;
+      }
+    });
+
+    var kids = [
+      JONE.el("label", { class: "field-label", textContent: spec.label }), " ",
+      badge,
+      JONE.el("div", { style: "margin:0.6rem 0;" }, preview),
+      JONE.el("div", { class: "note", style: "display:flex;gap:0.6rem;flex-wrap:wrap;align-items:center;" }, file, saveBtn, removeBtn)
+    ];
+    if (spec.note) kids.push(JONE.el("div", { class: "hint", textContent: spec.note }));
+    kids.push(status);
+    kids.forEach(function (k) { wrap.appendChild(k instanceof Node ? k : document.createTextNode(k)); });
+    return wrap;
+  }
+
+  function renderImageManager() {
+    var list = $("si-list");
+    if (!list || !current) return;
+    list.innerHTML = "";
+    IMAGE_FIELDS.forEach(function (spec) { list.appendChild(imageRow(spec)); });
+    if (!isAdmin) show("si-readonly-note");
+  }
 
   $("st-reload").addEventListener("click", load);
   load();

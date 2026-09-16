@@ -235,16 +235,33 @@
     setState("error", '<div class="empty-state"><span data-icon="alertTriangle" data-size="42"></span><h3>We couldn\'t load this room</h3><p>Please try again in a moment, or browse our <a href="rooms.html">available rooms</a>.</p></div>');
   }
 
+  /* Every photo of this room/room type as shared-modal items (prev/next). */
+  function zoomItems(r) {
+    var imgs = r.images || r.gallery || [];
+    return imgs.map(function (src) {
+      return {
+        src: (src && (src.image_url || src.image)) || src,
+        caption: (src && (src.alt_text || src.caption)) || r.name || "Room"
+      };
+    }).filter(function (i) { return !!i.src; });
+  }
+
   function buildThumbs(r) {
     var imgs = r.images || r.gallery || [];
     var holder = document.getElementById("room-thumbs");
     if (!holder) return;
     holder.innerHTML = "";
     if (imgs && imgs.length) {
-      imgs.slice(0, 4).forEach(function (src) {
-        var d = document.createElement("div");
+      var items = zoomItems(r);
+      imgs.slice(0, 4).forEach(function (src, i) {
+        var d = document.createElement("button");
+        d.type = "button";
         d.className = "media";
+        d.setAttribute("aria-label", "View photo of " + (r.name || "Room"));
         d.innerHTML = '<img src="' + JONE.esc(src.image_url || src.image || src) + '" alt="' + JONE.esc(r.name) + '" loading="lazy">';
+        d.addEventListener("click", function () {
+          JONE.ui.lightbox.open(items, Math.min(i, items.length - 1));
+        });
         holder.appendChild(d);
       });
     } else {
@@ -261,11 +278,24 @@
     var hero = document.getElementById("room-hero");
     if (!hero) return;
     var imgs = r.images || r.gallery || [];
-    var primary = imgs.find(function (i) { return i && i.is_primary; }) || imgs[0];
+    var primaryIndex = Math.max(0, imgs.findIndex(function (i) { return i && i.is_primary; }));
+    var primary = imgs[primaryIndex];
     var url = primary && (primary.image_url || primary.image || primary);
-    hero.innerHTML = url
-      ? '<img src="' + JONE.esc(url) + '" alt="' + JONE.esc(r.name || "Room") + '" loading="lazy">'
-      : '<div class="placeholder-placeholder"><span data-icon="bed" data-size="50"></span></div>';
+    if (url) {
+      var btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "room-hero-zoom";
+      btn.setAttribute("aria-label", "View photo of " + (r.name || "Room"));
+      btn.style.cssText = "display:block;width:100%;height:100%;padding:0;border:0;background:none;cursor:zoom-in;";
+      btn.innerHTML = '<img src="' + JONE.esc(url) + '" alt="' + JONE.esc(r.name || "Room") + '" loading="lazy">';
+      btn.addEventListener("click", function () {
+        JONE.ui.lightbox.open(zoomItems(r), primaryIndex);
+      });
+      hero.innerHTML = "";
+      hero.appendChild(btn);
+    } else {
+      hero.innerHTML = '<div class="placeholder-placeholder"><span data-icon="bed" data-size="50"></span></div>';
+    }
   }
 
   /* Verified /api/rooms/{slug}/ detail: all catalog fields plus description,

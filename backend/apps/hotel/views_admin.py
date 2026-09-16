@@ -38,7 +38,13 @@ class HotelSettingsAdminView(generics.RetrieveUpdateAPIView):
 
     def update(self, request, *args, **kwargs):
         instance = self.get_object()
-        before = {f: getattr(instance, f) for f in self.get_serializer_class().Meta.fields if f != "updated_at"}
+        # Diff real model fields only (the serializer also exposes read-only
+        # derived ``*_image_url`` values that do not exist on the model).
+        before = {
+            f.name: getattr(instance, f.name)
+            for f in HotelSettings._meta.fields
+            if f.name != "updated_at"
+        }
         partial = request.method == "PATCH"
         serializer = self.get_serializer(instance, data=request.data, partial=partial)
         serializer.is_valid(raise_exception=True)

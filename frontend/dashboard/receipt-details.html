@@ -234,8 +234,8 @@
 
   /* "Email guest" — the shared, accessible send-receipt modal (one flow on
      every dashboard page: opens immediately, shows guest/booking details, has
-     a visible sending state, blocks duplicate submission, reports queued vs
-     sent truthfully and always ends in a retryable state). */
+     a visible sending state, blocks duplicate submission, reports sent vs
+     failed truthfully and always ends in a retryable state). */
   var emailBtn = document.querySelector("[data-email]");
   if (emailBtn) emailBtn.addEventListener("click", function(){
     if (!data || !data.booking_reference) return;

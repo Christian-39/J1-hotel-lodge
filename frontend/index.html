@@ -120,7 +120,7 @@
     <div class="container">
       <div class="editorial">
         <div class="editorial-media" data-reveal>
-          <div class="media"><img src="assets/images/intro.jpg" alt="Inside J-ONE Hotel &amp; Lodge" loading="lazy" onerror="this.parentNode.classList.add('placeholder');"></div>
+          <div class="media"><img src="assets/images/intro.jpg" alt="Inside J-ONE Hotel &amp; Lodge" loading="lazy" onerror="this.parentNode.classList.add('placeholder');" data-site-image="intro_image" data-site-default="assets/images/intro.jpg"></div>
         </div>
         <div class="editorial-body">
           <span class="eyebrow">Welcome to J-ONE</span>
@@ -166,7 +166,7 @@
     <div class="container">
       <div class="editorial rev">
         <div class="editorial-media" data-reveal>
-          <div class="media"><img src="assets/images/experience.jpg" alt="J-ONE Hotel &amp; Lodge facilities" loading="lazy" onerror="this.parentNode.classList.add('placeholder');"></div>
+          <div class="media"><img src="assets/images/experience.jpg" alt="J-ONE Hotel &amp; Lodge facilities" loading="lazy" onerror="this.parentNode.classList.add('placeholder');" data-site-image="experience_image" data-site-default="assets/images/experience.jpg"></div>
         </div>
         <div class="editorial-body">
           <span class="eyebrow">The experience</span>
@@ -232,7 +232,7 @@
       <div class="location-grid">
         <div class="location-map">
           <div class="media responsive-16-9" style="height:100%">
-            <img src="assets/images/location.jpg" alt="Map to J-ONE Hotel &amp; Lodge" loading="lazy" onerror="this.parentNode.classList.add('placeholder');">
+            <img src="assets/images/location.jpg" alt="Map to J-ONE Hotel &amp; Lodge" loading="lazy" onerror="this.parentNode.classList.add('placeholder');" data-site-image="location_image" data-site-default="assets/images/location.jpg">
           </div>
         </div>
         <div class="editorial-body">
@@ -362,6 +362,7 @@
 <script src="js/theme.js?v=1.1.0"></script>
 <script src="js/ui.js?v=1.1.0"></script>
 <script src="js/hotel-data.js?v=1.1.0"></script>
+<script src="js/site-images.js"></script>
 <script src="js/contact.js?v=1.1.0"></script>
 <script src="js/navigation.js?v=1.1.0"></script>
 <script>JONE.ui.initChrome(); JONE.nav.init();</script>
@@ -373,12 +374,12 @@
 
   /* Featured rooms driven entirely by the backend. No fake fallback records. */
 
-  function roomCard(r) {
+  function roomCard(r, idx) {
     /* Verified /api/rooms/ item: { name, slug, short_description, base_price
        (string), max_guests, bed_type, bed_count, room_size, view,
        is_featured, primary_image_url, amenities:[{name, icon}] } */
     const img = r.primary_image_url
-      ? '<div class="media"><img src="' + JONE.esc(r.primary_image_url) + '" alt="' + JONE.esc(r.name || "Room") + '" loading="lazy"></div>'
+      ? '<button type="button" class="media" data-room-img="' + idx + '" aria-label="View photo of ' + JONE.esc(r.name || "Room") + '"><img src="' + JONE.esc(r.primary_image_url) + '" alt="' + JONE.esc(r.name || "Room") + '" loading="lazy"></button>'
       : '<div class="media placeholder"><div class="placeholder-placeholder"><span data-icon="bed" data-size="32"></span></div></div>';
     const bed = [r.bed_count > 1 ? r.bed_count + " \u00D7 " : "", r.bed_type].filter(Boolean).join("");
     const amNames = (r.amenities || []).slice(0, 3).map(a => a.name).join(" \u00B7 ");
@@ -409,7 +410,17 @@
       const list = window.API.normalizeList ? window.API.normalizeList(res.data) : ((res.data && res.data.results) || res.data || []);
       const rooms = (list && list.items) || list || [];
       if (rooms.length) {
-        holder.innerHTML = rooms.map(r => roomCard(r)).join("");
+        holder.innerHTML = rooms.map((r, i) => roomCard(r, i)).join("");
+        // Room photos open in the shared image-preview modal.
+        holder.querySelectorAll("[data-room-img]").forEach(btn => {
+          btn.addEventListener("click", () => {
+            const r = rooms[Number(btn.getAttribute("data-room-img"))];
+            if (!r || !r.primary_image_url) return;
+            JONE.ui.lightbox.open(
+              [{ src: r.primary_image_url, caption: r.name || "Room" }], 0
+            );
+          });
+        });
       } else {
         // Backend connected but has no featured rooms hide, never fake.
         if (section) section.style.display = "none";
@@ -431,9 +442,20 @@
       const d = res.data || {};
       const items = d.items || [];
       if (items.length) {
-        const imgs = items.slice(0, 6).map(g =>
-          '<div class="media' + (String(g.category || "").toLowerCase() === "rooms" ? " wide" : "") + '"><img src="' + JONE.esc(g.image_url || "") + '" alt="' + JONE.esc(g.alt_text || g.title || "J-ONE Hotel & Lodge") + '" loading="lazy"></div>').join("");
-        holder.innerHTML = imgs;
+        const shown = items.slice(0, 6);
+        // Thumbnails open the shared image-preview modal (prev/next across
+        // the six shown photos — one reusable implementation).
+        const zoomItems = shown.map(g => ({
+          src: g.image_url || "",
+          caption: g.alt_text || g.title || "J-ONE Hotel & Lodge"
+        }));
+        holder.innerHTML = shown.map((g, i) =>
+          '<button type="button" class="media' + (String(g.category || "").toLowerCase() === "rooms" ? " wide" : "") + '" data-gallery-item="' + i + '" aria-label="View ' + JONE.esc(g.alt_text || g.title || "J-ONE Hotel & Lodge") + '"><img src="' + JONE.esc(g.image_url || "") + '" alt="' + JONE.esc(g.alt_text || g.title || "J-ONE Hotel & Lodge") + '" loading="lazy"></button>').join("");
+        holder.querySelectorAll("[data-gallery-item]").forEach(btn => {
+          btn.addEventListener("click", () => {
+            JONE.ui.lightbox.open(zoomItems, Number(btn.getAttribute("data-gallery-item")));
+          });
+        });
         JONE.icons.inject(holder);
       } else {
         holder.style.display = "none";
