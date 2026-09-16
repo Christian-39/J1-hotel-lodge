@@ -354,36 +354,7 @@
   position: relative;
   animation: confirmPop var(--speed-3) var(--ease) both;
 }
-/* Restrained confirmation confetti. The fixed, pointer-transparent layer is
-   removed after its short animation and never affects scrolling or controls. */
-.bk-confetti {
-  position: fixed;
-  inset: 0;
-  z-index: 1200;
-  overflow: hidden;
-  pointer-events: none;
-  contain: strict;
-}
-.bk-confetti-piece {
-  position: absolute;
-  top: -1rem;
-  left: var(--confetti-x);
-  width: 7px;
-  height: 13px;
-  border-radius: 2px;
-  background: var(--confetti-color);
-  opacity: .9;
-  transform: rotate(var(--confetti-rotate));
-  animation: bk-confetti-fall var(--confetti-duration) cubic-bezier(.2,.7,.35,1) var(--confetti-delay) forwards;
-}
-@keyframes bk-confetti-fall {
-  to { transform: translate3d(var(--confetti-drift), 105vh, 0) rotate(540deg); opacity: 0; }
-}
-@media (prefers-reduced-motion: reduce) {
-  .bk-confetti { display: none !important; }
-}
-
-/* Elegant expanding ring — premium, not playful. */
+/* Elegant expanding ring — premium, not playful; no confetti. */
 .confirm-icon-circle::after {
   content: ""; position: absolute; inset: -6px;
   border-radius: 50%;

@@ -4,8 +4,7 @@ import re, sys, time
 from pathlib import Path
 from playwright.sync_api import sync_playwright
 
-# Resolve from this test file so the suite works in any checkout/CI workspace.
-SW = Path(__file__).resolve().parents[1] / "sw.js"
+SW = Path("/home/user/j1/frontend/sw.js")
 orig = SW.read_text()
 # Read the CURRENT version rather than assuming "jone-v1", then simulate a deploy
 # by bumping to a throwaway version. Keeps the test valid as the real SW evolves.

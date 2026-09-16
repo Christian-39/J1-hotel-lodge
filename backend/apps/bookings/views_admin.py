@@ -461,6 +461,9 @@ class AdminBookingSendReceiptView(APIView):
             booking_id=booking.id,
             attach_receipt_pdf=True,
             created_by=request.user,
+            # This staff action is deliberately synchronous: return success
+            # only after the configured Django email backend accepts it.
+            direct=True,
         )
 
         from apps.audit.services import log_action

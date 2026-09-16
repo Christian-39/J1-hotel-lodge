@@ -14,7 +14,6 @@ from apps.bookings.services import availability
 from apps.core.utils import hotel_today, money
 from apps.notifications.services import unread_count
 from apps.payments.models import Payment
-from apps.hotel.models import HotelSettings
 from apps.rooms.models import Room
 
 
@@ -79,13 +78,6 @@ def build_dashboard(user):
     in_house_bookings = operational_bookings.filter(
         status=Booking.Status.CHECKED_IN
     ).order_by("check_out", "checked_in_at")[:7]
-    # The KPI and list intentionally share the same authoritative predicate.
-    # This is a presentation of the existing departures_today aggregation, not
-    # a second/conflicting definition of what constitutes a departure.
-    departures_today = operational_bookings.filter(
-        status=Booking.Status.CHECKED_IN, check_out=today
-    ).order_by("checked_in_at", "created_at")
-    checkout_time = HotelSettings.get_settings().check_out_time.strftime("%H:%M")
 
     recent_bookings = (
         bookings.select_related("guest", "room_type")
@@ -129,13 +121,6 @@ def build_dashboard(user):
              "status": b.status, "checked_in_at": b.checked_in_at.isoformat() if b.checked_in_at else None,
              "room_numbers": [a.room.room_number for a in getattr(b, "_assignments", [])]}
             for b in in_house_bookings
-        ],
-        "departures_today": [
-            {"booking_reference": b.booking_reference, "guest_name": b.guest.full_name,
-             "room_type_name": b.room_type.name, "check_out": b.check_out.isoformat(),
-             "check_out_time": checkout_time, "status": b.status,
-             "room_numbers": [a.room.room_number for a in getattr(b, "_assignments", [])]}
-            for b in departures_today
         ],
         "recent_bookings": [
             {
