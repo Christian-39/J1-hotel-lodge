@@ -444,29 +444,57 @@ def create_booking(*, room_type_value, check_in, check_out, rooms, adults, child
 
 
 def _send_confirmation_email(booking, hotel=None):
-    hotel = hotel or HotelSettings.get_settings()
+    """Queue the authoritative branded receipt after verified payment.
+
+    The payment service calls this only after its atomic reconciliation has
+    committed.  A payment reference is the automatic-send idempotency key;
+    staff may still intentionally send another copy from the receipt screen.
+    """
     if not booking.guest.email:
         return
-    rooms = ", ".join(a.room.room_number for a in booking.room_assignments.select_related("room"))
-    queue_email(
-        kind="BOOKING_CONFIRMATION",
+    from apps.bookings.serializers import ReceiptSerializer
+    from apps.bookings.services.receipt_email import render_receipt_email
+    from apps.notifications.models import EmailLog
+
+    receipt = ReceiptSerializer().to_representation(booking)
+    payment_reference = receipt.get("receipt_reference") or booking.booking_reference
+    if EmailLog.objects.filter(
+        kind=EmailLog.Kind.RECEIPT,
         booking_reference=booking.booking_reference,
-        subject=f"Booking confirmed: {booking.booking_reference} — J-ONE HOTEL & LODGE",
-        message=(
-            f"Hello {booking.guest.first_name},\n\n"
-            f"Your booking is CONFIRMED.\n\n"
-            f"Booking reference: {booking.booking_reference}\n"
-            f"Room: {booking.number_of_rooms} × {booking.room_type.name}"
-            + (f" (room(s): {rooms})" if rooms else "")
-            + f"\nCheck-in: {booking.check_in} (from {hotel.check_in_time:%H:%M})\n"
-            f"Check-out: {booking.check_out} (by {hotel.check_out_time:%H:%M})\n"
-            f"Total: {booking.currency} {booking.total_amount}\n"
-            f"Paid: {booking.currency} {booking.amount_paid}\n"
-            f"Balance due at hotel: {booking.currency} {booking.amount_due}\n\n"
-            f"Secure booking access and receipt: {guest_booking_link(booking)}\n\n"
-            f"{hotel.hotel_name}\n{hotel.address}\n{hotel.phone} · {hotel.email}"
-        ),
-        recipients=[booking.guest.email],
+        payment_reference=payment_reference,
+        created_by__isnull=True,
+        status__in=[EmailLog.Status.PENDING, EmailLog.Status.QUEUED,
+                    EmailLog.Status.SENDING, EmailLog.Status.RETRYING,
+                    EmailLog.Status.SENT],
+    ).exists():
+        return
+    try:
+        subject, text_body, html_body = render_receipt_email(receipt)
+    except Exception as exc:  # payment remains successful; failure stays observable
+        logger.exception("Automatic receipt render failed for %s", booking.booking_reference)
+        EmailLog.objects.create(
+            to_email=booking.guest.email,
+            subject=f"Payment Receipt — {booking.booking_reference}",
+            kind=EmailLog.Kind.RECEIPT,
+            booking_reference=booking.booking_reference,
+            payment_reference=payment_reference,
+            booking_id=booking.id,
+            attach_receipt_pdf=True,
+            status=EmailLog.Status.FAILED,
+            failure_stage=EmailLog.FailureStage.RENDER,
+            error_class=exc.__class__.__name__,
+            error_message="The automatic receipt could not be generated. No email was sent.",
+            failed_at=timezone.now(),
+        )
+        return
+    queue_email(
+        subject, text_body, [booking.guest.email],
+        html_message=html_body,
+        kind=EmailLog.Kind.RECEIPT,
+        booking_reference=booking.booking_reference,
+        payment_reference=payment_reference,
+        booking_id=booking.id,
+        attach_receipt_pdf=True,
     )
 
 

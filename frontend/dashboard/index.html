@@ -87,6 +87,16 @@
   </section>
 
   <section class="panel">
+    <div class="panel-head"><h2>Today's departures</h2><div class="panel-actions"><a class="btn btn-sm btn-outline" href="check-out.html">Open check-out</a></div></div>
+    <div class="panel-body no-pad">
+      <div class="table-wrap"><table class="table">
+        <thead><tr><th>Guest / booking</th><th>Room</th><th>Time</th><th>Status</th><th>Action</th></tr></thead>
+        <tbody data-tbody="departures"></tbody>
+      </table></div>
+    </div>
+  </section>
+
+  <section class="panel">
     <div class="panel-head"><h2>Recent activity</h2></div>
     <div class="panel-body">
       <div class="activity-list" data-activity></div>
@@ -114,6 +124,7 @@
 (function(){
   var DATA=JONE.dashboard.DATA;
   var tbody = document.querySelector("[data-tbody=arrivals]");
+  var departuresBody = document.querySelector("[data-tbody=departures]");
 
   function renderArrivals(list){
     if(!tbody) return;
@@ -123,6 +134,16 @@
       return "<tr><td>"+JONE.esc(a.guest_name||"—")+"</td><td>"+JONE.esc(room)+"</td><td>"+JONE.esc(a.check_in?JONE.formatDate(a.check_in,"mid"):"—")+"</td><td>"+JONE.dashboard.statusPill(a.status||"—")+"</td></tr>";
     }).join("");
     JONE.icons.inject(tbody);
+  }
+
+  function renderDepartures(list){
+    if(!departuresBody) return;
+    if(!list.length){ DATA.empty(departuresBody,"logOut","No departures due today","Checked-in guests due to leave today will appear here.",5); return; }
+    departuresBody.innerHTML = list.map(function(d){
+      var room = (d.room_numbers && d.room_numbers.length) ? d.room_numbers.join(", ") : (d.room_type_name || "—");
+      return '<tr><td><strong>'+JONE.esc(d.guest_name||"—")+'</strong><small class="receipt-mobile-guest">'+JONE.esc(d.booking_reference||"—")+'</small></td><td>'+JONE.esc(room)+'</td><td>'+JONE.esc(d.check_out_time||"—")+'</td><td>'+JONE.dashboard.statusPill(d.status||"—")+'</td><td><a class="btn btn-sm btn-outline" href="check-out.html?ref='+encodeURIComponent(d.booking_reference||"")+'">Process</a></td></tr>';
+    }).join("");
+    JONE.icons.inject(departuresBody);
   }
 
   function setKpi(name, val){
@@ -176,6 +197,7 @@
       dash = (sr && sr.data) || null;
       applyStats(dash);
       renderArrivals((dash && dash.upcoming_arrivals) || []);
+      renderDepartures((dash && dash.departures_today) || []);
     }catch(_){
       applyStats(null);
       if(tbody) DATA.error(tbody,"Dashboard couldn't be loaded","Please try again in a moment.",4);

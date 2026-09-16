@@ -98,7 +98,7 @@
   function render(list){
     tbody.innerHTML=list.map(function(r){
       var b=r.booking_reference;
-      return '<tr><td>'+JONE.esc(r.reference||"—")+'</td><td>'+(b?'<a href="booking-details.html?ref='+encodeURIComponent(b)+'">'+JONE.esc(b)+'</a>':"—")+'</td><td class="hide-sm">'+JONE.esc(r.guest_name||"—")+'</td><td class="num">'+JONE.esc(JONE.formatNaira(r.amount))+'</td><td class="hide-sm">'+JONE.esc(r.paid_at?JONE.formatDate(r.paid_at,"mid"):(r.created_at?JONE.formatDate(r.created_at,"mid"):"—"))+'</td><td>'+(b?'<button class="btn btn-sm btn-outline" type="button" data-view-receipt="'+JONE.esc(b)+'"><span data-icon="printer" data-size="15"></span> View receipt</button>':"—")+'</td></tr>';
+      return '<tr><td>'+JONE.esc(r.reference||"—")+'<span class="receipt-mobile-guest hide-md">'+JONE.esc(r.guest_name||"—")+'</span></td><td>'+(b?'<a href="booking-details.html?ref='+encodeURIComponent(b)+'">'+JONE.esc(b)+'</a>':"—")+'</td><td class="hide-sm">'+JONE.esc(r.guest_name||"—")+'</td><td class="num">'+JONE.esc(JONE.formatNaira(r.amount))+'</td><td class="hide-sm">'+JONE.esc(r.paid_at?JONE.formatDate(r.paid_at,"mid"):(r.created_at?JONE.formatDate(r.created_at,"mid"):"—"))+'</td><td>'+(b?'<button class="btn btn-sm btn-outline" type="button" data-view-receipt="'+JONE.esc(b)+'"><span data-icon="printer" data-size="15"></span> View receipt</button>':"—")+'</td></tr>';
     }).join("") || '<tr><td colspan="6"><div class="empty-state"><span data-icon="receipt"></span><h3>No receipts yet</h3><p>Receipts appear here as payments are confirmed.</p></div></td></tr>';
     JONE.icons.inject(tbody);
   }
