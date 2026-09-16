@@ -18,7 +18,6 @@ Security: the password is NEVER printed (only whether one is set and its
 length). Nothing here logs credentials.
 """
 import smtplib
-import socket
 import ssl
 from email.mime.text import MIMEText
 from email.utils import formatdate, make_msgid
@@ -50,18 +49,21 @@ class Command(BaseCommand):
         self.stdout.write(f"  EMAIL_PORT         : {port}")
         self.stdout.write(f"  EMAIL_USE_TLS      : {use_tls}")
         self.stdout.write(f"  EMAIL_USE_SSL      : {use_ssl}")
-        self.stdout.write(f"  EMAIL_HOST_USER    : {'configured' if user else 'NOT SET'}")
+        self.stdout.write(f"  EMAIL_HOST_USER    : {user!r}")
         self.stdout.write(
-            f"  EMAIL_HOST_PASSWORD: {'configured' if password else 'NOT SET'}"
+            f"  EMAIL_HOST_PASSWORD: {'set (%d chars)' % len(password) if password else 'NOT SET'}"
         )
         self.stdout.write(f"  DEFAULT_FROM_EMAIL : {from_email!r}")
         self.stdout.write(f"  recipient          : {recipient!r}")
 
-        # Deliverability warning without echoing the SMTP login credential.
+        # Deliverability warning: From must align with the authenticated account.
         if user and user.lower() not in (from_email or "").lower():
             self.stdout.write(self.style.WARNING(
-                "\n  ⚠ DEFAULT_FROM_EMAIL does not match EMAIL_HOST_USER.\n"
-                "    Ensure DEFAULT_FROM_EMAIL is a sender verified by the SMTP provider."
+                "\n  ⚠ DEFAULT_FROM_EMAIL does not contain EMAIL_HOST_USER.\n"
+                f"    You authenticate as {user} but send 'From' {from_email}.\n"
+                "    Gmail will rewrite the sender and/or filter the message as spam\n"
+                "    unless that address is a verified 'Send mail as' alias.\n"
+                f"    Recommended: DEFAULT_FROM_EMAIL should use <{user}>."
             ))
 
         if "console" in settings.EMAIL_BACKEND:
@@ -103,31 +105,14 @@ class Command(BaseCommand):
             refused = server.sendmail(self._addr(from_email), [recipient], msg.as_string())
             server.set_debuglevel(0)
             server.quit()
-        except socket.gaierror:
-            raise CommandError("SMTP DNS FAILURE: EMAIL_HOST could not be resolved.") from None
-        except (TimeoutError, socket.timeout):
-            raise CommandError("SMTP CONNECTION TIMEOUT: the server did not respond in time.") from None
-        except ssl.SSLError as exc:
-            raise CommandError(f"SMTP TLS FAILURE: {exc.__class__.__name__}.") from None
         except smtplib.SMTPAuthenticationError as exc:
             raise CommandError(
-                "SMTP AUTHENTICATION FAILURE: credentials were rejected (server code "
-                f"{exc.smtp_code}). Gmail requires an App Password; Brevo requires an SMTP key."
-            ) from None
-        except smtplib.SMTPSenderRefused as exc:
-            raise CommandError(
-                f"SMTP SENDER REJECTED: verify DEFAULT_FROM_EMAIL (server code {exc.smtp_code})."
-            ) from None
-        except smtplib.SMTPRecipientsRefused:
-            raise CommandError("SMTP RECIPIENT REJECTED: the server rejected the test recipient.") from None
-        except smtplib.SMTPResponseException as exc:
-            raise CommandError(f"SMTP SERVER RESPONSE: rejected with code {exc.smtp_code}.") from None
-        except (ConnectionRefusedError, ConnectionError) as exc:
-            raise CommandError(f"SMTP CONNECTION FAILURE: {exc.__class__.__name__}.") from None
+                "SMTP AUTHENTICATION FAILED. For Gmail you MUST use a 16-character "
+                "App Password (Google Account → Security → 2-Step Verification → App "
+                f"passwords), not the normal password. Server said: {exc.smtp_code}."
+            )
         except Exception as exc:  # noqa: BLE001
-            # Exception text may contain provider details or credentials; only
-            # the class is safe to paste into a support ticket.
-            raise CommandError(f"SMTP FAILURE: {exc.__class__.__name__}.") from None
+            raise CommandError(f"SMTP delivery failed: {exc.__class__.__name__}: {exc}")
 
         if refused:
             raise CommandError(f"Server refused the recipient(s): {refused}")

@@ -30,9 +30,7 @@ envVarGroups:
       - key: DATABASE_URL
         sync: false          # mysql://...
       - key: REDIS_URL
-        sync: false          # Upstash rediss://...:6379 — Celery broker + result backend
-      - key: CELERY_BROKER_CONNECTION_TIMEOUT
-        value: "5"           # bounded web-service broker publication
+        sync: false          # from Render Redis — Celery broker + result backend
       - key: FRONTEND_URL
         sync: false          # e.g. https://jonehotel.vercel.app
       - key: PAYMENT_CALLBACK_URL
@@ -74,8 +72,6 @@ envVarGroups:
         sync: false          # Brevo SMTP login, e.g. 9xxxxx@smtp-brevo.com
       - key: EMAIL_HOST_PASSWORD
         sync: false          # Brevo SMTP key (NOT the account password)
-      - key: EMAIL_TIMEOUT
-        value: "20"
       - key: DEFAULT_FROM_EMAIL
         sync: false          # a Brevo-VERIFIED sender, e.g. "J-ONE HOTEL & LODGE <no-reply@yourdomain.com>"
       - key: HOTEL_NOTIFICATION_EMAILS
@@ -88,7 +84,7 @@ services:
     runtime: python
     plan: starter
     buildCommand: "./build.sh"
-    startCommand: "gunicorn config.wsgi:application --bind 0.0.0.0:$PORT --workers 3 --threads 2 --worker-class gthread --timeout 30 --max-requests 1000 --max-requests-jitter 50"
+    startCommand: "gunicorn config.wsgi:application --bind 0.0.0.0:$PORT --workers 3 --timeout 60"
     healthCheckPath: /api/health/
     envVars:
       - fromGroup: jone-shared
