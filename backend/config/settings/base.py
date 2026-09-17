@@ -369,6 +369,7 @@ EMAIL_HOST_PASSWORD = config("EMAIL_HOST_PASSWORD", default="")
 # Connection timeout so a stuck SMTP handshake fails fast (and, in a Celery
 # task, is retried) instead of hanging the worker.
 EMAIL_TIMEOUT = config("EMAIL_TIMEOUT", default=60, cast=int)
+BREVO_API_KEY = config("BREVO_API_KEY", default="")
 DEFAULT_FROM_EMAIL = config("DEFAULT_FROM_EMAIL", default="J-ONE HOTEL & LODGE <agbo33010@gmail.com>")
 SERVER_EMAIL = DEFAULT_FROM_EMAIL
 # Comma-separated operational inbox(es) for cancellation/enquiry alerts.
