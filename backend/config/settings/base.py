@@ -384,10 +384,10 @@ EMAIL_BACKEND = config(
 # eager in-process execution and no result backend, so a developer without a
 # running Redis server never sees broker reconnect loops (see
 # config/settings/development.py).
-REDIS_URL = config("REDIS_URL", default="redis://red-dali6iid0e5s73fg9rr0:6379")
+REDIS_URL = config("REDIS_URL", default="redis://127.0.0.1:6379/0")
 CELERY_BROKER_URL = REDIS_URL
 CELERY_RESULT_BACKEND = REDIS_URL
-CELERY_TASK_ALWAYS_EAGER = config("CELERY_TASK_ALWAYS_EAGER", default=True, cast=bool)
+CELERY_TASK_ALWAYS_EAGER = config("CELERY_TASK_ALWAYS_EAGER", default=False, cast=bool)
 # In eager mode failures are recorded on the EmailLog row (and visible to
 # staff) instead of being re-raised into the caller — the delivery helper in
 # apps.core.emails handles its own outcome reporting.

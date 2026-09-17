@@ -47,7 +47,7 @@ CELERY_CACHE_BACKEND = "memory://"
 # locally without Redis or a worker (see .env.example, "Email (SMTP)").
 EMAIL_BACKEND = config(
     "EMAIL_BACKEND",
-    default="django.core.mail.backends.console.EmailBackend",
+    default="django.core.mail.backends.smtp.EmailBackend",
 )
 
 # In-process cache is fine on a single dev machine.
