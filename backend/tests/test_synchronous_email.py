@@ -97,7 +97,6 @@ class VerificationEmailTests(BaseAPITestCase):
         ).latest("id")
         self.assertEqual(log.status, EmailLog.Status.SENT)
         self.assertIsNotNone(log.sent_at)
-        self.assertEqual(log.task_id, "")  # no task was ever involved
         self.assertEqual(len(mail.outbox), 1)
         self.assertIn(self.booking.booking_reference, mail.outbox[0].subject)
         # The receipt PDF is attached exactly as before.

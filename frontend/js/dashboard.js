@@ -666,6 +666,37 @@
           form.appendChild(built.wrap);
           return;
         }
+        if (f.type === "custom") {
+          // Caller-rendered widget (e.g. the booking stay calendar). The field
+          // owns its own DOM via f.render(mount, form), reports its value via
+          // f.getValue() (an object is merged into the submitted values) and
+          // may block submission via f.validate() returning an error message.
+          const wrap = document.createElement("div");
+          wrap.className = "field";
+          wrap.dataset.fmField = f.name;
+          if (f.label) {
+            const label = document.createElement("div");
+            label.className = "field-label";
+            label.textContent = f.label + (f.required ? " *" : "");
+            wrap.appendChild(label);
+          }
+          const mount = document.createElement("div");
+          wrap.appendChild(mount);
+          if (f.help) {
+            const help = document.createElement("div");
+            help.className = "hint";
+            help.textContent = f.help;
+            wrap.appendChild(help);
+          }
+          const ferr = document.createElement("div");
+          ferr.className = "field-error";
+          wrap.appendChild(ferr);
+          form.appendChild(wrap);
+          if (typeof f.render === "function") {
+            try { f.render(mount, form); } catch (_) {}
+          }
+          return;
+        }
         const wrap = document.createElement("div");
         wrap.className = "field";
         wrap.dataset.fmField = f.name;
@@ -836,6 +867,25 @@
         });
         if (imageMissing) { JONE.releaseGuard(submit); return; }
 
+        // Custom fields validate themselves (e.g. the stay calendar requires
+        // both dates). A returned string is shown as that field's error.
+        let customInvalid = false;
+        (opts.fields || []).forEach((f) => {
+          if (f.type !== "custom" || typeof f.validate !== "function") return;
+          const problem = f.validate();
+          const w = form.querySelector('[data-fm-field="' + f.name + '"]');
+          const fe = w && w.querySelector(".field-error");
+          if (problem) {
+            customInvalid = true;
+            if (w) w.classList.add("has-error");
+            if (fe) { fe.textContent = problem; fe.style.display = "block"; }
+          } else if (fe) {
+            if (w) w.classList.remove("has-error");
+            fe.style.display = "none";
+          }
+        });
+        if (customInvalid) { JONE.releaseGuard(submit); return; }
+
         const values = {};
         let formData = null;
         // A picked image forces multipart regardless of the caller's default.
@@ -844,6 +894,16 @@
         (opts.fields || []).forEach((f) => {
           if (f.type === "imagefile") {
             if (formData) imageFields[f.name].appendTo(formData);
+            return;
+          }
+          if (f.type === "custom") {
+            if (typeof f.getValue === "function") {
+              const custom = f.getValue() || {};
+              Object.keys(custom).forEach((k) => {
+                values[k] = custom[k];
+                if (formData && custom[k] !== "" && custom[k] != null) formData.append(k, custom[k]);
+              });
+            }
             return;
           }
           if (f.type === "checks") {

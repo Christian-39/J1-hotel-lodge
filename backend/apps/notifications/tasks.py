@@ -7,20 +7,27 @@ the source of truth for the receipt attachment (regenerated server-side). It
 records the real outcome so the dashboard can distinguish SENDING / SENT /
 FAILED instead of blindly reporting success.
 
-Delivery transport: if ``settings.BREVO_API_KEY`` is set, mail is sent over
-Brevo's HTTPS transactional API (port 443) instead of raw SMTP. This exists
-because Render's free web-service tier blocks outbound traffic on SMTP ports
-25/465/587 — HTTPS is never blocked, so this is what actually works there.
-When BREVO_API_KEY is not set, the original Django SMTP/console backend path
-is used unchanged (this keeps local development, which uses the console
-backend, working exactly as before).
+Transport selection is DETERMINISTIC (see :func:`active_transport`):
 
-Email delivery is SYNCHRONOUS either way: this module is invoked directly by
+* ``EMAIL_PROVIDER=brevo``  → Brevo's HTTPS transactional API
+  (https://api.brevo.com/v3/smtp/email, authenticated with the ``api-key``
+  header). This is the required production transport: Render's free tier
+  blocks outbound SMTP ports (25/465/587), while HTTPS/443 always works.
+* ``EMAIL_PROVIDER=django`` (or ``smtp``/``console``) → Django's configured
+  ``EMAIL_BACKEND`` (console in development, SMTP where explicitly wanted).
+* unset → Brevo when ``BREVO_API_KEY`` is configured, otherwise the Django
+  backend. Production settings pin the provider explicitly so Gmail SMTP can
+  never be selected by accident merely because EMAIL_* variables exist.
+
+Email delivery is SYNCHRONOUS: this module is invoked directly by
 ``apps.core.emails`` during the originating HTTP request (Send receipt click,
-verified payment, booking events). No broker/worker is required for mail to
-leave the system.
+verified payment, booking events). No Celery task, broker, Redis connection or
+worker is required — or used — for mail to leave the system. A row is marked
+SENT only after the provider accepted the message (Brevo answered 200/201 with
+a messageId, or the Django backend reported delivery); anything else is FAILED
+with a safe, credential-free reason.
 
-No SMTP credentials, API keys, or secrets are ever logged.
+No SMTP credentials, API keys, or secrets are ever logged or stored.
 """
 import base64
 import logging
@@ -32,26 +39,7 @@ from django.utils import timezone
 
 logger = logging.getLogger("apps")
 
-_TRANSIENT_EXC_NAMES = {
-    "SMTPServerDisconnected",
-    "SMTPConnectError",
-    "SMTPHeloError",
-    "SMTPResponseException",
-    "TimeoutError",
-    "Timeout",  # requests.exceptions.Timeout
-    "ConnectionError",  # matches both socket and requests exceptions
-    "ConnectionResetError",
-    "ConnectionRefusedError",
-    "socket.timeout",
-    "gaierror",
-    "OSError",  # e.g. "Network is unreachable" when a port is firewalled
-}
-_PERMANENT_EXC_NAMES = {
-    "SMTPAuthenticationError",
-    "SMTPRecipientsRefused",
-    "SMTPSenderRefused",
-    "SMTPNotSupportedError",
-}
+BREVO_API_URL = "https://api.brevo.com/v3/smtp/email"
 
 
 class BrevoAPIError(Exception):
@@ -63,24 +51,47 @@ class BrevoAPIError(Exception):
         self.safe_message = str(message)[:255]
 
 
-def _is_transient(exc) -> bool:
-    name = exc.__class__.__name__
-    if name in _PERMANENT_EXC_NAMES:
-        return False
-    smtp_code = getattr(exc, "smtp_code", None)
-    if isinstance(smtp_code, int):
-        return 400 <= smtp_code < 500
-    http_status = getattr(exc, "http_status", None)
-    if isinstance(http_status, int):
-        return http_status == 429 or http_status >= 500
-    return name in _TRANSIENT_EXC_NAMES
+def active_transport() -> str:
+    """Which transport a delivery attempt will use: ``"brevo"`` or ``"django"``.
+
+    Deterministic: an explicit ``EMAIL_PROVIDER`` setting always wins; when it
+    is not set, Brevo is used whenever a ``BREVO_API_KEY`` is configured.
+    """
+    provider = str(getattr(settings, "EMAIL_PROVIDER", "") or "").strip().lower()
+    if provider == "brevo":
+        return "brevo"
+    if provider in ("django", "smtp", "console"):
+        return "django"
+    return "brevo" if (getattr(settings, "BREVO_API_KEY", "") or "").strip() else "django"
+
+
+def sender_identity():
+    """(name, email) parsed from DEFAULT_FROM_EMAIL, with validation.
+
+    Raises ``ValueError`` naming the setting when the configured value does
+    not contain a usable address — this must surface precisely, never as a
+    silent substitution of another sender.
+    """
+    raw = str(getattr(settings, "DEFAULT_FROM_EMAIL", "") or "").strip()
+    # Tolerate an accidentally quote-wrapped env value: "Name <a@b>" (quotes
+    # typed into the Render dashboard become part of the value).
+    if len(raw) >= 2 and raw[0] == raw[-1] and raw[0] in ("'", '"'):
+        raw = raw[1:-1].strip()
+    name, email = parseaddr(raw)
+    if not email or "@" not in email or "<" in email or ">" in email:
+        raise ValueError(
+            "DEFAULT_FROM_EMAIL is not a valid sender address. Set it to "
+            "'Display Name <address@example.com>' using a sender verified in Brevo."
+        )
+    return name, email
 
 
 def _safe_reason(exc) -> str:
     """A short, credential-free description of a delivery failure."""
     if isinstance(exc, BrevoAPIError):
-        return f"Brevo API rejected the message (HTTP {exc.http_status}): {exc.safe_message}"[:255]
+        return f"Brevo rejected the request (HTTP {exc.http_status}): {exc.safe_message}"[:255]
     mapping = {
+        "ValueError": str(exc)[:255] if "DEFAULT_FROM_EMAIL" in str(exc) else "Delivery failed (ValueError).",
         "SMTPAuthenticationError": "SMTP authentication failed (check email user / app password).",
         "SMTPRecipientsRefused": "The recipient address was rejected by the mail server.",
         "SMTPSenderRefused": "The sender address was rejected (check DEFAULT_FROM_EMAIL).",
@@ -89,7 +100,10 @@ def _safe_reason(exc) -> str:
         "SMTPNotSupportedError": "The SMTP server rejected the requested TLS/SSL mode.",
         "SMTPResponseException": "The SMTP server returned an error response.",
         "TimeoutError": "The connection to the mail server timed out.",
+        "Timeout": "The HTTPS request to the email provider timed out.",
+        "ConnectionError": "The email provider could not be reached over the network.",
         "OSError": "The network connection to the mail server was refused/unreachable.",
+        "RuntimeError": str(exc)[:255],
     }
     return mapping.get(exc.__class__.__name__, f"Delivery failed ({exc.__class__.__name__}).")
 
@@ -164,14 +178,22 @@ def _build_attachment(log):
 
 
 def _send_via_brevo_api(log, attachment):
-    """Send one EmailLog row over Brevo's HTTPS transactional API."""
+    """Send one EmailLog row over Brevo's HTTPS transactional API.
+
+    Returns the provider message id on success; raises ``BrevoAPIError`` with
+    the real HTTP status + sanitized provider message on rejection, and
+    ``ConnectionError``/``TimeoutError`` when the request cannot complete.
+    Never logs or stores the API key.
+    """
     import requests
 
     api_key = (getattr(settings, "BREVO_API_KEY", "") or "").strip()
     if not api_key:
-        raise RuntimeError("BREVO_API_KEY is not configured.")
+        raise RuntimeError(
+            "BREVO_API_KEY is not configured — set the BREVO_API_KEY environment variable."
+        )
 
-    sender_name, sender_email = parseaddr(settings.DEFAULT_FROM_EMAIL)
+    sender_name, sender_email = sender_identity()
     payload = {
         "sender": {"email": sender_email, **({"name": sender_name} if sender_name else {})},
         "to": [{"email": log.to_email}],
@@ -190,7 +212,7 @@ def _send_via_brevo_api(log, attachment):
     timeout = getattr(settings, "EMAIL_TIMEOUT", 20) or 20
     try:
         response = requests.post(
-            "https://api.brevo.com/v3/smtp/email",
+            BREVO_API_URL,
             json=payload,
             headers={
                 "api-key": api_key,
@@ -199,6 +221,8 @@ def _send_via_brevo_api(log, attachment):
             },
             timeout=timeout,
         )
+    except requests.exceptions.Timeout as exc:
+        raise TimeoutError("The HTTPS request to Brevo timed out.") from exc
     except requests.exceptions.RequestException as exc:
         raise ConnectionError(f"Brevo API request failed: {exc.__class__.__name__}") from exc
 
@@ -210,9 +234,21 @@ def _send_via_brevo_api(log, attachment):
             message = response.text[:200]
         raise BrevoAPIError(response.status_code, message)
 
+    # HTTP 200/201: Brevo accepted the message. Record its real message id.
+    try:
+        message_id = str((response.json() or {}).get("messageId") or "")
+    except ValueError:
+        message_id = ""
+    if not message_id:
+        # 200/201 without a message id is not a normal Brevo acceptance.
+        raise BrevoAPIError(
+            response.status_code, "Brevo returned success without a messageId."
+        )
+    return message_id[:255]
 
-def _send_via_smtp(log, attachment):
-    """Django's configured EMAIL_BACKEND (SMTP or console) — unchanged local-dev path."""
+
+def _send_via_django_backend(log, attachment):
+    """Django's configured EMAIL_BACKEND (SMTP or console) — local-dev path."""
     connection = get_connection(fail_silently=False)
     html_body = (log.html_body or "").strip()
     if html_body:
@@ -239,10 +275,21 @@ def _send_via_smtp(log, attachment):
     sent = email.send(fail_silently=False)
     if not sent:
         raise RuntimeError("Email backend reported zero messages delivered.")
+    return ""  # Django backends expose no provider message id
 
 
-def deliver_email_log(log_id, *, allow_retry=True, task=None):
-    """Deliver one EmailLog row through the configured transport."""
+# Back-compat alias for older imports/tests.
+_send_via_smtp = _send_via_django_backend
+
+
+def deliver_email_log(log_id, **_ignored):
+    """Deliver one EmailLog row synchronously through the active transport.
+
+    Exactly one honest attempt: the row ends SENT (provider accepted) or
+    FAILED (with error class, safe reason and failure stage). The final
+    status is returned. Never raises for delivery failures — the outcome is
+    persisted instead.
+    """
     from apps.notifications.models import EmailLog
 
     log = EmailLog.objects.filter(pk=log_id).first()
@@ -258,53 +305,36 @@ def deliver_email_log(log_id, *, allow_retry=True, task=None):
     failure_stage = EmailLog.FailureStage.ATTACHMENT
     try:
         attachment = _build_attachment(log)
-        failure_stage = EmailLog.FailureStage.SMTP
-        use_brevo_api = bool((getattr(settings, "BREVO_API_KEY", "") or "").strip())
-        if use_brevo_api:
-            _send_via_brevo_api(log, attachment)
+        failure_stage = EmailLog.FailureStage.PROVIDER
+        if active_transport() == "brevo":
+            provider_message_id = _send_via_brevo_api(log, attachment)
         else:
-            _send_via_smtp(log, attachment)
-    except Exception as exc:
-        transient = _is_transient(exc)
-        can_retry = allow_retry and transient and log.retry_count < log.max_retries
-        new_status = EmailLog.Status.RETRYING if can_retry else EmailLog.Status.FAILED
+            provider_message_id = _send_via_django_backend(log, attachment)
+    except Exception as exc:  # noqa: BLE001 - outcome persisted below
         EmailLog.objects.filter(pk=log.pk).update(
-            status=new_status,
-            retry_count=log.retry_count + 1,
+            status=EmailLog.Status.FAILED,
             error_class=exc.__class__.__name__,
             error_message=_safe_reason(exc),
             failure_stage=failure_stage,
             failed_at=timezone.now(),
         )
         logger.warning(
-            "EmailLog#%s delivery %s: %s (attempt %s/%s)",
-            log.pk,
-            "will retry" if can_retry else "FAILED",
-            exc.__class__.__name__,
-            log.retry_count + 1,
-            log.max_retries,
+            "EmailLog#%s delivery FAILED at %s: %s",
+            log.pk, failure_stage, exc.__class__.__name__,
         )
-        if can_retry:
-            raise _RetryRequested(exc)
         return EmailLog.Status.FAILED
 
     EmailLog.objects.filter(pk=log.pk).update(
         status=EmailLog.Status.SENT,
         sent_at=timezone.now(),
+        provider_message_id=provider_message_id or "",
         error_class="",
         error_message="",
         failure_stage="",
     )
     logger.info(
-        "EmailLog#%s SENT kind=%s booking=%s to=%s",
+        "EmailLog#%s SENT kind=%s booking=%s to=%s provider_id=%s",
         log.pk, log.kind, log.booking_reference or "-", log.to_email,
+        provider_message_id or "-",
     )
     return EmailLog.Status.SENT
-
-
-class _RetryRequested(Exception):
-    """Internal signal: transient failure, a retry may be scheduled by the caller."""
-
-    def __init__(self, original):
-        super().__init__(str(original.__class__.__name__))
-        self.original = original

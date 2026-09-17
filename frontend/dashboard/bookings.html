@@ -80,6 +80,7 @@
 <script src="../js/auth.js?v=1.1.0"></script>
 <script src="../js/hotel-data.js?v=1.1.0"></script>
 <script src="../js/navigation.js?v=1.1.0"></script>
+<script src="../js/booking-calendar.js?v=1.1.0"></script>
 <script src="../js/dashboard.js?v=1.1.0"></script>
 <script>
   JONE.ui.initChrome();
@@ -195,21 +196,144 @@
     }catch(_){ roomTypes = []; }
   }
 
+  /* ---- Availability data for the New-booking calendar --------------------
+     Same authoritative source as the public booking calendar:
+     GET /api/rooms/{slug}/unavailable-dates/ (nightly_inventory service).
+     The response carries per-date `available_rooms`, so the calendar can be
+     ROOM-COUNT aware: a night is unavailable when fewer rooms remain free
+     than the staff member is trying to book. Cached briefly per room type;
+     the cache is invalidated when a booking succeeds, when the room type
+     changes (different key), and on backend ROOM_UNAVAILABLE conflicts.
+     The backend re-validates every night atomically at creation — this
+     calendar is a usability layer, never the authority. */
+  var AVAIL_TTL_MS = 60000;
+  var availCache = {};   // slug -> { at, dates: {iso:{available_rooms}}, through, total }
+
+  function fetchAvailability(slug, force){
+    var hit = availCache[slug];
+    if (hit && !force && Date.now() - hit.at < AVAIL_TTL_MS) return Promise.resolve(hit);
+    return window.API.getUnavailableDates(slug, { days: 366 }).then(function(res){
+      var data = (res && res.data) || {};
+      var entry = { at: Date.now(), dates: data.dates || {}, through: data.through || null, total: data.total_rooms };
+      availCache[slug] = entry;
+      return entry;
+    });
+  }
+
   var newBtn = document.querySelector("[data-new-booking]");
   if (newBtn) newBtn.addEventListener("click", async function(){
     var created = null;
     if (!roomTypes.length) await loadTypes();
-    var today = JONE.hotelTodayISO();
-    var tomorrow = new Date(Date.now() + 86400000).toISOString().slice(0,10);
+
+    /* State shared between the calendar custom field and the form. */
+    var cal = null;               // stayCalendar instance
+    var calSel = { checkIn: null, checkOut: null };
+    var calEntry = null;          // availability entry currently applied
+    var calSlug = "";             // room type the calendar reflects
+    var calRooms = 1;             // requested room count
+    var calStatus = null;         // status line element
+    var typeLabelOf = {};
+    roomTypes.forEach(function(t){ typeLabelOf[t.value] = t.label.split(" \u2014 ")[0]; });
+
+    function nightUnavailable(iso){
+      if (!calEntry) return false;
+      var d = calEntry.dates[iso];
+      if (!d) return false;
+      return Number(d.available_rooms || 0) < Math.max(1, calRooms);
+    }
+    function setCalStatus(msg){ if (calStatus) calStatus.textContent = msg || ""; }
+
+    function applyEntry(entry){
+      calEntry = entry;
+      if (!cal) return;
+      cal.setBusy(false);
+      cal.setError(false);
+      if (entry.through) cal.setBounds({ max: entry.through });
+      var scope = calSlug && typeLabelOf[calSlug] ? " for " + typeLabelOf[calSlug] : "";
+      cal.setUnavailable(nightUnavailable, scope);
+      if (entry.total === 0) {
+        setCalStatus((typeLabelOf[calSlug] || "This room type") + " has no bookable rooms.");
+      } else if (calRooms > 1) {
+        setCalStatus("Showing dates with at least " + calRooms + " rooms free" + scope + ".");
+      } else {
+        setCalStatus("Struck-through dates are sold out" + scope + ".");
+      }
+    }
+
+    function refreshAvailability(force){
+      if (!calSlug || !cal) return;
+      cal.setBusy(true);
+      setCalStatus("Checking live availability\u2026");
+      fetchAvailability(calSlug, force).then(applyEntry).catch(function(){
+        if (!cal) return;
+        cal.setBusy(false);
+        cal.setError(true);
+        setCalStatus("Live availability couldn't be loaded.");
+      });
+    }
+
     var out = await JONE.dashboard.formModal({
       title: "New booking (walk-in / phone)",
       submitText: "Create booking",
       wide: true,
       fields: [
         { name: "room_type", label: "Room type", type: "select", required: true, options: roomTypes.length ? roomTypes : [{ value: "", label: "No room types configured" }] },
-        { name: "check_in", label: "Check-in", type: "date", required: true, value: today },
-        { name: "check_out", label: "Check-out", type: "date", required: true, value: tomorrow },
         { name: "rooms", label: "Rooms", type: "number", required: true, value: 1 },
+        {
+          name: "stay_dates", label: "Stay dates", type: "custom", required: true,
+          help: "Pick check-in, then check-out. Sold-out nights are disabled for the selected room type and room count; the server re-verifies every night before the booking is created.",
+          render: function(mount, form){
+            calStatus = document.createElement("p");
+            calStatus.className = "caption";
+            calStatus.setAttribute("aria-live", "polite");
+            calStatus.style.cssText = "margin:0 0 0.4rem;";
+            mount.appendChild(calStatus);
+            cal = JONE.stayCalendar.mount(mount, {
+              minDate: JONE.hotelTodayISO(0),
+              maxDate: JONE.hotelTodayISO(365),
+              months: (window.matchMedia && window.matchMedia("(max-width: 760px)").matches) ? 1 : 2,
+              onChange: function(sel, reason){
+                calSel = sel;
+                if (reason === "checkin-unavailable") {
+                  setCalStatus("The selected room type is sold out on that check-in date.");
+                } else if (reason === "range-unavailable") {
+                  setCalStatus("That stay crosses a sold-out night \u2014 the check-out was cleared.");
+                }
+              },
+              onRetry: function(){ refreshAvailability(true); }
+            });
+
+            var typeSel = form.elements["room_type"];
+            var roomsInput = form.elements["rooms"];
+            function syncType(){
+              var slug = typeSel ? typeSel.value : "";
+              if (slug === calSlug) return;
+              calSlug = slug;
+              calEntry = null;
+              if (slug) refreshAvailability(false);
+              else { cal.setUnavailable(null); setCalStatus(""); }
+            }
+            if (typeSel) typeSel.addEventListener("change", syncType);
+            if (roomsInput) {
+              roomsInput.min = "1";
+              roomsInput.addEventListener("input", function(){
+                var n = Math.max(1, Number(roomsInput.value || 1));
+                if (n === calRooms) return;
+                calRooms = n;
+                if (calEntry) applyEntry(calEntry);   // re-derive disabled nights
+              });
+            }
+            syncType();
+          },
+          validate: function(){
+            if (!calSel.checkIn) return "Please select a check-in date on the calendar.";
+            if (!calSel.checkOut) return "Please select a check-out date on the calendar.";
+            return "";
+          },
+          getValue: function(){
+            return { check_in: calSel.checkIn || "", check_out: calSel.checkOut || "" };
+          }
+        },
         { name: "adults", label: "Adults", type: "number", required: true, value: 1 },
         { name: "children", label: "Children", type: "number", value: 0 },
         { name: "source", label: "Source", type: "select", options: [{ value: "WALK_IN", label: "Walk-in" }, { value: "PHONE", label: "Phone" }], value: "WALK_IN" },
@@ -237,11 +361,22 @@
           guest: { first_name: v.guest_first_name, last_name: v.guest_last_name, email: v.guest_email, phone: v.guest_phone }
         };
         if (v.offer_code) payload.offer_code = v.offer_code;
-        var res = await window.API.create("bookings", payload);
-        created = (res && res.data) || null;
-        return res;
+        try {
+          var res = await window.API.create("bookings", payload);
+          created = (res && res.data) || null;
+          delete availCache[v.room_type];   // inventory changed — never serve stale data
+          return res;
+        } catch (err) {
+          // Race lost: another booking took the room between the calendar
+          // load and this submit. Refresh authoritative availability so the
+          // now-blocked nights become visibly disabled, then surface the
+          // backend's ROOM_UNAVAILABLE message via the modal error box.
+          if (err && err.code === "ROOM_UNAVAILABLE") refreshAvailability(true);
+          throw err;
+        }
       }
     });
+    cal = null; calStatus = null;  // modal closed — drop references
 
     /* The create response IS the authoritative booking detail (guest, room
        assignments, totals, balance) — so the new row is added immediately and

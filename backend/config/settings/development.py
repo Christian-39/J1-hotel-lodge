@@ -26,9 +26,9 @@ CORS_ALLOW_ALL_ORIGINS = True
 #   * no Redis RESULT backend exists (eager results are in-memory EagerResult
 #     objects), so no code path can start a "Connection to Redis lost …
 #     retrying" loop when Redis is not running;
-#   * transactional email still works: it is delivered by a background thread
-#     (see apps.core.emails.queue_email) so a slow/unreachable SMTP server can
-#     never block an API response.
+#   * transactional email is delivered SYNCHRONOUSLY by apps.core.emails and
+#     never touches Celery/Redis at all (development default: console backend,
+#     so nothing leaves the machine).
 #
 # To exercise the real Redis broker + Celery worker architecture locally, run
 # with production-style settings (config.settings.production) or a dedicated
@@ -41,14 +41,19 @@ CELERY_RESULT_BACKEND = None          # eager tasks have no result store at all
 CELERY_BROKER_URL = "memory://"       # even accidental dispatch stays local
 CELERY_CACHE_BACKEND = "memory://"
 
-# Emails print to the terminal by default (nothing leaves the machine). Setting
-# EMAIL_BACKEND in .env to the SMTP backend switches to REAL delivery while
-# keeping everything else eager/threaded — the documented way to test SMTP
-# locally without Redis or a worker (see .env.example, "Email (SMTP)").
+# Emails print to the terminal by default (nothing leaves the machine).
+# Setting EMAIL_BACKEND in .env to the SMTP backend — or setting
+# EMAIL_PROVIDER=brevo with a BREVO_API_KEY — switches to REAL delivery.
+# Delivery is synchronous either way; no Redis/worker is ever needed.
 EMAIL_BACKEND = config(
     "EMAIL_BACKEND",
-    default="django.core.mail.backends.smtp.EmailBackend",
+    default="django.core.mail.backends.console.EmailBackend",
 )
+# Deterministic transport in development: the Django backend (console unless
+# overridden), never a surprise Brevo call just because a key is present in
+# the developer's environment. Set EMAIL_PROVIDER=brevo explicitly to test
+# the real HTTPS API locally.
+EMAIL_PROVIDER = config("EMAIL_PROVIDER", default="django").strip().lower()
 
 # In-process cache is fine on a single dev machine.
 CACHES = {

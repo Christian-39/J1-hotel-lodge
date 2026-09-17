@@ -3,18 +3,18 @@
 # external one) and a Render Redis instance, then fill env vars in the
 # dashboard (see .env.example).
 #
-# IMPORTANT: this platform needs THREE processes, not one. A running web
-# service does NOT mean the Celery worker is running. Emails (receipts, booking
-# confirmations, cancellations, password resets) are delivered by the *worker*.
-# The worker and beat therefore need the SAME production env vars as the web
-# service — including EMAIL_* — or queued email tasks silently fail.
+# EMAIL: transactional email is delivered SYNCHRONOUSLY by the WEB service
+# over Brevo's HTTPS API (BREVO_API_KEY). No worker, queue or Redis is
+# involved in email delivery — Render Free blocks SMTP ports, so HTTPS is the
+# only transport that works there.
+#
+# The Celery worker + beat services below exist ONLY for the scheduled
+# booking tasks (pending-booking expiry, automatic checkout, checkout
+# warnings). If you cannot run them (e.g. on the free plan), email still
+# works; only those scheduled tasks pause.
 #
 # The shared configuration lives in an env var group so every service inherits
-# an identical environment (the previous blueprint gave the worker/beat only a
-# handful of vars, so they either crashed on boot — production settings require
-# DJANGO_ALLOWED_HOSTS / CORS_ALLOWED_ORIGINS / CSRF_TRUSTED_ORIGINS /
-# FRONTEND_URL at import time — or ran with EMAIL_HOST empty and could never
-# deliver mail).
+# an identical environment.
 
 envVarGroups:
   - name: jone-shared
@@ -56,24 +56,17 @@ envVarGroups:
         sync: false          # optional; parsed from the endpoint when omitted
       - key: MEDIA_CUSTOM_DOMAIN
         sync: false          # optional B2 friendly-URL / CDN host
-      # --- Email (SMTP) — REQUIRED by the worker to deliver mail -----------
-      # Recommended: Brevo transactional SMTP (free tier). See .env.example.
-      - key: EMAIL_BACKEND
-        value: django.core.mail.backends.smtp.EmailBackend
-      - key: EMAIL_HOST
-        value: smtp-relay.brevo.com    # Gmail alternative: smtp.gmail.com
-      - key: EMAIL_PORT
-        value: "587"
-      - key: EMAIL_USE_TLS
-        value: "True"
-      - key: EMAIL_USE_SSL
-        value: "False"
-      - key: EMAIL_HOST_USER
-        sync: false          # Brevo SMTP login, e.g. 9xxxxx@smtp-brevo.com
-      - key: EMAIL_HOST_PASSWORD
-        sync: false          # Brevo SMTP key (NOT the account password)
+      # --- Email (Brevo HTTPS API — synchronous, no worker involved) -------
+      # BREVO_API_KEY: Brevo dashboard → SMTP & API → API keys ("xkeysib-…").
+      # DEFAULT_FROM_EMAIL: MUST be a sender VERIFIED in Brevo, without
+      # surrounding quotes, e.g.  J-one hotel & lodge <agbo33010@gmail.com>
+      # Verify anytime: python manage.py brevo_check --send you@example.com
+      - key: EMAIL_PROVIDER
+        value: brevo
+      - key: BREVO_API_KEY
+        sync: false
       - key: DEFAULT_FROM_EMAIL
-        sync: false          # a Brevo-VERIFIED sender, e.g. "J-ONE HOTEL & LODGE <no-reply@yourdomain.com>"
+        sync: false
       - key: HOTEL_NOTIFICATION_EMAILS
         sync: false          # optional; staff inbox(es) for enquiry/cancellation alerts
 
@@ -89,9 +82,10 @@ services:
     envVars:
       - fromGroup: jone-shared
 
-  # --- Celery worker: consumes email + booking-expiry tasks -----------------
-  # Without this process nothing on the queue is ever executed. This is the
-  # single most important service for receipt delivery.
+  # --- Celery worker: scheduled booking tasks ONLY (no email) ---------------
+  # Runs pending-booking expiry, automatic checkout and checkout warnings.
+  # Email is delivered synchronously by the web service and never touches
+  # this worker.
   - type: worker
     name: jone-hotel-worker
     runtime: python

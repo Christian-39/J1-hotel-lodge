@@ -369,8 +369,25 @@ EMAIL_HOST_PASSWORD = config("EMAIL_HOST_PASSWORD", default="")
 # Connection timeout so a stuck SMTP handshake fails fast (and, in a Celery
 # task, is retried) instead of hanging the worker.
 EMAIL_TIMEOUT = config("EMAIL_TIMEOUT", default=60, cast=int)
+# --- Transactional email provider ------------------------------------------
+# BREVO_API_KEY: Brevo (Sendinblue) HTTPS transactional API key. When set,
+# transactional email is sent over https://api.brevo.com/v3/smtp/email —
+# works on Render Free, where outbound SMTP ports are blocked.
 BREVO_API_KEY = config("BREVO_API_KEY", default="")
+# EMAIL_PROVIDER makes transport selection DETERMINISTIC:
+#   "brevo"  → always the Brevo HTTPS API (fails loudly if the key is absent)
+#   "django" → always Django's EMAIL_BACKEND (console/SMTP)
+#   ""       → auto: Brevo when BREVO_API_KEY is set, Django backend otherwise
+# Production pins this to "brevo" so Gmail/SMTP variables can never silently
+# take over the production path (see production.py).
+EMAIL_PROVIDER = config("EMAIL_PROVIDER", default="").strip().lower()
 DEFAULT_FROM_EMAIL = config("DEFAULT_FROM_EMAIL", default="J-one hotel & lodge <agbo33010@gmail.com>")
+# Tolerate an accidentally quote-wrapped env value ("J-one <a@b>" with literal
+# quotes typed into the hosting dashboard) — otherwise parseaddr() sees no
+# address and every provider rejects the sender.
+if (len(DEFAULT_FROM_EMAIL) >= 2 and DEFAULT_FROM_EMAIL[0] == DEFAULT_FROM_EMAIL[-1]
+        and DEFAULT_FROM_EMAIL[0] in ("'", '"')):
+    DEFAULT_FROM_EMAIL = DEFAULT_FROM_EMAIL[1:-1].strip()
 SERVER_EMAIL = DEFAULT_FROM_EMAIL
 # Comma-separated operational inbox(es) for cancellation/enquiry alerts.
 HOTEL_NOTIFICATION_EMAILS = config("HOTEL_NOTIFICATION_EMAILS", default="", cast=Csv())

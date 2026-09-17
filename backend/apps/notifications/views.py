@@ -126,7 +126,7 @@ class EmailLogListView(generics.ListAPIView):
 
 @extend_schema(tags=["Notifications"], summary="Email delivery status (staff/admin)")
 class EmailLogDetailView(generics.RetrieveAPIView):
-    """Poll a single email's live delivery status (QUEUED → SENT / FAILED)."""
+    """Read a single email's recorded delivery status (SENT / FAILED)."""
 
     permission_classes = [IsStaffRole]
     serializer_class = EmailLogSerializer

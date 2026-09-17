@@ -85,45 +85,44 @@ CACHES = {
     }
 }
 
-# --- Email over SMTP ----------------------------------------------------------
-# Production MUST use a real SMTP backend. If EMAIL_BACKEND is left at the
-# console default (or forced to console) the "email" would only be printed to a
-# log the guest never sees — the exact silent-failure this deploy must prevent.
-EMAIL_BACKEND = config(
-    "EMAIL_BACKEND", default="django.core.mail.backends.smtp.EmailBackend"
-)
-if "console" in EMAIL_BACKEND or "dummy" in EMAIL_BACKEND:
+# --- Email over Brevo's HTTPS transactional API ------------------------------
+# Render's free tier blocks outbound SMTP ports (25/465/587), so production
+# email MUST travel over HTTPS (port 443). Delivery is synchronous — no
+# Celery, no Redis, no worker is involved in the email path.
+#
+# EMAIL_PROVIDER is pinned to "brevo" (unless explicitly overridden) so the
+# presence of Gmail/SMTP EMAIL_* variables can never silently reroute
+# production email through a blocked SMTP port.
+EMAIL_PROVIDER = config("EMAIL_PROVIDER", default="brevo").strip().lower()
+if EMAIL_PROVIDER == "brevo" and not (BREVO_API_KEY or "").strip():  # noqa: F405
     raise ImproperlyConfigured(
-        "Production must not use the console/dummy email backend — guests would "
-        "never receive receipts. Set EMAIL_BACKEND to the SMTP backend."
+        "BREVO_API_KEY is required in production: transactional email is sent "
+        "over Brevo's HTTPS API (Render Free blocks SMTP ports). Create the key "
+        "in the Brevo dashboard (SMTP & API → API keys) and set BREVO_API_KEY. "
+        "DEFAULT_FROM_EMAIL must use a sender address verified in Brevo."
     )
-if EMAIL_BACKEND.endswith("smtp.EmailBackend"):
-    # Fail fast on missing SMTP credentials instead of letting the Celery
-    # worker discover them at send time and silently fail delivery.
-    _missing = [
-        name for name in ("EMAIL_HOST", "EMAIL_HOST_USER", "EMAIL_HOST_PASSWORD")
-        if not (globals().get(name) or "").strip()
-    ]
-    if _missing:
-        raise ImproperlyConfigured(
-            "Production SMTP is not fully configured. Missing: "
-            + ", ".join(_missing)
-            + ". Recommended provider is Brevo (transactional SMTP): "
-            "EMAIL_HOST=smtp-relay.brevo.com, EMAIL_PORT=587, EMAIL_USE_TLS=True, "
-            "EMAIL_HOST_USER=<your Brevo SMTP login>, "
-            "EMAIL_HOST_PASSWORD=<your Brevo SMTP key>. "
-            "DEFAULT_FROM_EMAIL must use a sender address verified in the Brevo "
-            "dashboard. (Gmail SMTP also works with a 16-char App Password and "
-            "EMAIL_HOST=smtp.gmail.com, but deliverability is far weaker.)"
-        )
+# DEFAULT_FROM_EMAIL must parse to a real address — Brevo rejects the send
+# otherwise. Fail at boot, not at the first guest receipt.
+from email.utils import parseaddr as _parseaddr
+_sender_name, _sender_email = _parseaddr(DEFAULT_FROM_EMAIL)  # noqa: F405
+if not _sender_email or "@" not in _sender_email:
+    raise ImproperlyConfigured(
+        "DEFAULT_FROM_EMAIL is not a valid sender address. Use the form "
+        "'J-one hotel & lodge <agbo33010@gmail.com>' with an address verified "
+        "as a sender in the Brevo dashboard."
+    )
 
-# Celery workers run tasks out-of-process in production. Guard against a broker
-# that was never configured — otherwise queued receipts would sit unconsumed.
+# Celery still powers the NON-EMAIL scheduled hotel tasks (pending-booking
+# expiry, automatic checkout, checkout warnings) via the beat + worker
+# services. Email no longer touches the queue, so a missing broker can no
+# longer lose mail — but the scheduled tasks do still need Redis when a real
+# worker architecture is used (CELERY_TASK_ALWAYS_EAGER=False).
 CELERY_TASK_ALWAYS_EAGER = config("CELERY_TASK_ALWAYS_EAGER", default=False, cast=bool)
 if not CELERY_TASK_ALWAYS_EAGER and not (REDIS_URL or "").strip():  # noqa: F405
     raise ImproperlyConfigured(
-        "REDIS_URL (Celery broker) is required in production so the worker can "
-        "consume queued email tasks."
+        "REDIS_URL (Celery broker) is required when CELERY_TASK_ALWAYS_EAGER is "
+        "False so the worker can run the scheduled booking tasks (expiry, "
+        "auto-checkout, checkout warnings). Email does NOT use this queue."
     )
 
 # A Paystack PUBLIC key must never be used as the server-side secret: secret

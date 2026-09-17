@@ -1,9 +1,9 @@
 """End-to-end tests for the delivery-tracked receipt/email pipeline.
 
-These cover the whole chain the bug lived in: staff triggers send → API queues a
-tracked task → Celery task delivers via the email backend → EmailLog reflects
-the REAL outcome (SENT / FAILED / RETRYING). Celery runs eagerly in tests so the
-"worker" executes inline; SMTP is mocked so no real mail leaves the machine.
+These cover the whole chain the bug lived in: staff triggers send → the API
+delivers SYNCHRONOUSLY through the active transport → EmailLog reflects the
+REAL outcome (SENT / FAILED). No queue, no Celery, no Redis is involved; the
+mail backend is mocked so no real mail leaves the machine.
 """
 from datetime import timedelta
 from decimal import Decimal
@@ -159,14 +159,10 @@ class ReceiptEmailTests(BaseAPITestCase):
         # The stored reason must not leak internals but must be diagnosable.
         self.assertNotIn("Invalid format string", log.error_message)
 
-    def test_transient_failure_schedules_retry_not_false_success(self):
-        """A transient SMTP failure must NEVER be reported as sent.
-
-        In eager mode Celery schedules exactly one retry (it does not loop
-        without a real worker), so the truthful outcome is RETRYING + HTTP 202
-        ("delivery being processed") — the row is not SENT and the guest-facing
-        UI is not told the email was delivered.
-        """
+    def test_transient_failure_is_failed_never_false_success(self):
+        """A transient SMTP failure must NEVER be reported as sent — the
+        synchronous pipeline records it as FAILED and answers a truthful 502
+        so staff can retry explicitly."""
         self.auth(self.staff)
         import smtplib
         with mock.patch(
@@ -174,50 +170,25 @@ class ReceiptEmailTests(BaseAPITestCase):
             side_effect=smtplib.SMTPServerDisconnected("connection dropped"),
         ):
             res = self.client.post(self._url())
+        self.assertEqual(res.status_code, 502, res.data)
         log = EmailLog.objects.filter(booking_reference=self.booking.booking_reference).latest("id")
-        self.assertIn(log.status, (EmailLog.Status.RETRYING, EmailLog.Status.FAILED))
-        self.assertNotEqual(log.status, EmailLog.Status.SENT)
+        self.assertEqual(log.status, EmailLog.Status.FAILED)
         self.assertNotEqual(res.data["data"]["status"], EmailLog.Status.SENT)
         self.assertEqual(len(mail.outbox), 0)
-        self.assertGreaterEqual(log.retry_count, 1)
 
-    def test_transient_failure_exhausts_retries_to_failed(self):
-        """Direct check that repeated transient failures end at FAILED (what a
-        real worker does across its retry attempts)."""
-        import smtplib
-        from apps.notifications.tasks import deliver_email_log, _RetryRequested
-
-        log = EmailLog.objects.create(
-            to_email="guest@example.com", subject="s", body="b",
-            kind=EmailLog.Kind.RECEIPT, max_retries=2,
-        )
-        with mock.patch(
-            "apps.notifications.tasks.EmailMessage.send",
-            side_effect=smtplib.SMTPServerDisconnected("x"),
-        ):
-            # Attempts 1 & 2: transient, retry requested.
-            for _ in range(2):
-                with self.assertRaises(_RetryRequested):
-                    deliver_email_log(log.pk, allow_retry=True)
-            # Retries exhausted → FAILED, no more retry.
-            result = deliver_email_log(log.pk, allow_retry=True)
-        self.assertEqual(result, EmailLog.Status.FAILED)
-        log.refresh_from_db()
-        self.assertEqual(log.status, EmailLog.Status.FAILED)
-
-    def test_permanent_failure_does_not_retry(self):
+    def test_permanent_failure_is_failed(self):
         import smtplib
         from apps.notifications.tasks import deliver_email_log
 
         log = EmailLog.objects.create(
-            to_email="guest@example.com", subject="s", body="b", max_retries=3,
+            to_email="guest@example.com", subject="s", body="b",
         )
         with mock.patch(
             "apps.notifications.tasks.EmailMessage.send",
             side_effect=smtplib.SMTPAuthenticationError(535, b"x"),
         ):
-            result = deliver_email_log(log.pk, allow_retry=True)
-        self.assertEqual(result, EmailLog.Status.FAILED)  # permanent → no RETRYING
+            result = deliver_email_log(log.pk)
+        self.assertEqual(result, EmailLog.Status.FAILED)
 
     # -- Guard rails --------------------------------------------------------
     def test_missing_guest_email_rejected(self):

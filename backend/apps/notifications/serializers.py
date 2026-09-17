@@ -17,9 +17,10 @@ class EmailLogSerializer(serializers.ModelSerializer):
         fields = [
             "id", "kind", "kind_label", "to_email", "subject",
             "booking_reference", "payment_reference",
-            "status", "status_label", "retry_count", "max_retries",
-            "error_message", "failure_stage", "failure_stage_label", "task_id",
-            "created_at", "queued_at", "sent_at", "failed_at",
+            "status", "status_label",
+            "error_message", "failure_stage", "failure_stage_label",
+            "provider_message_id",
+            "created_at", "sent_at", "failed_at",
         ]
         read_only_fields = fields
 

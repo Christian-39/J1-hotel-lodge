@@ -408,10 +408,10 @@ def create_booking(*, room_type_value, check_in, check_out, rooms, adults, child
             link=guest_booking_link(booking),
         )
 
-    # Emails are queued strictly AFTER the booking transaction commits
-    # (queue_email uses transaction.on_commit) and can never block or fail
-    # this request: in production a Celery worker delivers them, in eager
-    # development a daemon thread does. A rolled-back booking sends nothing.
+    # Emails are delivered strictly AFTER the booking transaction commits
+    # (queue_email uses transaction.on_commit) and are sent SYNCHRONOUSLY in
+    # this same request — no Celery, no Redis, no worker. A rolled-back
+    # booking sends nothing.
     if booking.guest.email:
         if pending:
             hotel = HotelSettings.get_settings()
@@ -444,7 +444,7 @@ def create_booking(*, room_type_value, check_in, check_out, rooms, adults, child
 
 
 def _send_confirmation_email(booking, hotel=None):
-    """Queue the authoritative branded receipt after verified payment.
+    """Send the authoritative branded receipt after verified payment.
 
     The payment service calls this only after its atomic reconciliation has
     committed.  A payment reference is the automatic-send idempotency key;
@@ -463,8 +463,7 @@ def _send_confirmation_email(booking, hotel=None):
         booking_reference=booking.booking_reference,
         payment_reference=payment_reference,
         created_by__isnull=True,
-        status__in=[EmailLog.Status.PENDING, EmailLog.Status.QUEUED,
-                    EmailLog.Status.SENDING, EmailLog.Status.RETRYING,
+        status__in=[EmailLog.Status.PENDING, EmailLog.Status.SENDING,
                     EmailLog.Status.SENT],
     ).exists():
         return
