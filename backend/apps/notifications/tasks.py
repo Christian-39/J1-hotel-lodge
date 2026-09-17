@@ -1,22 +1,17 @@
-"""Synchronous transactional email delivery for the notifications app.
+"""Celery tasks owned by the notifications app.
 
-``deliver_email_log`` is the single place transactional email is actually
-delivered. It is driven entirely by a database row (``EmailLog``) — it
+``send_email_task`` is the single place transactional email is actually
+delivered. It is driven entirely by a database row (``EmailLog``) — the task
 receives a stable integer id, re-reads everything it needs from the DB, and is
 the source of truth for the receipt attachment (regenerated server-side). It
-records the real outcome so the dashboard can distinguish SENDING / SENT /
-FAILED instead of blindly reporting success.
-
-Email delivery is SYNCHRONOUS: this module is invoked directly by
-``apps.core.emails`` during the originating HTTP request (Send receipt click,
-verified payment, booking events). It no longer runs under Celery — the old
-``send_email_task`` broker task was removed with the email queue — and no
-broker/worker is required for mail to leave the system.
+records the real outcome so the dashboard can distinguish QUEUED / SENT /
+FAILED / RETRYING instead of blindly reporting success.
 
 No SMTP credentials or secrets are ever logged.
 """
 import logging
 
+from celery import shared_task
 from django.conf import settings
 from django.core.mail import EmailMessage, EmailMultiAlternatives, get_connection
 from django.utils import timezone
@@ -222,13 +217,23 @@ def deliver_email_log(log_id, *, allow_retry=True, task=None):
 
 
 class _RetryRequested(Exception):
-    """Internal signal: transient failure, a retry may be scheduled by the caller.
-
-    Retained for ``deliver_email_log(allow_retry=True)`` in-process callers
-    (e.g. operational recovery loops); the request path delivers with
-    ``allow_retry=False``.
-    """
+    """Internal signal: transient failure, caller should schedule a retry."""
 
     def __init__(self, original):
         super().__init__(str(original.__class__.__name__))
         self.original = original
+
+
+@shared_task(
+    bind=True,
+    max_retries=3,
+    name="apps.notifications.send_email",
+)
+def send_email_task(self, log_id):
+    """Deliver a tracked email off the request path; retry transient failures."""
+    try:
+        return deliver_email_log(log_id, allow_retry=True, task=self)
+    except _RetryRequested as retry:
+        # Exponential backoff: 30s, 60s, 120s.
+        countdown = 30 * (2 ** self.request.retries)
+        raise self.retry(exc=retry.original, countdown=countdown)

@@ -33,7 +33,6 @@ from django.conf.urls.static import static
 from django.contrib import admin
 from django.urls import include, path
 from drf_spectacular.views import SpectacularAPIView, SpectacularRedocView, SpectacularSwaggerView
-from apps.core.views_diagnostics import AdminSmtpDiagnosticView
 
 from apps.bookings import urls as booking_urls
 from apps.bookings import urls_admin as booking_admin_urls
@@ -91,7 +90,6 @@ api_patterns = [
     path("admin/offers/", include((offer_urls.admin_urlpatterns, "offers"), namespace="admin-offers")),
     path("admin/gallery/", include((gallery_urls.admin_urlpatterns, "gallery"), namespace="admin-gallery")),
     path("admin/enquiries/", include((enquiry_urls.admin_urlpatterns, "enquiries"), namespace="admin-enquiries")),
-    path("admin/diagnostics/smtp-check/", AdminSmtpDiagnosticView.as_view(), name="admin-smtp-check"),
     path("admin/users/", include("apps.accounts.urls_admin", namespace="admin-users")),
     path("admin/audit-logs/", include("apps.audit.urls_admin", namespace="admin-audit")),
     path("admin/reviews/", include("apps.reviews.urls_admin", namespace="admin-reviews")),

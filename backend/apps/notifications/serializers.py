@@ -4,17 +4,9 @@ from .models import EmailLog, Notification
 
 
 class EmailLogSerializer(serializers.ModelSerializer):
-    """Delivery status of a transactional email (staff/admin visibility).
+    """Delivery status of a transactional email (staff/admin visibility)."""
 
-    Only REAL outcomes are surfaced: SENT, FAILED, or IN_PROGRESS. The
-    queue-era statuses (QUEUED / RETRYING) and the bare pre-delivery markers
-    (PENDING / SENDING) are all normalised to ``IN_PROGRESS`` — delivery is
-    synchronous today, so nothing is ever genuinely "queued" and the dashboard
-    must never show that word. The raw ``status`` field remains available for
-    filtering; normalisation is display-only.
-    """
-
-    status_label = serializers.SerializerMethodField()
+    status_label = serializers.CharField(source="get_status_display", read_only=True)
     kind_label = serializers.CharField(source="get_kind_display", read_only=True)
     failure_stage_label = serializers.CharField(
         source="get_failure_stage_display", read_only=True
@@ -30,12 +22,6 @@ class EmailLogSerializer(serializers.ModelSerializer):
             "created_at", "queued_at", "sent_at", "failed_at",
         ]
         read_only_fields = fields
-
-    def get_status_label(self, obj):
-        final = {EmailLog.Status.SENT, EmailLog.Status.FAILED}
-        if obj.status in final:
-            return obj.get_status_display()
-        return "In progress"
 
 
 class UnreadCountSerializer(serializers.Serializer):

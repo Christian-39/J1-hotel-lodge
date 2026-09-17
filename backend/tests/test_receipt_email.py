@@ -1,8 +1,9 @@
 """End-to-end tests for the delivery-tracked receipt/email pipeline.
 
-These cover the whole chain: staff triggers send → the API delivers via the
-email backend SYNCHRONOUSLY (no queue, no worker) → EmailLog reflects the REAL
-outcome (SENT / FAILED). SMTP is mocked so no real mail leaves the machine.
+These cover the whole chain the bug lived in: staff triggers send → API queues a
+tracked task → Celery task delivers via the email backend → EmailLog reflects
+the REAL outcome (SENT / FAILED / RETRYING). Celery runs eagerly in tests so the
+"worker" executes inline; SMTP is mocked so no real mail leaves the machine.
 """
 from datetime import timedelta
 from decimal import Decimal

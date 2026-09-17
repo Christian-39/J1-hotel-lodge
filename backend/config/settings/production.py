@@ -119,7 +119,7 @@ if EMAIL_BACKEND.endswith("smtp.EmailBackend"):
 
 # Celery workers run tasks out-of-process in production. Guard against a broker
 # that was never configured — otherwise queued receipts would sit unconsumed.
-CELERY_TASK_ALWAYS_EAGER = config("CELERY_TASK_ALWAYS_EAGER", default=True, cast=bool)
+CELERY_TASK_ALWAYS_EAGER = config("CELERY_TASK_ALWAYS_EAGER", default=False, cast=bool)
 if not CELERY_TASK_ALWAYS_EAGER and not (REDIS_URL or "").strip():  # noqa: F405
     raise ImproperlyConfigured(
         "REDIS_URL (Celery broker) is required in production so the worker can "

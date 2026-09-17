@@ -80,47 +80,6 @@ class HotelSettings(models.Model):
         validators=[MinValueValidator(Decimal("0.00")), MaxValueValidator(Decimal("100.00"))],
     )
 
-    # --- Website content overrides (all OPTIONAL, all fall back) --------------
-    # Custom hotel policy shown on the public policies page. PLAIN TEXT —
-    # line breaks are preserved by the frontend. BLANK means "no custom policy
-    # configured": the public page then keeps serving the existing HotelPolicy
-    # documents exactly as before (and, if none exist, the built-in default
-    # policy). Never store HTML here; the public site renders it as text.
-    policy_text = models.TextField(
-        blank=True, default="",
-        help_text="Optional custom hotel policy (plain text). Leave empty to keep "
-                  "the existing policy documents.",
-    )
-
-    # Optional admin-uploaded website images. Every one of them falls back to
-    # the existing website asset (or, for policy/contact, no image block) when
-    # unset, so the public site always renders exactly as it does today until
-    # an administrator uploads a replacement.
-    hero_image = models.ImageField(
-        upload_to="site/hero/", null=True, blank=True, validators=[validate_image_upload],
-        help_text="Custom homepage hero image. Replaces the built-in hero slideshow when set.",
-    )
-    intro_image = models.ImageField(
-        upload_to="site/intro/", null=True, blank=True, validators=[validate_image_upload],
-        help_text="Custom homepage welcome-section image (falls back to the built-in one).",
-    )
-    experience_image = models.ImageField(
-        upload_to="site/experience/", null=True, blank=True, validators=[validate_image_upload],
-        help_text="Custom homepage experience-section image (falls back to the built-in one).",
-    )
-    location_image = models.ImageField(
-        upload_to="site/location/", null=True, blank=True, validators=[validate_image_upload],
-        help_text="Custom homepage location-section image (falls back to the built-in one).",
-    )
-    policy_image = models.ImageField(
-        upload_to="site/policy/", null=True, blank=True, validators=[validate_image_upload],
-        help_text="Optional image shown at the top of the public policies page.",
-    )
-    contact_image = models.ImageField(
-        upload_to="site/contact/", null=True, blank=True, validators=[validate_image_upload],
-        help_text="Optional image shown on the public contact page.",
-    )
-
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

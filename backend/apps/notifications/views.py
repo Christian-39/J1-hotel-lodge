@@ -126,12 +126,7 @@ class EmailLogListView(generics.ListAPIView):
 
 @extend_schema(tags=["Notifications"], summary="Email delivery status (staff/admin)")
 class EmailLogDetailView(generics.RetrieveAPIView):
-    """Fetch a single email's recorded delivery outcome.
-
-    Delivery is synchronous: by the time the sending API call returns, the row
-    is normally final (SENT / FAILED). Any pre-final state is surfaced to the
-    UI as ``IN_PROGRESS`` so the dashboard never shows queue-era vocabulary.
-    """
+    """Poll a single email's live delivery status (QUEUED → SENT / FAILED)."""
 
     permission_classes = [IsStaffRole]
     serializer_class = EmailLogSerializer
