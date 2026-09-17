@@ -360,14 +360,12 @@ class AdminGuestDetailView(generics.RetrieveUpdateAPIView):
         )
 
 class AdminBookingSendReceiptView(APIView):
-    """Deliver a confirmed payment receipt (with PDF) to the guest RIGHT NOW.
+    """Queue a confirmed payment receipt (with PDF) for delivery to the guest.
 
-    Delivery is synchronous: this request performs the actual SMTP send (via
-    ``apps.core.emails.send_email_safe``) and only then answers. The response
-    carries the REAL outcome recorded on the ``EmailLog`` row — 200 only when
-    the SMTP server accepted the message (SENT), 502 with a safe reason when
-    delivery FAILED. Success is never reported before SMTP succeeds; there is
-    no queue anywhere in this path.
+    This endpoint intentionally reports **queued**, not "sent": the Celery
+    worker performs the actual SMTP delivery and records the true outcome on an
+    ``EmailLog`` row. The response carries the EmailLog id so the dashboard can
+    poll the real status (QUEUED → SENT / FAILED) instead of assuming success.
     """
     permission_classes = [IsStaffRole]
     serializer_class = EmptySerializer
@@ -408,9 +406,9 @@ class AdminBookingSendReceiptView(APIView):
         # Presentation lives in the reusable email builder + Django templates:
         # a professional subject, a plain-text fallback, and a styled HTML body
         # (all dynamic values auto-escaped). The itemised PDF is still attached
-        # by the delivery helper via ``attach_receipt_pdf=True``.
+        # by the delivery worker via ``attach_receipt_pdf=True``.
         #
-        # Rendering happens BEFORE anything is sent, so a rendering failure
+        # Rendering happens BEFORE anything is queued, so a rendering failure
         # (bad data, a template bug, a cross-platform date bug, …) must be
         # recorded as a tracked FAILED receipt and reported truthfully — it must
         # never surface as an untracked 500 and must never be reported as SENT.
@@ -452,8 +450,6 @@ class AdminBookingSendReceiptView(APIView):
                 status=status.HTTP_502_BAD_GATEWAY,
             )
 
-        # Synchronous delivery: send_email_safe performs the SMTP send inside
-        # this request and returns only after the real outcome is recorded.
         log = send_email_safe(
             subject,
             text_body,
@@ -468,9 +464,11 @@ class AdminBookingSendReceiptView(APIView):
         )
 
         from apps.audit.services import log_action
+        log_action(actor=request.user, action="RECEIPT_EMAIL_QUEUED", instance=booking,
+                   changes={"recipient": ["", recipient]}, request=request)
 
-        # Reflect the actual delivery state — success is reported ONLY when
-        # the SMTP send really succeeded.
+        # Reflect the actual state. In eager/dev mode the task has already run,
+        # so surface SENT/FAILED truthfully rather than a blanket "queued".
         fresh = EmailLog.objects.filter(pk=log.pk).first() if log else None
         current = fresh.status if fresh else EmailLog.Status.FAILED
         payload = {
@@ -479,24 +477,19 @@ class AdminBookingSendReceiptView(APIView):
             "email_log_id": log.pk if log else None,
             "status": current,
         }
-        log_action(actor=request.user, action="RECEIPT_EMAIL_SEND", instance=booking,
-                   changes={"recipient": ["", recipient], "status": ["", str(current)]},
-                   request=request)
         if current == EmailLog.Status.SENT:
+            msg = f"Receipt email sent successfully to {recipient}."
+            http = status.HTTP_200_OK
+        elif current == EmailLog.Status.FAILED:
+            payload["error"] = fresh.error_message if fresh else "Delivery failed."
             return Response(
-                {
-                    "success": True,
-                    "message": f"Receipt email sent successfully to {recipient}.",
-                    "data": payload,
-                },
-                status=status.HTTP_200_OK,
+                {"success": False, "code": "EMAIL_DELIVERY_FAILED",
+                 "message": payload["error"], "data": payload},
+                status=status.HTTP_502_BAD_GATEWAY,
             )
-        # FAILED (or no log at all): a truthful failure with a safe reason.
-        payload["error"] = (fresh.error_message if fresh else "") or (
-            "The email could not be sent. Please retry."
-        )
+        else:
+            msg = "Receipt email queued successfully. Delivery is being processed."
+            http = status.HTTP_202_ACCEPTED
         return Response(
-            {"success": False, "code": "EMAIL_DELIVERY_FAILED",
-             "message": "The email could not be sent. Please retry.", "data": payload},
-            status=status.HTTP_502_BAD_GATEWAY,
+            {"success": True, "message": msg, "data": payload}, status=http
         )
