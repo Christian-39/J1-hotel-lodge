@@ -370,7 +370,7 @@ EMAIL_HOST_PASSWORD = config("EMAIL_HOST_PASSWORD", default="")
 # task, is retried) instead of hanging the worker.
 EMAIL_TIMEOUT = config("EMAIL_TIMEOUT", default=60, cast=int)
 BREVO_API_KEY = config("BREVO_API_KEY", default="")
-DEFAULT_FROM_EMAIL = config("DEFAULT_FROM_EMAIL", default="J-ONE HOTEL & LODGE <agbo33010@gmail.com>")
+DEFAULT_FROM_EMAIL = config("DEFAULT_FROM_EMAIL", default="J-one hotel & lodge <agbo33010@gmail.com>")
 SERVER_EMAIL = DEFAULT_FROM_EMAIL
 # Comma-separated operational inbox(es) for cancellation/enquiry alerts.
 HOTEL_NOTIFICATION_EMAILS = config("HOTEL_NOTIFICATION_EMAILS", default="", cast=Csv())
