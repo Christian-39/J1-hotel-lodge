@@ -19,7 +19,14 @@ python3 test_paystack.py       # payment traffic is never intercepted or cached
 python3 test_installability.py # Chrome's own manifest parse (CDP)
 python3 test_sticky.py         # sticky blurred topbar/header, both themes
 python3 test_stickyhdr.py      # header/topbar stays pinned while scrolling (all pages)
+python3 test_multi_room_ui.py  # multi-room quantity, payment auto-continue, mobile cards
 ```
+
+`test_multi_room_ui.py` stubs the booking APIs at the network boundary (so it creates no real
+inventory) and guards three regressions: the room quantity surviving selection → summary → draft →
+refresh → back-navigation with a server-quoted total; a backend-VERIFIED payment auto-continuing to
+Step 6 while failed/pending/abandoned/errored verifications never navigate and never claim success;
+and the room cards fitting 320–430px with no horizontal overflow, desktop layout unchanged.
 
 The safety-critical assertions are in `test_pwa.py` and `test_paystack.py`: no `/api/` or
 `/dashboard/` entry may appear in any cache, offline booking/payment must fail rather than return a

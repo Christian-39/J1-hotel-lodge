@@ -793,7 +793,7 @@
     if (selectedRoomType && qtyBySlug[selectedRoomType] == null && seededRooms > 1) {
       qtyBySlug[selectedRoomType] = seededRooms;
     }
-    holder.innerHTML = results.map(function (r) {
+    holder.innerHTML = results.map(function (r, rIndex) {
       // Verified contract shape: { room_type: {...}, available_rooms, bookable,
       // message, pricing: {price_per_night, total, ...}|null }
       var rt = r.room_type || {};
@@ -845,7 +845,13 @@
         }
       }
 
-      return '<label class="room-option' + (bookable ? '' : ' is-disabled') + '" data-room-opt' + (bookable ? '' : ' aria-disabled="true"') + '>' +
+      /* The card is a <label>. Without an explicit `for`, its labelled control
+         is the FIRST labelable descendant — which is the quantity "−" button,
+         so every card click also fired a phantom "one fewer room" and reset a
+         2-room pick back to 1. Bind the label to its own radio instead. */
+      var optId = "room-choice-" + rIndex;
+
+      return '<label class="room-option' + (bookable ? '' : ' is-disabled') + '" data-room-opt for="' + optId + '"' + (bookable ? '' : ' aria-disabled="true"') + '>' +
         img +
         '<div class="room-option-info">' +
           '<h4>' + JONE.esc(name) + '</h4>' +
@@ -853,14 +859,14 @@
           '<div class="room-option-specs"><span><span data-icon="users"></span>' + JONE.esc(rt.max_guests || "\u2014") + ' guests</span>' + (rt.room_size ? '<span><span data-icon="maximize"></span>' + JONE.esc(rt.room_size) + '</span>' : '') + (rt.bed_type ? '<span><span data-icon="bed"></span>' + JONE.esc(rt.bed_type) + '</span>' : '') + '</div>' +
           note +
         '</div>' +
-        '<div class="room-option-price"><div class="price">' + priceLabel + '<small> / night</small></div><div class="caption">' + JONE.esc(totalLabel) + ' total</div>' +
+        '<div class="room-option-price"><div class="price">' + priceLabel + '<small> / night</small></div><div class="caption" data-total-line>' + JONE.esc(totalLabel) + ' total</div>' +
           (isExact
             ? '<div class="caption" style="color:var(--color-accent);margin-top:0.25rem;">Your chosen room: ' + JONE.esc(exactRoomNumber || ("Room " + exactRoomId)) + '</div>'
             : "") +
           qtyCtl +
           '<span class="room-option-select"><span class="sel-idle">Select</span><span class="sel-done"><span data-icon="check" data-size="14"></span> Selected</span></span>' +
         '</div>' +
-        '<input type="radio" name="room-choice" value="' + JONE.esc(rt.slug || rt.id || name) + '"' +
+        '<input type="radio" name="room-choice" id="' + optId + '" value="' + JONE.esc(rt.slug || rt.id || name) + '"' +
           ' data-name="' + JONE.esc(name) + '" data-rt-id="' + JONE.esc(rt.id) + '"' +
           ' data-rt-slug="' + JONE.esc(rt.slug || "") + '"' +
           (avail != null ? ' data-avail-rooms="' + avail + '"' : '') +
@@ -954,8 +960,12 @@
       criteria.rooms = qty;
       updateSummarySelection();
       persistRoomsDraft(qty);
-      scheduleQuote(qty);
+      setTotals("Quoting\u2026");
     }
+    // The card's own total must follow ITS quantity, so re-quote whichever
+    // card changed — never multiply the 1-room price in the browser.
+    setCardTotal(opt, "Quoting\u2026");
+    scheduleQuote(opt, qty);
   }
 
   function updateSummarySelection() {
@@ -979,37 +989,54 @@
      creation. A stale response (guest has since changed qty/room) is dropped. */
   var quoteTimer = null;
   var quoteSeq = 0;
-  function scheduleQuote(qty) {
-    if (!selRoom) return;
+  function scheduleQuote(opt, qty) {
     if (quoteTimer) clearTimeout(quoteTimer);
-    quoteTimer = setTimeout(function () { refreshEstimate(qty); }, 350);
+    quoteTimer = setTimeout(function () { refreshEstimate(opt, qty); }, 350);
   }
-  function refreshEstimate(qty) {
-    if (!selRoom) return;
+  /* The card's own "total" line, so a 2-room card never keeps showing the
+     1-room price returned by the availability search. */
+  function setCardTotal(opt, text) {
+    var line = opt && opt.querySelector("[data-total-line]");
+    if (line) line.textContent = text;
+  }
+  function refreshEstimate(opt, qty) {
+    var slug = opt ? cardSlug(opt) : (selRoom && selRoom.slug);
+    if (!slug) return;
     var my = ++quoteSeq;
+    var isSelected = !!(selRoom && String(selRoom.slug) === String(slug));
     var offer = new URLSearchParams(location.search).get("offer") || criteria.offer || "";
     window.API.quoteBooking({
-      room_type: selRoom.slug,
-      check_in: selRoom.check_in, check_out: selRoom.check_out,
+      room_type: slug,
+      check_in: ci.value, check_out: co.value,
       rooms: qty,
       adults: Number(adults.value) || 1,
       children: Number(children.value) || 0,
       offer_code: offer || undefined
     }).then(function (res) {
-      if (my !== quoteSeq || !selRoom || selRoom.rooms !== qty) return;
-      var data = res.data || res;
-      var pricing = data && data.pricing;
-      var total = pricing && pricing.total;
-      if (!total) return;
-      setTotals(JONE.formatNaira(total) + " (estimate)");
+      if (my !== quoteSeq) return;
+      // Verified contract: POST /api/bookings/quote/ returns the quote fields
+      // FLAT on `data` (nights, rooms, total, …) — not nested under `pricing`.
+      var data = (res && res.data) || res || {};
+      var total = data.total;
+      if (total == null) return;
+      // Keep the response and the request in step: a late reply for a
+      // superseded quantity must never overwrite the current one.
+      if (data.rooms != null && Number(data.rooms) !== Number(qty)) return;
+      setCardTotal(opt, JONE.formatNaira(total) + " total");
+      if (isSelected && selRoom.rooms === qty) setTotals(JONE.formatNaira(total) + " (estimate)");
     }).catch(function (err) {
       if (my !== quoteSeq) return;
       if (err && err.code === "ROOM_UNAVAILABLE") {
         // The live stock shrank under the guest — say so, honestly.
-        setTotals("Not available for these dates");
+        setCardTotal(opt, "Not available for these dates");
+        if (isSelected) setTotals("Not available for these dates");
         JONE.ui.toast((err && err.message) || "That number of rooms is no longer available for these dates.", "warning");
+      } else {
+        // Other failures: state the total is unconfirmed rather than showing
+        // a stale single-room price as if it were the multi-room total.
+        setCardTotal(opt, "Total confirmed at next step");
+        if (isSelected) setTotals("Confirmed at next step");
       }
-      // Other failures keep the card's per-night price; the next step quotes again.
     });
   }
   function setTotals(text) {
@@ -1103,12 +1130,14 @@
     var pricing = roomPricing[slug];
     ++quoteSeq; // invalidate any in-flight estimate for the previous qty
     if (qty === 1 && pricing) {
+      setCardTotal(opt, JONE.formatNaira(pricing.total) + " total");
       setTotals(JONE.formatNaira(pricing.total) + " (estimate)");
     } else if (qty === 1) {
       setTotals("Confirmed at next step");
     } else {
+      setCardTotal(opt, "Quoting\u2026");
       setTotals("Quoting\u2026");
-      refreshEstimate(qty);
+      refreshEstimate(opt, qty);
     }
 
     // Persist the room choice (incl. quantity) so it survives a Back/refresh.

@@ -157,6 +157,25 @@ JONE.ui.initChrome();
         // No automatic download. The receipt is available on demand via the
         // "Download receipt image" button (and emailed to the guest), so we
         // never force a file download the guest didn't ask for.
+
+        /* ---- Continue straight to Step 6 (Confirmation) -------------------
+           ONLY reachable here: the backend has already verified the
+           transaction with Paystack (reference + amount + reconciliation) and
+           returned transaction_status === "success". A provider redirect or a
+           ?reference= in the URL alone never gets this far.
+
+           The guest should not have to press "View booking & receipt", so we
+           hand off to the EXISTING confirmation page using the existing route
+           and the existing per-booking guest-token convention (written just
+           above). `replace` keeps the spent verification URL out of history.
+           The success panel above stays rendered as the fallback if a browser
+           blocks the navigation, and the confirmation page raises its own
+           backend-confirmed success toast. */
+        if (d.booking_reference) {
+          location.replace("booking-confirmation.html?ref=" + encodeURIComponent(d.booking_reference));
+          return;
+        }
+        // No booking reference to continue to — stay here and confirm honestly.
         // Backend-confirmed — the ONLY place a success toast is allowed.
         if (window.JONE && JONE.ui && JONE.ui.toast) {
           JONE.ui.toast("Your booking has been confirmed.", "success", {

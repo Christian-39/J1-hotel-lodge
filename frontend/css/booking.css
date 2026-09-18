@@ -296,9 +296,18 @@
 .room-option.is-selected .room-option-select .sel-idle { display: none; }
 .room-option.is-selected .room-option-select .sel-done { display: inline-flex; align-items: center; gap: 0.4em; }
 @media (max-width: 640px) {
-  .room-option { grid-template-columns: 1fr; gap: var(--sp-4); }
+  /* `1fr` is `minmax(auto, 1fr)`: the track floor is the content's MIN-CONTENT
+     width, so the widest child (the price/actions row, whose quantity picker
+     and Select pill cannot wrap) pushed the card past the viewport. A
+     `minmax(0, 1fr)` track plus `min-width: 0` on the flex/grid children lets
+     them shrink to the available width instead. */
+  .room-option { grid-template-columns: minmax(0, 1fr); gap: var(--sp-4); }
   .room-option .media { aspect-ratio: 16 / 9; }
-  .room-option-price { text-align: left; align-items: flex-start; flex-direction: row; justify-content: space-between; width: 100%; }
+  .room-option-info { min-width: 0; overflow-wrap: anywhere; }
+  .room-option-price {
+    text-align: left; align-items: flex-start; flex-direction: row; justify-content: space-between; width: 100%;
+    min-width: 0; flex-wrap: wrap; gap: 0.5rem 0.75rem;
+  }
 }
 
 /* Booking review card */

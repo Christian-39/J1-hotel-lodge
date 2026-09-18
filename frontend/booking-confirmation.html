@@ -536,7 +536,11 @@
         if (
           prior && prior.booking_reference &&
           prior.room_type_slug === criteria.room &&
-          Number(prior.rooms || 1) === Number(criteria.rooms || 1) &&
+          // The stored record is the backend booking detail, whose quantity
+          // field is `number_of_rooms` — reading `rooms` made every saved
+          // multi-room booking look like a 1-room one, so the resume check
+          // never matched and a SECOND booking was created (double inventory).
+          Number(prior.number_of_rooms || prior.rooms || 1) === Number(criteria.rooms || 1) &&
           prior.check_in === criteria.check_in && prior.check_out === criteria.check_out
         ) {
           try {
