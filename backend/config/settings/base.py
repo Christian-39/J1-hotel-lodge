@@ -370,20 +370,11 @@ EMAIL_HOST_PASSWORD = config("EMAIL_HOST_PASSWORD", default="")
 # task, is retried) instead of hanging the worker.
 EMAIL_TIMEOUT = config("EMAIL_TIMEOUT", default=60, cast=int)
 # --- Transactional email provider ------------------------------------------
-# BREVO_API_KEY: Brevo (Sendinblue) HTTPS transactional API key. When set,
-# transactional email is sent over https://api.brevo.com/v3/smtp/email —
-# works on Render Free, where outbound SMTP ports are blocked.
+
 BREVO_API_KEY = config("BREVO_API_KEY", default="")
-# EMAIL_PROVIDER makes transport selection DETERMINISTIC:
-#   "brevo"  → always the Brevo HTTPS API (fails loudly if the key is absent)
-#   "django" → always Django's EMAIL_BACKEND (console/SMTP)
-#   ""       → auto: Brevo when BREVO_API_KEY is set, Django backend otherwise
-# Production pins this to "brevo" so Gmail/SMTP variables can never silently
-# take over the production path (see production.py).
 EMAIL_PROVIDER = config("EMAIL_PROVIDER", default="").strip().lower()
 DEFAULT_FROM_EMAIL = config("DEFAULT_FROM_EMAIL", default="J-one hotel & lodge <agbo33010@gmail.com>")
-# Tolerate an accidentally quote-wrapped env value ("J-one <a@b>" with literal
-# quotes typed into the hosting dashboard) — otherwise parseaddr() sees no
+
 # address and every provider rejects the sender.
 if (len(DEFAULT_FROM_EMAIL) >= 2 and DEFAULT_FROM_EMAIL[0] == DEFAULT_FROM_EMAIL[-1]
         and DEFAULT_FROM_EMAIL[0] in ("'", '"')):
@@ -397,21 +388,14 @@ EMAIL_BACKEND = config(
 )
 
 # --- Celery / cache --------------------------------------------------------
-# REDIS_URL drives PRODUCTION Celery (broker + result backend) and the
-# production Redis cache. Development settings replace ALL of these with
-# eager in-process execution and no result backend, so a developer without a
-# running Redis server never sees broker reconnect loops (see
-# config/settings/development.py).
+
 REDIS_URL = config("REDIS_URL", default="redis://127.0.0.1:6379/0")
 CELERY_BROKER_URL = REDIS_URL
 CELERY_RESULT_BACKEND = REDIS_URL
 CELERY_TASK_ALWAYS_EAGER = config("CELERY_TASK_ALWAYS_EAGER", default=False, cast=bool)
-# In eager mode failures are recorded on the EmailLog row (and visible to
-# staff) instead of being re-raised into the caller — the delivery helper in
-# apps.core.emails handles its own outcome reporting.
+
 CELERY_TASK_EAGER_PROPAGATES = config("CELERY_TASK_EAGER_PROPAGATES", default=False, cast=bool)
-# Eager results are in-memory only; nothing is ever written to a result store
-# in development (this is also forced off in the development settings).
+
 CELERY_TASK_STORE_EAGER_RESULT = False
 # A task is only acknowledged after it returns — a worker crash mid-delivery
 # re-queues the job rather than losing it.
