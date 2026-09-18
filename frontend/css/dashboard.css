@@ -158,6 +158,112 @@ body.drawer-open .dash-main { overflow: hidden; }
   .dash-sidebar-backdrop.open { opacity: 1; pointer-events: auto; }
 }
 
+/* ---------- Desktop collapsible sidebar (complement of the drawer) --------
+   Desktop-only feature: everything below is gated behind min-width:1025px,
+   the exact complement of the mobile drawer breakpoint above, so the saved
+   collapse preference can never leak into the mobile hamburger flow.
+   State: body[data-sidebar="expanded"|"collapsed"] — driven once from
+   js/dashboard.js (setupSidebarCollapse). */
+.dash-sidebar-collapse {
+  display: none;                 /* desktop only */
+  align-items: center; justify-content: center;
+  margin: 0 0.75rem 0.75rem;
+  padding: 0.5rem 0;
+  border: 1px solid rgba(255,255,255,0.14);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: #B9B8B6;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background var(--speed-2), color var(--speed-2);
+}
+.dash-sidebar-collapse:hover { background: rgba(255,255,255,0.06); color: #fff; }
+.dash-sidebar-collapse:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+.dash-sidebar-collapse svg { width: 18px; height: 18px; }
+
+@media (min-width: 1025px) {
+  .dash-sidebar-collapse { display: inline-flex; }
+  .dash { transition: grid-template-columns var(--speed-3) var(--ease); }
+
+  body[data-sidebar="collapsed"] .dash { grid-template-columns: 76px minmax(0, 1fr); }
+
+  /* Brand: logo stays, wordmark hides */
+  body[data-sidebar="collapsed"] .dash-sidebar-brand { justify-content: center; padding: 0.9rem 0.5rem; }
+  body[data-sidebar="collapsed"] .dash-sidebar-brand > span {
+    position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+    overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+  }
+
+  /* Group labels: announced to screen readers, visually replaced by a
+     separator so groups stay distinguishable in icon-only mode */
+  body[data-sidebar="collapsed"] .dash-nav-group { margin-bottom: 0.9rem; }
+  body[data-sidebar="collapsed"] .dash-nav-group + .dash-nav-group {
+    border-top: 1px solid rgba(255,255,255,0.08);
+    padding-top: 0.9rem;
+  }
+  body[data-sidebar="collapsed"] .dash-nav-label {
+    position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+    overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+  }
+
+  /* Nav items: icon only. The text stays in the accessibility tree
+     (font-size:0 keeps it announced); sighted users get the tooltip. */
+  body[data-sidebar="collapsed"] .dash-nav-item {
+    position: relative;
+    justify-content: center;
+    gap: 0;
+    padding: 0.55rem 0;
+    font-size: 0;
+  }
+  body[data-sidebar="collapsed"] .dash-nav-item svg { width: 20px; height: 20px; flex-shrink: 0; }
+  body[data-sidebar="collapsed"] .dash-nav-item .count {
+    position: absolute; top: 0; right: 0.55rem;
+    margin-left: 0; padding: 0 0.3em;
+    min-width: 14px; height: 14px;
+    font-size: 0.58rem; line-height: 1;
+    display: inline-flex; align-items: center; justify-content: center;
+  }
+  body[data-sidebar="collapsed"] .dash-nav-item.is-active { box-shadow: inset 2px 0 0 var(--color-accent); }
+
+  /* Lightweight tooltip — hover AND keyboard focus, no library. Fixed
+     positioning keeps it clear of the scrollable nav's overflow. */
+  body[data-sidebar="collapsed"] .dash-nav-item:hover::after,
+  body[data-sidebar="collapsed"] .dash-nav-item:focus-visible::after {
+    content: attr(data-base-label);
+    position: fixed;
+    left: calc(76px + 10px);
+    transform: translateY(-50%);
+    z-index: 1300;
+    padding: 0.4rem 0.7rem;
+    border-radius: var(--radius-sm);
+    background: var(--brand-charcoal);
+    border: 1px solid rgba(255,255,255,0.14);
+    box-shadow: var(--shadow-lg);
+    color: #fff;
+    font-size: var(--fs-sm);
+    font-weight: 500;
+    line-height: 1.3;
+    white-space: nowrap;
+    pointer-events: none;
+  }
+
+  /* Footer: avatar + icon-only sign-out stay usable */
+  body[data-sidebar="collapsed"] .dash-sidebar-footer {
+    padding: 0.75rem 0.5rem;
+    display: flex; flex-direction: column; align-items: center; gap: 0.55rem;
+  }
+  body[data-sidebar="collapsed"] .dash-sidebar-footer [data-dash-user] {
+    display: flex; justify-content: center;
+  }
+  body[data-sidebar="collapsed"] .dash-sidebar-footer [data-dash-user] > div:last-child { display: none; }
+  body[data-sidebar="collapsed"] .dash-sidebar-footer [data-logout] {
+    width: auto !important;          /* the shell's inline width:100% */
+    padding: 0.4rem 0.55rem !important;
+    gap: 0;
+  }
+  body[data-sidebar="collapsed"] .dash-logout-label { display: none; }
+}
+
 /* --------------------------- Mobile bottom nav --------------------------- */
 .dash-bottom-nav {
   display: none;

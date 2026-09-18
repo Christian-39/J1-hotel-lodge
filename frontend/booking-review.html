@@ -123,6 +123,7 @@
                 <div class="summary-row"><span class="label">Check-in</span><span class="value" data-r-ci>--</span></div>
                 <div class="summary-row"><span class="label">Check-out</span><span class="value" data-r-co>--</span></div>
                 <div class="summary-row"><span class="label">Nights</span><span class="value" data-r-nights>--</span></div>
+                <div class="summary-row"><span class="label">Rooms</span><span class="value" data-r-rooms>--</span></div>
                 <div class="summary-row"><span class="label">Guests</span><span class="value" data-r-guests>--</span></div>
               </div>
             </div>
@@ -302,11 +303,20 @@
     children: p.get("children") || savedDraft.children || 0,
     room: p.get("room") || savedDraft.room_type,
     room_name: p.get("room_name") || savedDraft.room_name,
+    // Number of rooms of this type (multi-room bookings).
+    rooms: p.get("rooms") || savedDraft.rooms || 1,
     // Exact physical room carried over from "Book this room — Room 203".
     room_id: p.get("room_id") || savedDraft.room_id || "",
     room_no: p.get("room_no") || savedDraft.room_number || ""
   };
-  function roomLine(){ return (data.room_name || data.room) + (data.room_no ? " \u00B7 Room " + data.room_no : ""); }
+  // A chosen PHYSICAL room is always exactly one room — exact-room flows
+  // never behave like multi-room stays.
+  if (data.room_id) data.rooms = 1;
+  data.rooms = Math.max(1, Number(data.rooms) || 1);
+  function roomLine(){
+    var line = (data.room_name || data.room) + (data.room_no ? " \u00B7 Room " + data.room_no : "");
+    return data.rooms > 1 ? data.rooms + " \u00D7 " + line : line;
+  }
 
   if (!data.check_in || !data.room) {
     // Incomplete entry — restart the flow rather than inventing details.
@@ -336,6 +346,7 @@
   var criteria = {
     check_in: data.check_in, check_out: data.check_out,
     adults: data.adults, children: data.children,
+    rooms: data.rooms,
     room: data.room, room_name: data.room_name, offer: offerParam || ""
   };
   var startStep = p.get("step") === "review" ? 4 : 3;
@@ -373,6 +384,7 @@
   setColl("[data-r-ci]", cd(data.check_in) || "--");
   setColl("[data-r-co]", cd(data.check_out) || "--");
   setColl("[data-r-guests]", guestsLabel());
+  setColl("[data-r-rooms]", data.rooms + (data.rooms === 1 ? " room" : " rooms"));
   setColl("[data-r-room]", roomLine());
   setColl("[data-sc-ci]", cd(data.check_in));
   setColl("[data-sc-co]", cd(data.check_out));
@@ -399,6 +411,7 @@
   function renderQuote() {
     if (!quote) return;
     setColl("[data-r-nights]", quote.nights + (quote.nights === 1 ? " night" : " nights"));
+    if (quote.rooms != null) setColl("[data-r-rooms]", quote.rooms + (quote.rooms === 1 ? " room" : " rooms"));
     setColl("[data-r-rate]", JONE.formatNaira(quote.price_per_night) + " / night");
     if (quote.subtotal != null) setColl("[data-r-subtotal]", JONE.formatNaira(quote.subtotal));
     else setColl("[data-r-subtotal]", JONE.formatNaira(quote.price_per_night * quote.nights));
@@ -431,7 +444,7 @@
       var res = await window.API.quoteBooking({
         room_type: data.room,
         check_in: data.check_in, check_out: data.check_out,
-        rooms: 1, adults: Number(data.adults) || 1, children: Number(data.children) || 0,
+        rooms: Number(data.rooms) || 1, adults: Number(data.adults) || 1, children: Number(data.children) || 0,
         offer_code: offerCode || undefined
       });
       quote = res.data || null;
@@ -462,6 +475,7 @@
     draft.adults = Number(data.adults) || 1; draft.children = Number(data.children) || 0;
     draft.room_type = data.room; draft.room_name = data.room_name;
     draft.room_id = data.room_id || ""; draft.room_number = data.room_no || "";
+    draft.rooms = Number(data.rooms) || 1;
     draft.guest = {
       first_name: document.getElementById("g-first").value.trim(),
       last_name: document.getElementById("g-last").value.trim(),
@@ -524,6 +538,7 @@
           adults: data.adults, children: data.children
         });
         if (criteria.offer) q.set("offer", criteria.offer);
+        if (data.rooms > 1) q.set("rooms", data.rooms);
         if (what === "room") {
           q.set("room", data.room); q.set("room_name", data.room_name || ""); q.set("step", "room");
           if (data.room_id) { q.set("room_id", data.room_id); if (data.room_no) q.set("room_no", data.room_no); }
@@ -542,6 +557,7 @@
       step: "payment",
       check_in: data.check_in, check_out: data.check_out,
       adults: data.adults, children: data.children,
+      rooms: data.rooms,
       room: data.room, room_name: data.room_name || "",
       room_id: data.room_id || "", room_no: data.room_no || ""
     }).toString();

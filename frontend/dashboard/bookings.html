@@ -160,8 +160,15 @@
     });
   }
 
+  /* Server-side pagination: state holds ONLY the page; every filter value is
+     read from the inputs at request time so paging always preserves the
+     active search/status/payment/date. Any filter change resets to page 1. */
+  var state = { page: 1 };
+  var pager = document.querySelector("[data-pagination]");
+  function renderPager(meta){ JONE.dashboard.renderPagination(pager, meta, { onPage: load }); }
+
   function filters(){
-    var f = { page_size: 50, ordering: "-created_at" };
+    var f = { page: state.page, page_size: 20, ordering: "-created_at" };
     var q = document.getElementById("bk-q"); if (q && q.value.trim()) f.search = q.value.trim();
     var st = document.getElementById("bk-status"); if (st && st.value) f.status = st.value;
     var py = document.getElementById("bk-pay"); if (py && py.value) f.payment_status = py.value;
@@ -169,10 +176,10 @@
     return f;
   }
 
-  var debouncedLoad = JONE.debounce ? JONE.debounce(load, 300) : load;
+  var debouncedReload = JONE.debounce ? JONE.debounce(function(){ load(1); }, 300) : function(){ load(1); };
   ["bk-q","bk-status","bk-pay","bk-date"].forEach(function(id){
     var el=document.getElementById(id);
-    if(el){ el.addEventListener(id==="bk-q" ? "input" : "change", debouncedLoad); }
+    if(el){ el.addEventListener(id==="bk-q" ? "input" : "change", debouncedReload); }
   });
 
   // Pre-fill the search from the URL (e.g. guest history handoff).
@@ -400,7 +407,8 @@
     }
     // One authoritative refresh AFTER the payment step (the row may have
     // changed status server-side, e.g. PENDING → CONFIRMED on full payment).
-    load();
+    // Page 1 so the just-created (newest-first) booking is always visible.
+    load(1);
   });
 
   /* Insert a freshly created booking as the first row WITHOUT reloading the
@@ -460,7 +468,8 @@
     JONE.icons.inject(tbody);
   }
 
-  async function load(){
+  async function load(page){
+    if (page != null) state.page = Math.max(1, page);
     DATA.loading(tbody);
     try {
       var res = await window.API.list("bookings", filters());
@@ -468,14 +477,16 @@
       if(!(list||[]).length){
         DATA.empty(tbody, "search", "No bookings found", "Adjust your search or filters.", 9);
         rowIndex = {};
+        renderPager(null);
         return;
       }
       renderRows(list);
+      renderPager(res.pagination);
     } catch(err){
       DATA.error(tbody, "Bookings couldn't be loaded", (err && err.message) || "Please try again in a moment.", 9);
     }
   }
-  load();
+  load(1);
 })();
 
 </script>

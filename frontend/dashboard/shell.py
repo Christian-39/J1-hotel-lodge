@@ -38,10 +38,16 @@ def head(title, subtitle=""):
         '      </span>\n'
         '    </div>\n'
         '    <nav class="dash-sidebar-nav" data-dash-nav aria-label="Staff"></nav>\n'
+        # Desktop collapse control (js/dashboard.js also injects it when absent —
+        # setupSidebarCollapse owns the behaviour; hidden on mobile by CSS so the
+        # hamburger drawer is never affected).
+        '    <button class="dash-sidebar-collapse" type="button" data-sidebar-collapse aria-expanded="true" aria-label="Collapse sidebar">\n'
+        '      <span data-icon="chevronLeft" data-size="18"></span>\n'
+        '    </button>\n'
         '    <div class="dash-sidebar-footer">\n'
         '      <div data-dash-user></div>\n'
-        '      <button class="btn btn-sm btn-outline" data-logout style="width:100%;justify-content:center;color:#D6D5D3;border-color:rgba(255,255,255,0.2);">\n'
-        '        <span data-icon="logOut" data-size="16"></span> Sign out\n'
+        '      <button class="btn btn-sm btn-outline" data-logout style="width:100%;justify-content:center;color:#D6D5D3;border-color:rgba(255,255,255,0.2);" aria-label="Sign out">\n'
+        '        <span data-icon="logOut" data-size="16"></span> <span class="dash-logout-label">Sign out</span>\n'
         '      </button>\n'
         '    </div>\n'
         '  </aside>\n'

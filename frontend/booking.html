@@ -282,6 +282,17 @@
   var exactRoomId = params.get("room_id") || "";
   var exactRoomNumber = params.get("room_no") || "";
 
+  /* ---------------------- Room quantity (multi-room) ----------------------
+     Guests may book N rooms of the SAME room type. The quantity travels with
+     the draft + every hand-off URL; the backend availability engine is the
+     authority (this page never computes inventory or prices itself).
+
+       qtyBySlug[slug]   — the qty last picked on a card (per render)
+       exact-room flows  — a chosen PHYSICAL room is always exactly 1 room,
+                           so its card shows a static "1 room" label, no picker. */
+  var qtyBySlug = {};
+  var seededRooms = exactRoomId ? 1 : (Number(params.get("rooms") || draft.rooms || 1) || 1);
+
   if (urlRoomType && draft.room_type && String(draft.room_type) !== urlRoomType) {
     // The URL wins: drop the stale draft so it cannot win later in the flow.
     var stale = JONE.storage.get(S, {}) || {};
@@ -703,7 +714,13 @@
     }
     var adultsN = Number(adults.value) || 1;
     var childrenN = Number(children.value) || 0;
-    // Verified backend contract: guests (total) + rooms; the backend validates.
+    /* Verified backend contract: guests (total) + rooms.
+       The SEARCH stays at the 1-room baseline ON PURPOSE: it answers "which
+       room types have ≥1 physical room free for these dates" and — crucially
+       — returns each type's `available_rooms` count. The guest then picks the
+       quantity (1…available_rooms) on the room card, and that quantity is
+       what quoteBooking and createBooking receive. Using the searched qty
+       here would instead hide types that fit fewer rooms than requested. */
     var payload = { check_in: ci.value, check_out: co.value, guests: adultsN + childrenN, rooms: 1 };
 
     var btn = e.target.querySelector("button[type=submit]");
@@ -716,7 +733,8 @@
       check_in: ci.value, check_out: co.value, adults: adultsN, children: childrenN,
       offer_code: criteria.offer || "",
       room_type: selectedRoomType || "", room_name: selectedRoomName || "",
-      room_id: exactRoomId || "", room_number: exactRoomNumber || ""
+      room_id: exactRoomId || "", room_number: exactRoomNumber || "",
+      rooms: qtyBySlug[selectedRoomType] || 1
     });
 
     try {
@@ -753,6 +771,15 @@
     JONE.ui.toast(msg, "error");
   }
 
+  /* Quantity clamp: at least 1, at most the backend-provided
+     available_rooms when known — a convenience mirror of the API check
+     (the backend re-validates at quote + creation either way). */
+  function clampQty(avail, qty) {
+    qty = Math.max(1, Number(qty) || 1);
+    if (avail != null && avail > 0) qty = Math.min(qty, avail);
+    return qty;
+  }
+
   function renderRooms(results, nights) {
     var holder = document.getElementById("room-results");
     var cont = document.getElementById("continue-guest");
@@ -761,6 +788,10 @@
       JONE.icons.inject(holder);
       if (cont) cont.style.display = "none";
       return;
+    }
+    // Seed the selected card's quantity from the URL/draft ONCE per render.
+    if (selectedRoomType && qtyBySlug[selectedRoomType] == null && seededRooms > 1) {
+      qtyBySlug[selectedRoomType] = seededRooms;
     }
     holder.innerHTML = results.map(function (r) {
       // Verified contract shape: { room_type: {...}, available_rooms, bookable,
@@ -777,11 +808,43 @@
       if (desc && desc.length > 130) desc = desc.slice(0, 127).trim() + "\u2026";
       var priceLabel = pricing ? JONE.formatNaira(pricing.price_per_night) : "\u2014";
       var totalLabel = pricing ? JONE.formatNaira(pricing.total) : (r.message || "Not available");
-      var note = (!bookable && r.message)
-        ? '<p class="caption" style="color:var(--color-danger);margin:0.25rem 0 0;">' + JONE.esc(r.message) + '</p>'
-        : (r.available_rooms != null && r.available_rooms <= 3 && bookable)
-          ? '<p class="caption" style="color:var(--color-warning);margin:0.25rem 0 0;">Only ' + r.available_rooms + ' left for these dates</p>'
-          : "";
+
+      /* --- Live availability line (always stated, no inventory guessing).
+             Everything below is rendered from the backend's available_rooms /
+             bookable fields for THESE dates. */
+      var avail = (typeof r.available_rooms === "number" && r.available_rooms >= 0) ? r.available_rooms : null;
+      var note = "";
+      if (!bookable) {
+        note = '<p class="room-option-avail is-soldout">' + JONE.esc(r.message || "Sold out for these dates") + '</p>';
+      } else if (avail != null) {
+        if (avail === 0) {
+          note = '<p class="room-option-avail is-soldout">Sold out for these dates</p>';
+        } else if (avail <= 3) {
+          note = '<p class="room-option-avail is-low" data-avail-line>Only ' + avail + (avail === 1 ? ' room' : ' rooms') + ' available for these dates</p>';
+        } else {
+          note = '<p class="room-option-avail" data-avail-line>' + avail + ' rooms available for these dates</p>';
+        }
+      }
+
+      /* --- Quantity: a stepper for bookable room-type cards; a static
+             "1 room" label for the chosen PHYSICAL room (an exact room is
+             always exactly one room). Server counts remain authoritative. */
+      var isExact = !!(exactRoomId && String(rt.slug || rt.id) === String(selectedRoomType));
+      var qtyCtl = "";
+      if (bookable && avail !== 0) {
+        if (isExact) {
+          qtyCtl = '<span class="caption" style="display:block;margin-top:0.35rem;color:var(--color-text-muted);">1 room — your chosen room</span>';
+        } else {
+          var qty = clampQty(avail, qtyBySlug[rt.slug] || 1);
+          qtyBySlug[rt.slug] = qty;
+          qtyCtl = '<div class="room-qty" role="group" aria-label="Number of rooms — ' + JONE.esc(name) + '">' +
+              '<button type="button" class="room-qty-btn" data-qty-minus aria-label="One fewer ' + JONE.esc(name) + ' room"' + (qty <= 1 ? ' disabled' : '') + '><span data-icon="minus" data-size="15"></span></button>' +
+              '<span class="room-qty-value" data-qty-value aria-live="polite">' + qty + (qty === 1 ? ' room' : ' rooms') + '</span>' +
+              '<button type="button" class="room-qty-btn" data-qty-plus aria-label="One more ' + JONE.esc(name) + ' room"' + (avail != null && qty >= avail ? ' disabled' : '') + '><span data-icon="plus" data-size="15"></span></button>' +
+            '</div>';
+        }
+      }
+
       return '<label class="room-option' + (bookable ? '' : ' is-disabled') + '" data-room-opt' + (bookable ? '' : ' aria-disabled="true"') + '>' +
         img +
         '<div class="room-option-info">' +
@@ -791,14 +854,18 @@
           note +
         '</div>' +
         '<div class="room-option-price"><div class="price">' + priceLabel + '<small> / night</small></div><div class="caption">' + JONE.esc(totalLabel) + ' total</div>' +
-          (exactRoomId && String(rt.slug || rt.id) === selectedRoomType
+          (isExact
             ? '<div class="caption" style="color:var(--color-accent);margin-top:0.25rem;">Your chosen room: ' + JONE.esc(exactRoomNumber || ("Room " + exactRoomId)) + '</div>'
             : "") +
+          qtyCtl +
           '<span class="room-option-select"><span class="sel-idle">Select</span><span class="sel-done"><span data-icon="check" data-size="14"></span> Selected</span></span>' +
         '</div>' +
         '<input type="radio" name="room-choice" value="' + JONE.esc(rt.slug || rt.id || name) + '"' +
           ' data-name="' + JONE.esc(name) + '" data-rt-id="' + JONE.esc(rt.id) + '"' +
-          ' data-rt-slug="' + JONE.esc(rt.slug || "") + '"' + (bookable ? '' : ' disabled') +
+          ' data-rt-slug="' + JONE.esc(rt.slug || "") + '"' +
+          (avail != null ? ' data-avail-rooms="' + avail + '"' : '') +
+          (isExact ? ' data-exact-room="true"' : '') +
+          (bookable ? '' : ' disabled') +
           ' style="position:absolute;opacity:0;pointer-events:none;">' +
       '</label>';
     }).join("");
@@ -813,6 +880,12 @@
         radio.checked = true;
         selectRoom(opt);
       });
+      // Quantity stepper — deliberately outside the card's label-activation:
+      // +/− must change the qty, never select/deselect the card.
+      var minusBtn = opt.querySelector("[data-qty-minus]");
+      var plusBtn = opt.querySelector("[data-qty-plus]");
+      if (minusBtn) minusBtn.addEventListener("click", function (e) { e.preventDefault(); e.stopPropagation(); adjustRoomQty(opt, -1); });
+      if (plusBtn) plusBtn.addEventListener("click", function (e) { e.preventDefault(); e.stopPropagation(); adjustRoomQty(opt, +1); });
     });
 
     /* ------------------ Auto-select the chosen room type -------------------
@@ -823,6 +896,127 @@
        summary filled and Continue enabled, exactly as if they had clicked it
        themselves. Matching accepts the slug, the id or the name. */
     applySelectedType();
+  }
+
+  function cardAvail(opt) {
+    var radio = opt && opt.querySelector("input");
+    if (!radio) return null;
+    var raw = radio.getAttribute("data-avail-rooms");
+    if (raw == null || raw === "") return null;
+    var n = Number(raw);
+    return isNaN(n) ? null : n;
+  }
+
+  function cardSlug(opt) {
+    var radio = opt && opt.querySelector("input");
+    return radio ? String(radio.getAttribute("data-rt-slug") || radio.value) : "";
+  }
+
+  function adjustRoomQty(opt, delta) {
+    var radio = opt.querySelector("input");
+    if (!radio || radio.disabled) return;
+    var slug = cardSlug(opt);
+    setRoomQty(opt, (clampQty(cardAvail(opt), qtyBySlug[slug] || 1)) + delta);
+  }
+
+  /* Update the quantity on ONE card: stepper buttons/value, the availability
+     caption, and — when the card is the current selection — the whole booking
+     state (summary, estimate quote, draft, stepper criteria). */
+  function setRoomQty(opt, qty) {
+    var avail = cardAvail(opt);
+    var slug = cardSlug(opt);
+    qty = clampQty(avail, qty);
+    qtyBySlug[slug] = qty;
+
+    var value = opt.querySelector("[data-qty-value]");
+    if (value) value.textContent = qty + (qty === 1 ? " room" : " rooms");
+    var minus = opt.querySelector("[data-qty-minus]");
+    var plus = opt.querySelector("[data-qty-plus]");
+    if (minus) minus.disabled = qty <= 1;
+    if (plus) plus.disabled = avail != null && qty >= avail;
+
+    var line = opt.querySelector("[data-avail-line]");
+    if (line && avail != null && avail > 0) {
+      if (qty >= avail) {
+        line.textContent = avail === 1
+          ? "Only 1 room available for these dates"
+          : "All " + avail + " available rooms selected";
+      } else {
+        line.textContent = avail <= 3
+          ? "Only " + avail + (avail === 1 ? " room" : " rooms") + " available for these dates"
+          : avail + " rooms available for these dates";
+      }
+      line.classList.toggle("is-low", avail <= 3);
+    }
+
+    if (selRoom && String(selRoom.slug) === slug) {
+      selRoom.rooms = qty;
+      criteria.rooms = qty;
+      updateSummarySelection();
+      persistRoomsDraft(qty);
+      scheduleQuote(qty);
+    }
+  }
+
+  function updateSummarySelection() {
+    if (!selRoom) return;
+    var txt = ((selRoom.rooms || 1) > 1 ? selRoom.rooms + " × " : "") + (selRoom.name || "");
+    if (selRoom.room_number) txt += " · Room " + selRoom.room_number;
+    var el = document.querySelector("[data-sum-room]");
+    if (el) el.textContent = txt;
+  }
+
+  function persistRoomsDraft(qty) {
+    var d = JONE.storage.get(S, {}) || {};
+    d.rooms = qty || 1;
+    JONE.storage.set(S, d);
+  }
+
+  /* -------------------- Server quote for the estimate --------------------
+     The sticky summary Total is an ESTIMATE backed by POST /api/bookings/
+     quote/ with the SELECTED quantity. No client-side price math ever; the
+     review page re-quotes and the backend computes the authoritative total at
+     creation. A stale response (guest has since changed qty/room) is dropped. */
+  var quoteTimer = null;
+  var quoteSeq = 0;
+  function scheduleQuote(qty) {
+    if (!selRoom) return;
+    if (quoteTimer) clearTimeout(quoteTimer);
+    quoteTimer = setTimeout(function () { refreshEstimate(qty); }, 350);
+  }
+  function refreshEstimate(qty) {
+    if (!selRoom) return;
+    var my = ++quoteSeq;
+    var offer = new URLSearchParams(location.search).get("offer") || criteria.offer || "";
+    window.API.quoteBooking({
+      room_type: selRoom.slug,
+      check_in: selRoom.check_in, check_out: selRoom.check_out,
+      rooms: qty,
+      adults: Number(adults.value) || 1,
+      children: Number(children.value) || 0,
+      offer_code: offer || undefined
+    }).then(function (res) {
+      if (my !== quoteSeq || !selRoom || selRoom.rooms !== qty) return;
+      var data = res.data || res;
+      var pricing = data && data.pricing;
+      var total = pricing && pricing.total;
+      if (!total) return;
+      setTotals(JONE.formatNaira(total) + " (estimate)");
+    }).catch(function (err) {
+      if (my !== quoteSeq) return;
+      if (err && err.code === "ROOM_UNAVAILABLE") {
+        // The live stock shrank under the guest — say so, honestly.
+        setTotals("Not available for these dates");
+        JONE.ui.toast((err && err.message) || "That number of rooms is no longer available for these dates.", "warning");
+      }
+      // Other failures keep the card's per-night price; the next step quotes again.
+    });
+  }
+  function setTotals(text) {
+    var totalEl = document.querySelector("[data-sum-total]");
+    var totalMobile = document.querySelector("[data-sum-total-mobile]");
+    if (totalEl) totalEl.textContent = text;
+    if (totalMobile) totalMobile.textContent = text ? text.replace(" (estimate)", "") : "";
   }
 
   /* Find the option matching the authoritative room type and select it.
@@ -887,28 +1081,41 @@
     selectedRoomName = radio.dataset.name || selectedRoomName;
     criteria.room = selectedRoomType;
     criteria.room_name = selectedRoomName;
-    updateSummaryRoom();
+
+    /* Quantity: what the guest picked on THIS card (from the card's stepper
+       or its earlier draft seed); a chosen PHYSICAL room is always exactly 1. */
+    var qty = exactRoomId ? 1 : clampQty(cardAvail(opt), qtyBySlug[slug] || 1);
+    qtyBySlug[slug] = qty;
+    criteria.rooms = qty;
 
     selRoom = {
       slug: slug, name: radio.dataset.name,
       room_id: exactRoomId || null,
       room_number: exactRoomNumber || null,
       check_in: ci.value, check_out: co.value,
-      adults: adultsN, children: childrenN, rooms: 1
+      adults: adultsN, children: childrenN, rooms: qty
     };
-    document.querySelector("[data-sum-room]").textContent = radio.dataset.name +
-      (exactRoomId ? (exactRoomNumber ? " · Room " + exactRoomNumber : " · your chosen room") : "");
-    var pricing = roomPricing[slug];
-    var totalEl = document.querySelector("[data-sum-total]");
-    var totalMobile = document.querySelector("[data-sum-total-mobile]");
-    var totalTxt = pricing ? JONE.formatNaira(pricing.total) + " (estimate)" : "Confirmed at next step";
-    if (totalEl) totalEl.textContent = totalTxt;
-    if (totalMobile) totalMobile.textContent = pricing ? JONE.formatNaira(pricing.total) : "";
+    updateSummarySelection();
 
-    // Persist the room choice so it survives a Back/refresh.
+    /* Estimate handling: the availability-search total is a backend price for
+       exactly 1 room — only shown for qty 1. Larger quantities are quoted by
+       POST /api/bookings/quote/ (never multiplied client-side). */
+    var pricing = roomPricing[slug];
+    ++quoteSeq; // invalidate any in-flight estimate for the previous qty
+    if (qty === 1 && pricing) {
+      setTotals(JONE.formatNaira(pricing.total) + " (estimate)");
+    } else if (qty === 1) {
+      setTotals("Confirmed at next step");
+    } else {
+      setTotals("Quoting\u2026");
+      refreshEstimate(qty);
+    }
+
+    // Persist the room choice (incl. quantity) so it survives a Back/refresh.
     var d = JONE.storage.get(S, {}) || {};
     d.room_type = selRoom.slug; d.room_name = selRoom.name;
     d.room_id = selRoom.room_id || ""; d.room_number = selRoom.room_number || "";
+    d.rooms = selRoom.rooms;
     JONE.storage.set(S, d);
 
     var cont = document.getElementById("continue-guest");
@@ -919,6 +1126,8 @@
         adults: selRoom.adults, children: selRoom.children,
         room: selRoom.slug, room_name: selRoom.name
       });
+      // The quantity travels as its own explicit URL parameter.
+      if (Number(selRoom.rooms) > 1) q.set("rooms", selRoom.rooms);
       // Carry the exact physical room through the flow (stable id only).
       if (selRoom.room_id) {
         q.set("room_id", selRoom.room_id);

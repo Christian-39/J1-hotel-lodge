@@ -56,6 +56,7 @@
             <thead><tr><th>Name</th><th class="hide-sm">Contact</th><th>Type / reference</th><th class="hide-sm">Received</th><th>Status</th><th>Refund</th><th></th></tr></thead>
             <tbody data-tbody="enquiries"></tbody>
           </table></div>
+          <div class="pagination" data-pagination></div>
         </div>
       </section>
 
@@ -139,18 +140,26 @@
     JONE.icons.inject(tbody);
   }
 
-  async function load(){
+  /* Server-driven paging: status/type filters are re-read on every request,
+     so paging keeps them; a filter change restarts at page 1. */
+  var state={ page:1 };
+  var pager=document.querySelector("[data-pagination]");
+  function renderPager(meta){ JONE.dashboard.renderPagination(pager, meta, { onPage: load }); }
+
+  async function load(page){
+    if(page!=null) state.page=Math.max(1,page);
     DATA.loading(tbody);
     try{
-      var params={ page_size:50 };
+      var params={ page:state.page, page_size:20 };
       var st=document.getElementById("en-status");
       var ty=document.getElementById("en-type");
       if(st&&st.value) params.status=st.value;
       if(ty&&ty.value) params.type=ty.value;
       var res=await window.API.list("enquiries",params);
       var list=window.API.normalizeList?window.API.normalizeList(res.data,res.pagination).items:((res.data&&res.data.results)||res.data||[]);
-      if(!(list||[]).length){ DATA.empty(tbody,"inbox","No enquiries","Enquiries and cancellation/refund requests appear here.",7); return; }
+      if(!(list||[]).length){ DATA.empty(tbody,"inbox","No enquiries","Enquiries and cancellation/refund requests appear here.",7); renderPager(null); return; }
       render(list);
+      renderPager(res.pagination);
       if(openId){ var id=openId; openId=null; openEnquiry(id); }
     }catch(err){ DATA.error(tbody,"Enquiries couldn't be loaded",(err&&err.message)||"Please try again in a moment.",7); }
   }
@@ -221,8 +230,8 @@
     catch(er){ JONE.releaseGuard(save); showErr((er&&er.message)||"Couldn't save the enquiry."); }
   });
 
-  ["en-status","en-type"].forEach(function(id){ var el=document.getElementById(id); if(el) el.addEventListener("change",load); });
-  load();
+  ["en-status","en-type"].forEach(function(id){ var el=document.getElementById(id); if(el) el.addEventListener("change",function(){ load(1); }); });
+  load(1);
 })();
 </script>
 <script src="../js/pwa.js?v=1.1.0"></script>

@@ -43,6 +43,9 @@
     if (c.check_out) q.set("check_out", c.check_out);
     if (c.adults != null) q.set("adults", c.adults);
     if (c.children != null) q.set("children", c.children);
+    // Room quantity travels with the criteria so back-navigation never
+    // silently drops a multi-room selection (only sent when > 1).
+    if (c.rooms != null && Number(c.rooms) > 1) q.set("rooms", c.rooms);
     if (c.room) q.set("room", c.room);
     if (c.room_name) q.set("room_name", c.room_name);
     if (c.offer) q.set("offer", c.offer);

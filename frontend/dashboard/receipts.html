@@ -61,6 +61,7 @@
       <thead><tr><th>Receipt</th><th>Booking</th><th class="hide-sm">Guest</th><th>Amount</th><th class="hide-sm">Issued</th><th></th></tr></thead>
       <tbody data-tbody="receipts"></tbody>
     </table></div>
+    <div class="pagination" data-pagination></div>
   </div>
 </section>
     </div>
@@ -102,22 +103,31 @@
     JONE.icons.inject(tbody);
   }
 
-  async function load(){
+  /* Server paginates the /api/admin/payments/?status=SUCCESS query (this page
+     IS that endpoint — receipts never live in a second store); the page
+     number is the only list state and the search box resets it to 1. */
+  var state={ page:1 };
+  var pager=document.querySelector("[data-pagination]");
+  function renderPager(meta){ JONE.dashboard.renderPagination(pager, meta, { onPage: load }); }
+
+  async function load(page){
+    if(page!=null) state.page=Math.max(1,page);
     DATA.loading(tbody);
     try{
       // `search` is applied SERVER-SIDE by /api/admin/payments/ (it matches the
       // payment reference, booking reference, guest name, booking ref and
       // transaction id) — the page never filters the list locally.
-      var params={ status:"SUCCESS", page_size:50 };
+      var params={ status:"SUCCESS", page:state.page, page_size:20 };
       var qEl=document.getElementById("rc-q");
       if(qEl && qEl.value.trim()) params.search=qEl.value.trim();
       var res=await window.API.list("receipts", params);
       var list=window.API.normalizeList?window.API.normalizeList(res.data,res.pagination).items:((res.data&&res.data.results)||res.data||[]);
-      if(!(list||[]).length){ DATA.empty(tbody,"receipt","No receipts yet","Receipts generated for confirmed payments will appear here.",6); return; }
+      if(!(list||[]).length){ DATA.empty(tbody,"receipt","No receipts yet","Receipts generated for confirmed payments will appear here.",6); renderPager(null); return; }
       render(list);
+      renderPager(res.pagination);
     }catch(err){ DATA.error(tbody,"Receipts couldn't be loaded",(err&&err.message)||"Please try again in a moment.",6); }
   }
-  load();
+  load(1);
 
   // Details are fetched only when requested; the receipt list remains light.
   tbody.addEventListener("click", async function(e){
@@ -162,9 +172,10 @@
     }
   });
 
-  // Debounced server-side search (no request per keystroke).
+  // Debounced server-side search (no request per keystroke); a new search
+  // restarts the list at page 1.
   var rcq=document.getElementById("rc-q");
-  if(rcq) rcq.addEventListener("input", JONE.debounce(load, 300));
+  if(rcq) rcq.addEventListener("input", JONE.debounce(function(){ load(1); }, 300));
 })();
 
 </script>

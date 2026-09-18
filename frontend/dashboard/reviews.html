@@ -181,23 +181,11 @@
     '</tr>';
   }
 
-  function renderPager(pg){
-    if (!pager) return;
-    if (!pg || pg.count == null || pg.total_pages == null || pg.total_pages <= 1) { pager.innerHTML = ""; return; }
-    var html = "";
-    html += '<button type="button" data-page="' + (pg.page - 1) + '"' + (pg.page <= 1 ? " disabled" : "") + '>Previous</button>';
-    html += '<span class="muted" style="padding:0 0.6rem;font-size:var(--fs-sm);">Page ' + pg.page + ' of ' + pg.total_pages + '</span>';
-    html += '<button type="button" data-page="' + (pg.page + 1) + '"' + (pg.page >= pg.total_pages ? " disabled" : "") + '>Next</button>';
-    pager.innerHTML = html;
-  }
-  pager.addEventListener("click", function(e){
-    var b = e.target.closest("[data-page]");
-    if (!b || b.disabled) return;
-    page = parseInt(b.getAttribute("data-page"), 10) || 1;
-    load();
-  });
+  // Same shared control as every other dashboard list (components/dashboard.js).
+  function renderPager(pg){ JONE.dashboard.renderPagination(pager, pg, { onPage: load }); }
 
-  async function load(){
+  async function load(toPage){
+    if (toPage != null) page = Math.max(1, toPage);
     DATA.loading(tbody);
     try {
       var res = await window.API.list("reviews", params());
@@ -328,14 +316,15 @@
 
   /* Filters: server-side search/filter/sort — never client-side over a full
      download. Search is debounced to avoid request storms while typing. */
-  var debouncedSearch = JONE.debounce(function(){ page = 1; load(); }, 350);
+  // A new search/filter/sort restarts at page 1 (server-side, debounced).
+  var debouncedSearch = JONE.debounce(function(){ load(1); }, 350);
   document.getElementById("rv-search").addEventListener("input", debouncedSearch);
   ["rv-rating", "rv-status", "rv-ordering"].forEach(function(id){
-    document.getElementById(id).addEventListener("change", function(){ page = 1; load(); });
+    document.getElementById(id).addEventListener("change", function(){ load(1); });
   });
 
   loadStats();
-  load();
+  load(1);
 })();
 </script>
 <script src="../js/pwa.js?v=1.1.0"></script>

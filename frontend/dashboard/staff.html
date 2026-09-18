@@ -77,6 +77,7 @@
       </tr></thead>
       <tbody data-rows></tbody>
     </table></div>
+    <div class="pagination" data-pagination></div>
   </div>
 </section>
     </div>
@@ -155,23 +156,32 @@
     JONE.icons.inject(rows);
   }
 
-  async function load(){
+  /* Server-driven paging: q/role/active are re-read on every request, so
+     paging keeps the active filters; any filter change restarts at page 1. */
+  var state = { page: 1 };
+  var pager = document.querySelector("[data-pagination]");
+  function renderPager(meta){ JONE.dashboard.renderPagination(pager, meta, { onPage: load }); }
+
+  async function load(page){
+    if (page != null) state.page = Math.max(1, page);
     JONE.dashboard.DATA.loading(rows);
     try {
-      var params = { page_size: 50, role__in: "ADMIN,MANAGER,RECEPTIONIST" };
+      var params = { page: state.page, page_size: 20, role__in: "ADMIN,MANAGER,RECEPTIONIST" };
       if (q && q.value.trim()) params.search = q.value.trim();
       if (role && role.value) params.role = role.value;
       if (active && active.value !== "") params.is_active = active.value;
       var res = await window.API.list("users", params);
-      render(window.API.normalizeList(res.data, res.pagination).items || []);
+      var items = window.API.normalizeList(res.data, res.pagination).items || [];
+      render(items);
+      renderPager(items.length ? res.pagination : null);
     } catch (err) {
       JONE.dashboard.DATA.error(rows, "Staff could not be loaded",
         (err && err.message) || "Please try again in a moment.", 5);
     }
   }
-  load();
-  [q, role, active].forEach(function(el){ if (el) el.addEventListener("change", load); });
-  if (q) q.addEventListener("input", JONE.debounce(load, 300));
+  load(1);
+  [q, role, active].forEach(function(el){ if (el) el.addEventListener("change", function(){ load(1); }); });
+  if (q) q.addEventListener("input", JONE.debounce(function(){ load(1); }, 300));
 
   /* ---------------------- Complete staff profile card ----------------------
      GET /api/admin/users/staff/{id}/ — photo, name, email, phone, role,

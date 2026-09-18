@@ -437,7 +437,6 @@ body.modal-open { overflow: hidden; }
 .pagination {
   display: flex; align-items: center; justify-content: center;
   gap: 0.4rem;
-  margin-top: var(--sp-6);
 }
 .pagination button, .pagination a {
   min-width: 40px; height: 40px;
@@ -455,6 +454,37 @@ body.modal-open { overflow: hidden; }
   border-color: var(--color-primary);
 }
 .pagination button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* -------- Server-side list pagination (shared dashboard component) -------
+   Markup is emitted ONLY by JONE.dashboard.renderPagination()
+   (js/dashboard.js): a "Showing X–Y of N" line, Previous/Next and a compact
+   numbered window with ellipses. All real work travels in API requests. */
+.pagination {
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+  margin-top: var(--sp-4);
+  padding: 0.9rem;
+  border-top: 1px solid var(--color-border);
+}
+.pagination:empty { padding: 0; border-top: none; margin-top: 0; }
+.pagination > .muted { font-size: var(--fs-sm); align-self: center; }
+.pagination button { background: var(--color-surface); cursor: pointer;
+  display: inline-flex; align-items: center; gap: 0.3rem; }
+.pagination button svg { width: 15px; height: 15px; flex-shrink: 0; }
+.pagination .page-nums { display: inline-flex; align-items: center; gap: 0.4rem; }
+.pagination .page-ellipsis { color: var(--color-text-muted); padding: 0 0.1rem;
+  user-select: none; }
+.pagination button:focus-visible,
+.pagination a:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
+@media (max-width: 640px) {
+  .pagination { justify-content: center; gap: 0.5rem; }
+  .pagination > .muted { flex-basis: 100%; text-align: center; }
+  /* numbered window collapses; Prev/Next + the range line stay reachable
+     (the range already states the position: "Showing 21–40 of 137"). */
+  .pagination .page-nums { display: none; }
+  .pagination .page-label { font-size: var(--fs-xs); }
+}
 
 /* ------------------------- Confirmation dialog -------------------------- */
 .confirm-content { text-align: center; padding: var(--sp-3) 0 var(--sp-4); }

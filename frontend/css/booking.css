@@ -243,6 +243,40 @@
   text-align: right;
   display: flex; flex-direction: column; align-items: flex-end; justify-content: center; gap: 0.35rem;
 }
+
+/* -------- Quantity picker (multi-room bookings) ---------------------------
+   One control per room option; buttons enforce [1, available_rooms] client-
+   side only as a courtesy — the backend availability service is authoritative
+   and re-validates at quote + creation. */
+.room-option-avail { font-size: var(--fs-sm); margin: 0.25rem 0 0; }
+.room-option-avail.is-low { color: var(--color-warning); font-weight: 500; }
+.room-option-avail.is-soldout { color: var(--color-danger); font-weight: 500; }
+.room-qty {
+  display: inline-flex; align-items: center; gap: 0.4rem;
+  margin-top: 0.45rem;
+  background: var(--color-surface-alt);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  padding: 0.15rem 0.2rem;
+}
+.room-option.is-selected .room-qty { background: var(--color-surface); }
+.room-qty-btn {
+  width: 30px; height: 30px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: none; border-radius: var(--radius-pill);
+  background: transparent; color: var(--color-text);
+  cursor: pointer; flex-shrink: 0;
+}
+.room-qty-btn:hover:not(:disabled) { background: var(--color-surface); }
+.room-option.is-selected .room-qty-btn:hover:not(:disabled) { background: var(--color-surface-alt); }
+.room-qty-btn:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 1px; }
+.room-qty-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+.room-qty-btn svg { width: 15px; height: 15px; }
+.room-qty-value {
+  min-width: 52px; text-align: center;
+  font-size: var(--fs-sm); font-weight: 600; color: var(--color-text);
+  font-variant-numeric: tabular-nums;
+}
 .room-option-select {
   display: inline-flex; align-items: center; gap: 0.4em;
   font-size: var(--fs-xs); font-weight: 600; letter-spacing: var(--tracking-wide); text-transform: uppercase;

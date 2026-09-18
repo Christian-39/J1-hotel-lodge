@@ -311,37 +311,42 @@ const API = (() => {
 
   /* ------------------------- Response helpers ------------------------------ */
 
-  /* Normalize a list response to { items, count, next, previous, page, pageSize }.
+  /* Normalize a list response to { items, count, next, previous, page, pageSize, totalPages }.
      Accepts the verified contract envelope (data array + pagination object),
      a bare array, or a legacy {results} shape — all without ever inventing rows. */
   function normalizeList(payload, pagination, defaultPageSize = 20) {
     // Contract shape: API layer passes (res.data, res.pagination).
     if (Array.isArray(payload)) {
       const pg = pagination || {};
+      const count = pg.count != null ? pg.count : payload.length;
+      const pageSize = pg.page_size || defaultPageSize;
       return {
         items: payload,
-        count: pg.count != null ? pg.count : payload.length,
+        count,
         next: pg.next || null,
         previous: pg.previous || null,
         page: pg.page || 1,
-        pageSize: pg.page_size || defaultPageSize
+        pageSize,
+        totalPages: pg.total_pages != null ? pg.total_pages : Math.max(1, Math.ceil(count / pageSize) || 1)
       };
     }
     if (payload && typeof payload === "object") {
       // Legacy/defensive: {results, count} or response object with .data
       if (Array.isArray(payload.results)) {
+        const count = payload.count != null ? payload.count : payload.results.length;
         return {
           items: payload.results,
-          count: payload.count != null ? payload.count : payload.results.length,
+          count,
           next: payload.next || null,
           previous: payload.previous || null,
           page: 1,
-          pageSize: defaultPageSize
+          pageSize: defaultPageSize,
+          totalPages: Math.max(1, Math.ceil(count / defaultPageSize) || 1)
         };
       }
       if (payload.data !== undefined) return normalizeList(payload.data, payload.pagination, defaultPageSize);
     }
-    return { items: [], count: 0, next: null, previous: null, page: 1, pageSize: defaultPageSize };
+    return { items: [], count: 0, next: null, previous: null, page: 1, pageSize: defaultPageSize, totalPages: 1 };
   }
 
   /* Unwrap helper: contract responses are { success, message, data } — return data. */

@@ -55,6 +55,7 @@
 <section class="panel">
   <div class="panel-head"><h2>Notifications <span class="notif-count" data-notif-unread hidden style="margin-left:0.4rem;"></span></h2><div class="panel-actions"><button class="btn btn-sm btn-outline" data-notif-all type="button">Mark all read</button></div></div>
   <div class="notif-list" data-notif-list></div>
+  <div class="pagination" data-pagination></div>
 </section>
     </div>
   </div>
@@ -118,24 +119,35 @@
   }
 
   var loading=false;   // duplicate-request prevention
-  async function load(){
+  /* Server-driven paging at page_size 20 (unread-count stays authoritative
+     from the payload regardless of which page is shown). */
+  var state={ page:1 };
+  var pager=document.querySelector("[data-pagination]");
+  function renderPager(meta){ JONE.dashboard.renderPagination(pager, meta, { onPage: load }); }
+
+  async function load(page){
     if(loading) return;
+    if(page!=null) state.page=Math.max(1,page);
     loading=true;
     DATA.loading(list, "list");
     try{
-      var res=await window.API.getNotifications({ page_size:50 });
+      var res=await window.API.getNotifications({ page:state.page, page_size:20 });
       var d=(res&&res.data)||{};
       var notifs=d.notifications||[];
       if(!notifs.length){
         DATA.empty(list,"bell","You are all caught up","No notifications right now.",1);
         setUnread(d.unread_count||0);
+        renderPager(null);
         return;
       }
       render(notifs, d.unread_count);
+      // The list payload embeds `notifications` inside `data`, so the pager
+      // reads the envelope pagination (res.pagination) directly.
+      renderPager(res.pagination);
     }catch(err){ DATA.error(list,"Notifications couldn't be loaded",(err&&err.message)||"Please try again in a moment.",1); }
     finally{ loading=false; }
   }
-  load();
+  load(1);
 
   // Mark all read — one real POST; success only after the backend confirms.
   var markAll=document.querySelector("[data-notif-all]");

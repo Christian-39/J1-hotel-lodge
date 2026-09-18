@@ -78,6 +78,7 @@
       <thead><tr><th>Payment ref</th><th>Booking</th><th class="hide-sm">Guest</th><th>Method</th><th class="hide-sm">Date</th><th>Amount</th><th>Status</th><th class="hide-sm">By</th></tr></thead>
       <tbody data-tbody="payments"></tbody>
     </table></div>
+    <div class="pagination" data-pay-pagination></div>
   </div>
 </section>
 <section class="panel" style="margin-top:1.25rem;">
@@ -87,6 +88,7 @@
       <thead><tr><th>Refund</th><th>Booking</th><th>Payment ref</th><th>Amount</th><th>Status</th><th class="hide-sm">Submitted</th><th class="hide-sm">Paystack refund</th></tr></thead>
       <tbody data-tbody="refunds"></tbody>
     </table></div>
+    <div class="pagination" data-refund-pagination></div>
   </div>
 </section>
     </div>
@@ -125,23 +127,33 @@
     JONE.icons.inject(tbody);
   }
 
+  /* Server-side pagination: the page is the ONLY list state; filters are read
+     from the inputs on every request, so paging preserves them and any filter
+     change restarts at page 1. */
+  var state={ page:1 };
+  var pager=document.querySelector("[data-pay-pagination]");
+  function renderPager(meta){ JONE.dashboard.renderPagination(pager, meta, { onPage: load }); }
+
   function filters(){
-    var f={ page_size:50 };
+    var f={ page: state.page, page_size:20 };
     var q=document.getElementById("p-q"); if(q&&q.value.trim()) f.search=q.value.trim();
     var m=document.getElementById("p-method"); if(m&&m.value) f.provider=m.value;
     var s=document.getElementById("p-status"); if(s&&s.value) f.status=s.value;
     return f;
   }
 
-  async function load(){
+  async function load(page){
+    if(page!=null) state.page=Math.max(1,page);
     DATA.loading(tbody);
     try{
       var res=await window.API.list("payments",filters());
-      var list=window.API.normalizeList?window.API.normalizeList(res.data,res.pagination).items:((res.data&&res.data.results)||res.data||[]);
+      var norm=window.API.normalizeList(res.data,res.pagination);
+      var list=norm.items||((res.data&&res.data.results)||[]);
       render(list||[]);
+      renderPager(list.length?res.pagination:null);
     }catch(err){ DATA.error(tbody,"Payments couldn't be loaded",(err&&err.message)||"Please try again in a moment.",8); }
   }
-  load();
+  load(1);
 
   var refundBody=document.querySelector("[data-tbody=refunds]");
   function renderRefunds(list){
@@ -152,24 +164,29 @@
       return '<tr><td class="cell-nowrap">#'+JONE.esc(r.id||"—")+'</td><td class="cell-nowrap">'+(b?'<a href="booking-details.html?ref='+encodeURIComponent(b)+'">'+JONE.esc(b)+'</a>':"—")+'</td><td class="cell-nowrap">'+JONE.esc(r.payment_reference||"—")+'</td><td class="num cell-nowrap">'+JONE.esc(JONE.formatNaira(r.amount))+'</td><td class="cell-nowrap">'+JONE.dashboard.statusPill(r.status)+'</td><td class="hide-sm cell-nowrap">'+JONE.esc(r.submitted_at?JONE.formatDateTime(r.submitted_at):"—")+'</td><td class="hide-sm cell-nowrap">'+JONE.esc(r.paystack_refund_reference||r.paystack_refund_id||"Awaiting Paystack")+'</td></tr>';
     }).join("");
   }
-  async function loadRefunds(){
+  var refundPagerEl=document.querySelector("[data-refund-pagination]");
+  function renderRefundPager(meta){ JONE.dashboard.renderPagination(refundPagerEl, meta, { onPage: loadRefunds }); }
+  var refundState={ page:1 };
+  async function loadRefunds(page){
     if(!refundBody) return;
+    if(page!=null) refundState.page=Math.max(1,page);
     DATA.loading(refundBody);
     try{
-      var params={ page_size:25 };
+      var params={ page: refundState.page, page_size:20 };
       var rs=document.getElementById("r-status"); if(rs&&rs.value) params.status=rs.value;
       var res=await window.API.listRefunds(params);
       var list=window.API.normalizeList?window.API.normalizeList(res.data,res.pagination).items:((res.data&&res.data.results)||res.data||[]);
       renderRefunds(list||[]);
+      renderRefundPager(list.length?res.pagination:null);
     }catch(err){ DATA.error(refundBody,"Refunds couldn't be loaded",(err&&err.message)||"Please try again in a moment.",7); }
   }
-  loadRefunds();
+  loadRefunds(1);
 
   var applyBtn=document.getElementById("p-apply");
-  if(applyBtn) applyBtn.addEventListener("click",load);
-  var refundStatus=document.getElementById("r-status"); if(refundStatus) refundStatus.addEventListener("change",loadRefunds);
+  if(applyBtn) applyBtn.addEventListener("click",function(){ load(1); });
+  var refundStatus=document.getElementById("r-status"); if(refundStatus) refundStatus.addEventListener("change",function(){ loadRefunds(1); });
   var qEl=document.getElementById("p-q");
-  if(qEl) qEl.addEventListener("input",JONE.debounce(load,300));
+  if(qEl) qEl.addEventListener("input",JONE.debounce(function(){ load(1); },300));
 
   // Prefill the booking reference when handed off from a booking (?bookings=).
   (function(){

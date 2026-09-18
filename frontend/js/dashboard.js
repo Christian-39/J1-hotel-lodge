@@ -138,6 +138,10 @@
     }
     if (!sidebar.id) sidebar.id = "dash-sidebar";
 
+    // Desktop collapse control + persisted state (independent of the mobile
+    // drawer; styled desktop-only so mobile is never affected by it).
+    setupSidebarCollapse();
+
     if (sidebarWired) return;   // never attach the document listeners twice
     sidebarWired = true;
 
@@ -173,6 +177,90 @@
     });
     document.addEventListener("keydown", (e) => {
       if (e.key === "Escape" && isOpen()) setOpen(false);
+    });
+  }
+
+  /* ===================== Desktop sidebar collapse =========================
+     The ONLY desktop collapse manager — deliberately separate from the
+     mobile drawer state in setupSidebar() (.open). Two independent states:
+
+       desktop  body[data-sidebar="expanded"|"collapsed"]  (CSS min-width:1025px)
+       mobile   sidebar.open + backdrop                     (CSS max-width:1024px)
+
+     The collapsed styling is fully gated behind the desktop breakpoint, so a
+     saved "collapsed" preference can NEVER affect the mobile drawer. The
+     preference is a plain UI key — it never touches auth/booking storage. */
+  const SIDEBAR_PREF_KEY = "jone.dashboard.sidebar";
+
+  function sidebarPref() {
+    const v = JONE.storage.get(SIDEBAR_PREF_KEY, null);
+    return v === "collapsed" ? "collapsed" : "expanded";
+  }
+
+  function paintSidebarCollapse(state) {
+    const collapsed = state === "collapsed";
+    document.body.setAttribute("data-sidebar", collapsed ? "collapsed" : "expanded");
+    const btn = document.querySelector("[data-sidebar-collapse]");
+    if (btn) {
+      btn.setAttribute("aria-expanded", collapsed ? "false" : "true");
+      const label = collapsed ? "Expand sidebar" : "Collapse sidebar";
+      btn.setAttribute("aria-label", label);
+      btn.setAttribute("title", label);
+      btn.innerHTML = '<span data-icon="' + (collapsed ? "chevronRight" : "chevronLeft") + '" data-size="18"></span>';
+      JONE.icons.inject(btn);
+    }
+  }
+
+  let collapseWired = false;
+  function setupSidebarCollapse() {
+    const sidebar = document.querySelector(".dash-sidebar");
+    if (!sidebar) return;
+
+    // Wrap the "Sign out" text once so collapsed CSS can show the icon alone;
+    // the accessible name stays complete either way.
+    const logout = sidebar.querySelector("[data-logout]");
+    if (logout && !logout.querySelector(".dash-logout-label")) {
+      const label = document.createElement("span");
+      label.className = "dash-logout-label";
+      [...logout.childNodes].forEach((n) => {
+        if (n.nodeType === 3 && n.textContent.trim()) label.appendChild(n);
+      });
+      if (label.textContent.trim()) {
+        label.textContent = label.textContent.trim();
+        logout.appendChild(label);
+      }
+      if (!logout.getAttribute("aria-label")) {
+        logout.setAttribute("aria-label", logout.textContent.replace(/\s+/g, " ").trim() || "Sign out");
+      }
+    }
+
+    // One shared control for every dashboard page — injected here so the
+    // checked-in shells never duplicate it. Hidden on mobile by CSS.
+    if (!sidebar.querySelector("[data-sidebar-collapse]")) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "dash-sidebar-collapse";
+      btn.setAttribute("data-sidebar-collapse", "");
+      btn.setAttribute("aria-expanded", "true");
+      btn.setAttribute("aria-label", "Collapse sidebar");
+      btn.setAttribute("aria-controls", "dash-sidebar");
+      btn.innerHTML = '<span data-icon="chevronLeft" data-size="18"></span>';
+      const footer = sidebar.querySelector(".dash-sidebar-footer");
+      sidebar.insertBefore(btn, footer || null);
+      JONE.icons.inject(btn);
+    }
+
+    paintSidebarCollapse(sidebarPref());
+
+    if (collapseWired) return;  // one delegated listener, never duplicated
+    collapseWired = true;
+    document.addEventListener("click", (e) => {
+      const t = e.target.closest("[data-sidebar-collapse]");
+      if (!t) return;
+      e.preventDefault();
+      const next = sidebarPref() === "collapsed" ? "expanded" : "collapsed";
+      JONE.storage.set(SIDEBAR_PREF_KEY, next);
+      paintSidebarCollapse(next);
     });
   }
 
@@ -349,6 +437,98 @@
       }
     }
   };
+
+  /* ======================================================================
+     REUSABLE SERVER-SIDE PAGINATION
+     Exactly ONE pager for every dashboard list. A page calls
+       JONE.dashboard.renderPagination(container, meta, { onPage })
+     after each API load; the control renders only the UI and reports the
+     requested page back through onPage — the page then re-requests the same
+     endpoint with the new `page` (the database paginates, never the browser).
+
+       meta — the envelope pagination block
+              { count, page, page_size, total_pages, next, previous }
+              (res.pagination) or the normalizeList() result
+              ({ pageSize, totalPages, … }).
+
+     idempotent: re-render freely after each load; the click listener is
+     delegated and attached exactly once per container.
+     ====================================================================== */
+
+  /* Accepts either pagination shape and derives anything missing. */
+  function pagerMeta(meta) {
+    if (!meta || typeof meta !== "object") return null;
+    const page = Math.max(1, parseInt(meta.page, 10) || 1);
+    const pageSize = Math.max(1, parseInt(meta.page_size != null ? meta.page_size : meta.pageSize, 10) || 20);
+    let totalPages = meta.total_pages != null ? meta.total_pages : meta.totalPages;
+    totalPages = totalPages == null ? null : Math.max(1, parseInt(totalPages, 10) || 1);
+    const count = meta.count != null && !isNaN(parseInt(meta.count, 10))
+      ? Math.max(0, parseInt(meta.count, 10)) : null;
+    if (totalPages == null && count != null) totalPages = Math.max(1, Math.ceil(count / pageSize));
+    if (totalPages == null) totalPages = page;
+    return { page: Math.min(page, totalPages), pageSize, totalPages, count };
+  }
+
+  /* Compact numbered window: page ±1 plus both ends, nulls = ellipses. */
+  function pagerPageNumbers(page, totalPages) {
+    if (totalPages <= 7) return Array.from({ length: totalPages }, (_, i) => i + 1);
+    const seq = [1, 2];
+    const start = Math.max(3, page - 1);
+    const end = Math.min(totalPages - 2, page + 1);
+    if (start > 3) seq.push(null);
+    for (let p = start; p <= end; p++) seq.push(p);
+    if (end < totalPages - 2) seq.push(null);
+    seq.push(totalPages - 1, totalPages);
+    return seq;
+  }
+
+  /* Pure HTML builder (unit-testable without a live DOM). */
+  function paginationHTML(meta) {
+    const m = pagerMeta(meta);
+    if (!m || m.totalPages <= 1) return "";
+    let range;
+    if (m.count != null) {
+      const first = m.count === 0 ? 0 : (m.page - 1) * m.pageSize + 1;
+      const last = Math.min(m.count, m.page * m.pageSize);
+      range = "Showing " + first + "–" + last + " of " + m.count;
+    } else {
+      range = "Page " + m.page + " of " + m.totalPages;
+    }
+    let html = '<span class="muted" aria-live="polite">' + JONE.esc(range) + "</span>";
+    html += '<button type="button" data-page="' + (m.page - 1) + '" aria-label="Previous page"' +
+      (m.page <= 1 ? " disabled" : "") + '>' +
+      '<span data-icon="chevronLeft" data-size="15"></span><span class="page-label">Previous</span></button>';
+    html += '<span class="page-nums">';
+    pagerPageNumbers(m.page, m.totalPages).forEach(function (n) {
+      if (n == null) { html += '<span class="page-ellipsis" aria-hidden="true">\u2026</span>'; return; }
+      const active = n === m.page;
+      html += '<button type="button" class="page-num' + (active ? " is-active" : "") + '" data-page="' + n + '"' +
+        (active ? ' aria-current="page" disabled' : "") +
+        ' aria-label="Page ' + n + (active ? " (current)" : "") + '">' + n + "</button>";
+    });
+    html += "</span>";
+    html += '<button type="button" data-page="' + (m.page + 1) + '" aria-label="Next page"' +
+      (m.page >= m.totalPages ? " disabled" : "") + '>' +
+      '<span class="page-label">Next</span><span data-icon="chevronRight" data-size="15"></span></button>';
+    return html;
+  }
+
+  function renderPagination(container, meta, opts) {
+    if (!container) return;
+    opts = opts || {};
+    if (typeof opts.onPage === "function") container.__jonePagerOnPage = opts.onPage;
+    container.innerHTML = paginationHTML(meta);
+    JONE.icons.inject(container);
+    if (container.__jonePagerWired) return;
+    container.__jonePagerWired = true;
+    container.addEventListener("click", function (e) {
+      const btn = e.target && e.target.closest ? e.target.closest("[data-page]") : null;
+      if (!btn || btn.disabled || !container.contains(btn)) return;
+      const next = parseInt(btn.getAttribute("data-page"), 10);
+      if (!next || next < 1 || typeof container.__jonePagerOnPage !== "function") return;
+      container.__jonePagerOnPage(next);
+    });
+  }
 
   /* ----------------------- Generic helpers for pages ----------------------- */
   function statusPill(status, textOrOverride) {
@@ -1416,6 +1596,18 @@
   window.JONE.dashboard = {
     renderSidebar, renderUser, setupSidebar, setupStickyTopbar, renderTopbarBell, renderBottomNav,
     notifBadge, statusPill, boot, topbar, NAV, badge, DATA, formModal,
+    /* Test-only seeds: pure sidebar-collapse state mappers (Node harness). */
+    _test: {
+      sidebarPrefState: (v) => (v === "collapsed" ? "collapsed" : "expanded"),
+      sidebarNext: (state) => (state === "collapsed" ? "expanded" : "collapsed"),
+      sidebarLabelFor: (collapsed) => ({
+        aria: collapsed ? "Expand sidebar" : "Collapse sidebar",
+        icon: collapsed ? "chevronRight" : "chevronLeft",
+        expanded: collapsed ? "false" : "true",
+      }),
+    },
+    // List pagination (requests pages from the API; never slices in-browser)
+    renderPagination, paginationHTML,
     // Operational components
     currentRole, hasRole, canManageRooms, canManageStaff, money,
     paymentModal, staffProfileModal, editStaffModal, roomTypeRoomsModal,

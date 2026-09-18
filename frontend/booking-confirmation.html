@@ -239,11 +239,17 @@
   var criteria = {
     check_in: p.get("check_in"), check_out: p.get("check_out"),
     adults: p.get("adults") || 1, children: p.get("children") || 0,
+    // Number of rooms of this type (multi-room bookings). URL is the hand-off
+    // contract with the review step; the draft is the refresh fallback.
+    rooms: null,
     room: p.get("room"), room_name: p.get("room_name"),
     // Exact physical room the guest selected ("Book this room — Room 203").
     // Advisory: the server re-checks it and may substitute an equivalent room.
     room_id: p.get("room_id") || "", room_no: p.get("room_no") || ""
   };
+  criteria.rooms = Math.max(1, Number(p.get("rooms") || (JONE.storage.get(JONE.APP_CONFIG.STORAGE.BOOKING, {}) || {}).rooms) || 1);
+  // A chosen PHYSICAL room is always exactly one room.
+  if (criteria.room_id) criteria.rooms = 1;
   var S = JONE.APP_CONFIG.STORAGE.BOOKING;
   // The authoritative booking (backend response) — memory + one storage copy
   // so the folio survives the payment redirect.
@@ -265,6 +271,7 @@
     criteria: {
       check_in: criteria.check_in, check_out: criteria.check_out,
       adults: criteria.adults, children: criteria.children,
+      rooms: criteria.rooms,
       room: criteria.room, room_name: criteria.room_name
     },
     onNavigate: function () { return false; }   // all back-nav is cross-page
@@ -282,7 +289,11 @@
     b = b || {};
     var nums = (b.room_assignments || []).map(function (a) { return a.room_number; }).filter(Boolean);
     if (nums.length) return b.room_type_name ? (nums.join(", ") + " (" + b.room_type_name + ")") : nums.join(", ");
-    return b.room_type_name || criteria.room_name || criteria.room || "—";
+    // No assignment list yet (e.g. pay screen before creation): say how many
+    // rooms the booking actually reserves instead of just the type name.
+    var n = Number(b.number_of_rooms || (booking == null ? criteria.rooms : 0)) || 0;
+    var typeName = b.room_type_name || criteria.room_name || criteria.room || "—";
+    return n > 1 ? n + " × " + typeName : typeName;
   }
 
   function fillReceipt(source) {
@@ -426,8 +437,9 @@
 
   /* ------------------------- payment (create + init) ------------------------- */
   function fillPaymentSummary() {
-    setColl("[data-p-room]", booking ? roomSummary(booking)
-      : (criteria.room_name || criteria.room || "--") + (criteria.room_no ? " · Room " + criteria.room_no : ""));
+    var preRoom = ((criteria.rooms || 1) > 1 ? criteria.rooms + " × " : "") +
+      (criteria.room_name || criteria.room || "--") + (criteria.room_no ? " · Room " + criteria.room_no : "");
+    setColl("[data-p-room]", booking ? roomSummary(booking) : preRoom);
     setColl("[data-p-ci]", JONE.formatDate((booking && booking.check_in) || criteria.check_in, "mid"));
     setColl("[data-p-co]", JONE.formatDate((booking && booking.check_out) || criteria.check_out, "mid"));
     if (booking && booking.total_amount != null) {
@@ -458,6 +470,7 @@
     try {
       sig = JSON.stringify([
         payload.room_type, payload.check_in, payload.check_out,
+        payload.rooms || 1, payload.room_id || "",
         payload.adults, payload.children,
         (payload.guest && payload.guest.email) || ""
       ]);
@@ -523,6 +536,7 @@
         if (
           prior && prior.booking_reference &&
           prior.room_type_slug === criteria.room &&
+          Number(prior.rooms || 1) === Number(criteria.rooms || 1) &&
           prior.check_in === criteria.check_in && prior.check_out === criteria.check_out
         ) {
           try {
@@ -546,7 +560,7 @@
         var payload = {
           room_type: criteria.room,
           check_in: criteria.check_in, check_out: criteria.check_out,
-          rooms: 1, adults: Number(criteria.adults) || 1, children: Number(criteria.children) || 0,
+          rooms: Number(criteria.rooms) || 1, adults: Number(criteria.adults) || 1, children: Number(criteria.children) || 0,
           offer_code: draft.offer_code || undefined,
           guest: draft.guest || undefined
         };
@@ -715,7 +729,7 @@
       try {
         var q = await window.API.quoteBooking({
           room_type: criteria.room, check_in: criteria.check_in, check_out: criteria.check_out,
-          rooms: 1, adults: Number(criteria.adults) || 1, children: Number(criteria.children) || 0
+          rooms: Number(criteria.rooms) || 1, adults: Number(criteria.adults) || 1, children: Number(criteria.children) || 0
         });
         quote = q.data || null;
       } catch (_) { quote = null; }

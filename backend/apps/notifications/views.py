@@ -5,6 +5,7 @@ from rest_framework.exceptions import NotFound
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.views import APIView
 
+from apps.core.pagination import StandardPagination
 from apps.core.permissions import IsStaffRole
 from apps.core.responses import success_response
 
@@ -109,6 +110,9 @@ class EmailLogListView(generics.ListAPIView):
 
     permission_classes = [IsStaffRole]
     serializer_class = EmailLogSerializer
+    # Explicit — this list is unbounded and staff-filterable, so it pages with
+    # the same StandardPagination contract as every other admin list.
+    pagination_class = StandardPagination
 
     def get_queryset(self):
         qs = EmailLog.objects.all()
