@@ -17,14 +17,18 @@ import logging
 
 from django.conf import settings
 from django.db import IntegrityError, transaction
+from django.template.loader import render_to_string
 from django.utils import timezone
 from rest_framework.exceptions import NotFound
 
 from apps.audit.services import log_action
 from apps.bookings.access import GUEST_TOKEN_HEADER
 from apps.bookings.models import Booking
+from apps.bookings.services.receipt_email import LOGO_CID
 from apps.core.emails import queue_email
 from apps.core.exceptions import JOneAPIError
+from apps.core.formatting import format_date
+from apps.hotel.models import HotelSettings
 from apps.notifications.services import notify_staff
 
 from .models import Review
@@ -159,20 +163,32 @@ def send_review_invitation(booking):
     if hasattr(booking, "review"):
         return
     link = f"{settings.FRONTEND_URL}{REVIEW_PAGE_LINK}?ref={booking.booking_reference}"
+    hotel = HotelSettings.get_settings()
+    hotel_location = ", ".join(
+        part for part in (hotel.address, hotel.city, hotel.state, hotel.country) if part
+    )
+    context = {
+        "hotel_name": hotel.hotel_name,
+        "hotel_location": hotel_location,
+        "hotel_phone": hotel.phone,
+        "hotel_email": hotel.email,
+        "logo_cid": LOGO_CID,
+        "guest_first_name": booking.guest.first_name,
+        "guest_name": booking.guest.full_name,
+        "booking_reference": booking.booking_reference,
+        "room_type": booking.room_type.name,
+        "rooms_count": booking.number_of_rooms,
+        "check_in": format_date(booking.check_in),
+        "check_out": format_date(booking.check_out),
+        "nights": booking.nights,
+        "review_url": link,
+    }
     queue_email(
         kind="REVIEW_INVITE",
         booking_reference=booking.booking_reference,
         subject="How was your stay at J-ONE HOTEL & LODGE?",
-        message=(
-            f"Dear {booking.guest.first_name},\n\n"
-            f"Thank you for staying with us ({booking.check_in} → {booking.check_out}).\n"
-            "We would love to hear how we did — it takes less than a minute:\n\n"
-            f"{link}\n\n"
-            f"Your booking reference: {booking.booking_reference}\n\n"
-            "Your feedback goes directly to hotel management and helps us "
-            "improve the J-ONE experience.\n\n"
-            "Warm regards,\nJ-ONE HOTEL & LODGE"
-        ),
+        message=render_to_string("emails/review_invitation.txt", context),
+        html_message=render_to_string("emails/review_invitation.html", context),
         recipients=[booking.guest.email],
     )
 
