@@ -449,7 +449,7 @@
     return '<tr data-booking-row="'+JONE.esc(b.id)+'">'+
       '<td class="cell-nowrap"><a class="nav-link" href="booking-details.html?ref='+encodeURIComponent(ref)+'">'+JONE.esc(ref)+'</a>'+
         '<div class="caption hide-md">'+JONE.esc(b.guest_name||"—")+'</div></td>'+
-      '<td class="hide-sm">'+JONE.esc(b.guest_name||"—")+'<div class="caption">'+JONE.esc(b.guest_phone||b.guest_email||"")+'</div></td>'+
+      '<td class="hide-sm cell-guest"><span class="cell-guest-name">'+JONE.esc(b.guest_name||"—")+'</span><div class="caption cell-guest-contact">'+JONE.esc(b.guest_phone||b.guest_email||"")+'</div></td>'+
       '<td class="hide-sm">'+JONE.esc(roomLabel(b))+'</td>'+
       '<td class="cell-nowrap">'+JONE.esc(b.check_in?JONE.formatDate(b.check_in,"mid"):"—")+'</td>'+
       '<td class="hide-sm cell-nowrap">'+JONE.esc(b.check_out?JONE.formatDate(b.check_out,"mid"):"—")+'</td>'+

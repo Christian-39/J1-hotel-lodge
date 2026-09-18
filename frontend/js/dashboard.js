@@ -245,8 +245,14 @@
       btn.setAttribute("aria-label", "Collapse sidebar");
       btn.setAttribute("aria-controls", "dash-sidebar");
       btn.innerHTML = '<span data-icon="chevronLeft" data-size="18"></span>';
-      const footer = sidebar.querySelector(".dash-sidebar-footer");
-      sidebar.insertBefore(btn, footer || null);
+      // Sits top-right of the brand/logo header, opposite the wordmark.
+      const brand = sidebar.querySelector(".dash-sidebar-brand");
+      if (brand) {
+        brand.appendChild(btn);
+      } else {
+        const footer = sidebar.querySelector(".dash-sidebar-footer");
+        sidebar.insertBefore(btn, footer || null);
+      }
       JONE.icons.inject(btn);
     }
 
