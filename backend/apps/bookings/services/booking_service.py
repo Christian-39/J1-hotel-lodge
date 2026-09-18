@@ -531,23 +531,45 @@ def register_successful_payment(booking: Booking, amount, *, request=None):
 # Expiration
 # ---------------------------------------------------------------------------
 def expire_pending_booking(booking: Booking):
-    """Single-object expiration, safe to call twice (idempotent)."""
+    """Single-object expiration, safe to call twice (idempotent) AND safe under
+    concurrent confirmation.
+
+    The status flip happens under a row lock with a re-check, so the
+    interleaving "beat task reads PENDING → Paystack verification commits
+    CONFIRMED → beat task writes EXPIRED" can never clobber a booking that a
+    verified payment confirmed in the meantime. Payment verification takes the
+    same row lock (payments service), so whichever transaction wins, the loser
+    sees the new state and backs off.
+    """
     if booking.status != Booking.Status.PENDING:
         return
-    booking.status = Booking.Status.EXPIRED
-    booking.save(update_fields=["status", "updated_at"])
-    log_action(
-        actor=None, action="BOOKING_EXPIRED", instance=booking,
-        summary=f"Pending booking {booking.booking_reference} expired (unpaid hold released)",
-    )
-    if booking.guest.user_id:
-        notify_users(
-            [booking.guest.user],
-            type="BOOKING_CANCELLED",
-            title=f"Booking {booking.booking_reference} expired",
-            message="Your reserved hold expired because payment was not completed in time.",
-            link=guest_booking_link(booking),
+    with transaction.atomic():
+        locked = (
+            Booking.objects.select_for_update()
+            .select_related("guest", "guest__user")
+            .get(pk=booking.pk)
         )
+        # Re-check under the lock: a concurrent payment/confirmation may have
+        # confirmed (or staff may have cancelled) this booking already — and a
+        # payment may even have pushed expires_at away by clearing it.
+        if not locked.is_expired_pending:
+            booking.refresh_from_db(fields=["status", "expires_at"])
+            return
+        locked.status = Booking.Status.EXPIRED
+        locked.save(update_fields=["status", "updated_at"])
+        log_action(
+            actor=None, action="BOOKING_EXPIRED", instance=locked,
+            summary=f"Pending booking {locked.booking_reference} expired (unpaid hold released)",
+        )
+        if locked.guest.user_id:
+            notify_users(
+                [locked.guest.user],
+                type="BOOKING_CANCELLED",
+                title=f"Booking {locked.booking_reference} expired",
+                message="Your reserved hold expired because payment was not completed in time.",
+                link=guest_booking_link(locked),
+            )
+    booking.status = locked.status
     logger.info("Pending booking expired: %s", booking.booking_reference)
 
 
@@ -560,6 +582,31 @@ def expire_stale_pending_bookings(now=None):
     for booking in stale:
         expire_pending_booking(booking)
     return len(stale)
+
+
+# Opportunistic fallback sweep. Celery beat remains the primary expiration
+# driver; this simply guarantees the staff bookings screen can never show
+# long-dead PENDING holds when the worker/beat services are down (e.g. a
+# hosting plan where they are not running). Throttled through the shared
+# cache so at most one sweep runs per interval across all web workers.
+LAZY_EXPIRY_SWEEP_CACHE_KEY = "bookings:lazy-expiry-sweep"
+LAZY_EXPIRY_SWEEP_INTERVAL = 60  # seconds
+
+
+def maybe_expire_stale_pending_bookings():
+    """Run the stale-pending sweep at most once per interval (cheap no-op otherwise)."""
+    try:
+        from django.core.cache import cache
+
+        if not cache.add(LAZY_EXPIRY_SWEEP_CACHE_KEY, "1", LAZY_EXPIRY_SWEEP_INTERVAL):
+            return 0
+    except Exception:  # cache trouble must never break a bookings request
+        return 0
+    try:
+        return expire_stale_pending_bookings()
+    except Exception:
+        logger.exception("Opportunistic pending-booking sweep failed")
+        return 0
 
 
 # ---------------------------------------------------------------------------

@@ -255,13 +255,26 @@ def _status_color(label) -> str:
     return C_STATUS_OK
 
 
+def _is_paystack(latest) -> bool:
+    if not latest:
+        return False
+    return "PAYSTACK" in str(_first(latest.get("provider"), latest.get("provider_label"))).upper()
+
+
 def _payment_type(latest) -> str:
     if not latest:
         return "BOOKING CONFIRMATION"
-    provider = str(_first(latest.get("provider_label"), latest.get("provider"))).upper()
-    channel = str(_first(latest.get("channel"))).upper()
-    if "PAYSTACK" in provider:
+    provider = str(_first(latest.get("provider_label"), latest.get("provider"))).upper().replace("_", " ")
+    channel = str(_first(latest.get("channel"))).upper().replace("_", " ")
+    if _is_paystack(latest):
         return "ONLINE PAYMENT" + (f" / {channel}" if channel else "")
+    # Offline records store the provider as the channel too (cash → "cash");
+    # drop the channel when the provider already contains it ("CASH / CASH",
+    # "POS TERMINAL / POS") so nothing is displayed twice.
+    def _norm(s):
+        return "".join(ch for ch in s if ch.isalnum())
+    if channel and _norm(channel) and _norm(channel) in _norm(provider):
+        channel = ""
     return provider + (f" / {channel}" if channel else "")
 
 
@@ -283,8 +296,15 @@ def _normalize(data: dict, opts: dict) -> dict:
     booking_ref = _first(data.get("booking_reference"), data.get("reference"))
     payment_ref = _first(latest and latest.get("reference"), data.get("receipt_reference"),
                          data.get("payment_reference"), booking_ref)
-    tx_id = _first(latest and latest.get("transaction_id"), data.get("transaction_id"),
-                   latest and latest.get("provider_reference"), payment_ref)
+    # Gateway session/transaction id: only a real provider value may appear.
+    # Offline (cash/POS/transfer) payments have no gateway session — never
+    # substitute the payment reference and never invent one. (Mirrors
+    # normalize() in frontend/js/receipt.js.)
+    if _is_paystack(latest):
+        tx_id = _first(latest and latest.get("transaction_id"), data.get("transaction_id"),
+                       latest and latest.get("provider_reference"), payment_ref)
+    else:
+        tx_id = _first(latest and latest.get("transaction_id"))
     room_type = _first(data.get("room_type"), data.get("room_type_name"), opts.get("room_type"))
     rooms = _room_numbers(data)
     stay_line = _compact([room_type, f"Room {rooms}" if rooms else ""], " \u00b7 ")
@@ -305,6 +325,10 @@ def _normalize(data: dict, opts: dict) -> dict:
     status = _status_text(data, latest)
     remark_line = "Hotel booking payment" + (f" for {booking_ref}" if booking_ref else "")
     booking_details = _compact([stay_line, stay_dates, stay_guests], " \u00b7 ")
+    # Offline (front-desk) payments carry the staff member who recorded them;
+    # Paystack rows carry the payer, which is not "recorded by" information.
+    recorded_by = _first(latest.get("recorded_by")) if (latest and not _is_paystack(latest)) else ""
+    notes = _first(latest.get("notes")) if latest else ""
 
     summary = [s for s in [
         f"Booking total: {_money(total)}" if total != "" else "",
@@ -332,6 +356,8 @@ def _normalize(data: dict, opts: dict) -> dict:
         "booking_reference": booking_ref,
         "payment_reference": payment_ref,
         "session_id": tx_id,
+        "recorded_by": recorded_by,
+        "notes": notes,
         "status": status,
         "status_color": _status_color(status),
         "summary_lines": summary,
@@ -350,9 +376,16 @@ def _detail_rows(d: dict):
         ("Remark", [d["remark_line"] or "Hotel booking payment"], "value", False),
         ("Booking Reference", [d["booking_reference"]], "value", False),
         ("Transaction Reference", [d["payment_reference"]], "value", False),
-        ("Session Id", [d["session_id"]], "value", False),
-        ("Transaction Status", [d["status"]], "status", False),
     ]
+    # Same conditional rows as detailRows() in receipt.js: no fabricated
+    # gateway session for offline payments; staff attribution when present.
+    if d["session_id"]:
+        rows.append(("Session Id", [d["session_id"]], "value", False))
+    if d.get("recorded_by"):
+        rows.append(("Recorded By", [d["recorded_by"]], "value", False))
+    if d.get("notes"):
+        rows.append(("Notes", [d["notes"]], "value", False))
+    rows.append(("Transaction Status", [d["status"]], "status", False))
     if d["summary_lines"]:
         rows.append(("Payment Summary", d["summary_lines"], "value", True))
     return rows

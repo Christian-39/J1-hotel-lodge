@@ -25,7 +25,7 @@
 
 "use strict";
 
-const CACHE_VERSION = "jone-v1.1.0";
+const CACHE_VERSION = "jone-v1.1.1";
 const PRECACHE = `${CACHE_VERSION}-precache`;
 const PAGES_CACHE = `${CACHE_VERSION}-pages`;
 const IMAGES_CACHE = `${CACHE_VERSION}-images`;
@@ -259,6 +259,13 @@ self.addEventListener("fetch", (event) => {
   // API and backend media: completely untouched — no interception at all, so a
   // cached response can never stand in for authoritative booking/payment data.
   if (url.pathname.startsWith("/api/") || url.pathname.startsWith("/media/")) return;
+
+  // version.json is the deployment source of truth for the update checker.
+  // It must ALWAYS come from the network (the page fetches it with
+  // cache:"no-store" and the host serves it with no-store headers) — the
+  // service worker must never intercept it, or a stale copy could hide a
+  // deployed release indefinitely.
+  if (url.pathname === "/version.json") return;
 
   // Dashboard: network-only. Navigations get the branded offline page when the
   // network is unavailable; nothing under /dashboard/ is ever cached.

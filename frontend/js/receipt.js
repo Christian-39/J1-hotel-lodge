@@ -200,11 +200,22 @@
     return "";
   }
 
+  function isPaystack(latest) {
+    if (!latest) return false;
+    var p = String(first(latest.provider, latest.provider_label)).toUpperCase();
+    return p.indexOf("PAYSTACK") !== -1;
+  }
+
   function paymentType(latest) {
     if (!latest) return "BOOKING CONFIRMATION";
-    var provider = String(first(latest.provider_label, latest.provider)).toUpperCase();
-    var channel = String(first(latest.channel)).toUpperCase();
-    if (provider.indexOf("PAYSTACK") !== -1) return "ONLINE PAYMENT" + (channel ? " / " + channel : "");
+    var provider = String(first(latest.provider_label, latest.provider)).toUpperCase().replace(/_/g, " ");
+    var channel = String(first(latest.channel)).toUpperCase().replace(/_/g, " ");
+    if (isPaystack(latest)) return "ONLINE PAYMENT" + (channel ? " / " + channel : "");
+    // Offline records store the provider as the channel too (cash → "cash"),
+    // so drop the channel when the provider already contains it
+    // ("CASH / CASH", "POS TERMINAL / POS") — nothing is displayed twice.
+    var normChannel = channel.replace(/[^A-Z0-9]/g, "");
+    if (normChannel && provider.replace(/[^A-Z0-9]/g, "").indexOf(normChannel) !== -1) channel = "";
     return provider + (channel ? " / " + channel : "");
   }
 
@@ -220,7 +231,12 @@
     var amount = latest && latest.amount != null ? latest.amount : first(paid && asNumber(paid) > 0 ? paid : "", due && asNumber(due) > 0 ? due : "", total);
     var bookingRef = first(data.booking_reference, data.reference);
     var paymentRef = first(latest && latest.reference, data.receipt_reference, data.payment_reference, bookingRef);
-    var txId = first(latest && latest.transaction_id, data.transaction_id, latest && latest.provider_reference, paymentRef);
+    // Gateway session/transaction id: only a real provider value may appear
+    // here. Offline (cash/POS/transfer) payments have no gateway session —
+    // never substitute the payment reference and never invent one.
+    var txId = isPaystack(latest)
+      ? first(latest && latest.transaction_id, data.transaction_id, latest && latest.provider_reference, paymentRef)
+      : first(latest && latest.transaction_id);
     var roomType = first(data.room_type, data.room_type_name, opts.room_type);
     var rooms = roomNumbers(data);
     var stayLine = compactList([roomType, rooms ? "Room " + rooms : ""], " · ");
@@ -232,10 +248,16 @@
     var guestCount = first(data.number_of_guests, (asNumber(data.adults) + asNumber(data.children)) || "");
     var stayGuests = guestCount ? guestCount + " guest" + (Number(guestCount) === 1 ? "" : "s") : "";
     var status = statusText(data, latest);
+    // Offline (front-desk) payments carry the staff member who recorded them;
+    // Paystack rows carry the payer, which is not "recorded by" information.
+    var recordedBy = latest && !isPaystack(latest) ? first(latest.recorded_by) : "";
+    var notes = latest ? first(latest.notes) : "";
     return {
       hotel: hotel,
       guest: guest,
       latest: latest,
+      recordedBy: recordedBy,
+      notes: notes,
       sourceLabel: first(opts.sourceLabel, opts.generatedFrom, "J-ONE"),
       documentTitle: first(opts.documentTitle, "Transaction Receipt"),
       amount: amount,
@@ -277,7 +299,11 @@
       { label: "Remark", value: d.remarkLines[0] || "Hotel booking payment" },
       { label: "Booking Reference", value: d.bookingReference },
       { label: "Transaction Reference", value: d.paymentReference },
-      { label: "Session Id", value: d.sessionId },
+      // Gateway session id only exists for online payments; a cash/POS/bank
+      // transfer receipt must not display a fabricated one.
+      d.sessionId ? { label: "Session Id", value: d.sessionId } : null,
+      d.recordedBy ? { label: "Recorded By", value: d.recordedBy } : null,
+      d.notes ? { label: "Notes", value: d.notes } : null,
       { label: "Transaction Status", value: d.status, opts: { valueClass: "rc-access-status" + d.statusClass, statusClass: d.statusClass } },
       d.summaryLines.length ? { label: "Payment Summary", value: d.summaryLines, opts: { mutedRest: true } } : null
     ].filter(Boolean);

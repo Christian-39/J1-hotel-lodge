@@ -13,7 +13,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="J-ONE Hotel">
-<link rel="stylesheet" href="../css/main.css?v=1.1.0">
+<link rel="stylesheet" href="../css/main.css?v=1.1.1">
 
 </head>
 <body>
@@ -66,18 +66,18 @@
     </div>
   </div>
 </div>
-<script src="../js/config.js?v=1.1.0"></script>
-<script src="../js/utils.js?v=1.1.0"></script>
-<script src="../js/icons.js?v=1.1.0"></script>
-<script src="../js/api.js?v=1.1.0"></script>
-<script src="../js/theme.js?v=1.1.0"></script>
-<script src="../js/ui.js?v=1.1.0"></script>
-<script src="../js/auth.js?v=1.1.0"></script>
-<script src="../js/hotel-data.js?v=1.1.0"></script>
-<script src="../js/navigation.js?v=1.1.0"></script>
-<script src="../js/receipt-email-modal.js?v=1.1.0"></script>
-<script src="../js/dashboard.js?v=1.1.0"></script>
-<script src="../js/receipt.js?v=1.1.0"></script>
+<script src="../js/config.js?v=1.1.1"></script>
+<script src="../js/utils.js?v=1.1.1"></script>
+<script src="../js/icons.js?v=1.1.1"></script>
+<script src="../js/api.js?v=1.1.1"></script>
+<script src="../js/theme.js?v=1.1.1"></script>
+<script src="../js/ui.js?v=1.1.1"></script>
+<script src="../js/auth.js?v=1.1.1"></script>
+<script src="../js/hotel-data.js?v=1.1.1"></script>
+<script src="../js/navigation.js?v=1.1.1"></script>
+<script src="../js/receipt-email-modal.js?v=1.1.1"></script>
+<script src="../js/dashboard.js?v=1.1.1"></script>
+<script src="../js/receipt.js?v=1.1.1"></script>
 <script>
   JONE.ui.initChrome();
   JONE.dashboard.boot("receptionist");
@@ -97,7 +97,7 @@
   function render(list){
     tbody.innerHTML=list.map(function(r){
       var b=r.booking_reference;
-      return '<tr><td>'+JONE.esc(r.reference||"—")+'<span class="receipt-mobile-guest hide-md">'+JONE.esc(r.guest_name||"—")+'</span></td><td>'+(b?'<a href="booking-details.html?ref='+encodeURIComponent(b)+'">'+JONE.esc(b)+'</a>':"—")+'</td><td class="hide-sm">'+JONE.esc(r.guest_name||"—")+'</td><td class="num">'+JONE.esc(JONE.formatNaira(r.amount))+'</td><td class="hide-sm">'+JONE.esc(r.paid_at?JONE.formatDate(r.paid_at,"mid"):(r.created_at?JONE.formatDate(r.created_at,"mid"):"—"))+'</td><td>'+(b?'<button class="btn btn-sm btn-outline" type="button" data-view-receipt="'+JONE.esc(b)+'"><span data-icon="printer" data-size="15"></span> View receipt</button>':"—")+'</td></tr>';
+      return '<tr><td class="cell-nowrap">'+JONE.esc(r.reference||"—")+'<span class="receipt-mobile-guest hide-md">'+JONE.esc(r.guest_name||"—")+'</span></td><td class="cell-nowrap">'+(b?'<a href="booking-details.html?ref='+encodeURIComponent(b)+'">'+JONE.esc(b)+'</a>':"—")+'</td><td class="hide-sm">'+JONE.esc(r.guest_name||"—")+'</td><td class="num cell-nowrap">'+JONE.esc(JONE.formatNaira(r.amount))+'</td><td class="hide-sm cell-nowrap">'+JONE.esc(r.paid_at?JONE.formatDate(r.paid_at,"mid"):(r.created_at?JONE.formatDate(r.created_at,"mid"):"—"))+'</td><td class="cell-nowrap">'+(b?'<button class="btn btn-sm btn-outline" type="button" data-view-receipt="'+JONE.esc(b)+'"><span data-icon="printer" data-size="15"></span> View receipt</button>':"—")+'</td></tr>';
     }).join("") || '<tr><td colspan="6"><div class="empty-state"><span data-icon="receipt"></span><h3>No receipts yet</h3><p>Receipts appear here as payments are confirmed.</p></div></td></tr>';
     JONE.icons.inject(tbody);
   }
@@ -168,8 +168,8 @@
 })();
 
 </script>
-<script src="../js/pwa.js?v=1.1.0"></script>
-<script src="../js/version.js?v=1.1.0"></script>
-<script src="../js/update-checker.js?v=1.1.0"></script>
+<script src="../js/pwa.js?v=1.1.1"></script>
+<script src="../js/version.js?v=1.1.1"></script>
+<script src="../js/update-checker.js?v=1.1.1"></script>
 </body>
 </html>

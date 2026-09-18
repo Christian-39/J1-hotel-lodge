@@ -98,6 +98,11 @@ class AdminBookingListCreateView(generics.ListCreateAPIView):
         return AdminBookingCreateSerializer if self.request.method == "POST" else AdminBookingListSerializer
 
     def get_queryset(self):
+        # Fallback sweep (throttled to once a minute via the cache): keeps the
+        # staff console truthful about expired unpaid holds even when the
+        # Celery beat/worker pair is not running. Celery remains the primary
+        # expiration driver; this is a cheap no-op between intervals.
+        booking_service.maybe_expire_stale_pending_bookings()
         qs = _admin_booking_queryset()
         params = self.request.query_params
         if status_param := params.get("status"):

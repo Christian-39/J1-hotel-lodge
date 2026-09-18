@@ -13,7 +13,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="J-ONE Hotel">
-<link rel="stylesheet" href="../css/main.css?v=1.1.0">
+<link rel="stylesheet" href="../css/main.css?v=1.1.1">
 
 </head>
 <body>
@@ -92,16 +92,16 @@
     </div>
   </div>
 </div>
-<script src="../js/config.js?v=1.1.0"></script>
-<script src="../js/utils.js?v=1.1.0"></script>
-<script src="../js/icons.js?v=1.1.0"></script>
-<script src="../js/api.js?v=1.1.0"></script>
-<script src="../js/theme.js?v=1.1.0"></script>
-<script src="../js/ui.js?v=1.1.0"></script>
-<script src="../js/auth.js?v=1.1.0"></script>
-<script src="../js/hotel-data.js?v=1.1.0"></script>
-<script src="../js/navigation.js?v=1.1.0"></script>
-<script src="../js/dashboard.js?v=1.1.0"></script>
+<script src="../js/config.js?v=1.1.1"></script>
+<script src="../js/utils.js?v=1.1.1"></script>
+<script src="../js/icons.js?v=1.1.1"></script>
+<script src="../js/api.js?v=1.1.1"></script>
+<script src="../js/theme.js?v=1.1.1"></script>
+<script src="../js/ui.js?v=1.1.1"></script>
+<script src="../js/auth.js?v=1.1.1"></script>
+<script src="../js/hotel-data.js?v=1.1.1"></script>
+<script src="../js/navigation.js?v=1.1.1"></script>
+<script src="../js/dashboard.js?v=1.1.1"></script>
 <script>
   JONE.ui.initChrome();
   JONE.dashboard.boot("receptionist");
@@ -120,7 +120,7 @@
     if(!list.length){ tbody.innerHTML='<tr><td colspan="8"><div class="empty-state"><span data-icon="creditCard"></span><h3>No payments found</h3><p>No payments match the current filters.</p></div></td></tr>'; JONE.icons.inject(tbody); return; }
     tbody.innerHTML=list.map(function(p){
       var b=p.booking_reference;
-      return '<tr><td>'+JONE.esc(p.reference||"—")+'</td><td>'+(b?'<a href="booking-details.html?ref='+encodeURIComponent(b)+'">'+JONE.esc(b)+'</a>':"—")+'</td><td class="hide-sm">'+JONE.esc(p.guest_name||"—")+'</td><td>'+JONE.esc(String(p.provider||"—").toLowerCase())+'</td><td class="hide-sm">'+JONE.esc(p.paid_at?JONE.formatDate(p.paid_at,"mid"):"—")+'</td><td class="num">'+JONE.esc(JONE.formatNaira(p.amount))+'</td><td>'+JONE.dashboard.statusPill(p.status)+'</td><td class="hide-sm">'+JONE.esc(p.staff_email||"—")+'</td></tr>';
+      return '<tr><td class="cell-nowrap">'+JONE.esc(p.reference||"—")+'</td><td class="cell-nowrap">'+(b?'<a href="booking-details.html?ref='+encodeURIComponent(b)+'">'+JONE.esc(b)+'</a>':"—")+'</td><td class="hide-sm">'+JONE.esc(p.guest_name||"—")+'</td><td class="cell-nowrap">'+JONE.esc(String(p.provider||"—").toLowerCase().replace(/_/g," "))+'</td><td class="hide-sm cell-nowrap">'+JONE.esc(p.paid_at?JONE.formatDate(p.paid_at,"mid"):"—")+'</td><td class="num cell-nowrap">'+JONE.esc(JONE.formatNaira(p.amount))+'</td><td class="cell-nowrap">'+JONE.dashboard.statusPill(p.status)+'</td><td class="hide-sm">'+JONE.esc(p.staff_email||"—")+'</td></tr>';
     }).join("");
     JONE.icons.inject(tbody);
   }
@@ -149,7 +149,7 @@
     if(!list.length){ refundBody.innerHTML='<tr><td colspan="7"><div class="empty-state"><span data-icon="rotateCcw"></span><h3>No refunds</h3><p>Paystack refund attempts appear here after staff submit an approved cancellation refund.</p></div></td></tr>'; JONE.icons.inject(refundBody); return; }
     refundBody.innerHTML=list.map(function(r){
       var b=r.booking_reference;
-      return '<tr><td>#'+JONE.esc(r.id||"—")+'</td><td>'+(b?'<a href="booking-details.html?ref='+encodeURIComponent(b)+'">'+JONE.esc(b)+'</a>':"—")+'</td><td>'+JONE.esc(r.payment_reference||"—")+'</td><td class="num">'+JONE.esc(JONE.formatNaira(r.amount))+'</td><td>'+JONE.dashboard.statusPill(r.status)+'</td><td class="hide-sm">'+JONE.esc(r.submitted_at?JONE.formatDateTime(r.submitted_at):"—")+'</td><td class="hide-sm">'+JONE.esc(r.paystack_refund_reference||r.paystack_refund_id||"Awaiting Paystack")+'</td></tr>';
+      return '<tr><td class="cell-nowrap">#'+JONE.esc(r.id||"—")+'</td><td class="cell-nowrap">'+(b?'<a href="booking-details.html?ref='+encodeURIComponent(b)+'">'+JONE.esc(b)+'</a>':"—")+'</td><td class="cell-nowrap">'+JONE.esc(r.payment_reference||"—")+'</td><td class="num cell-nowrap">'+JONE.esc(JONE.formatNaira(r.amount))+'</td><td class="cell-nowrap">'+JONE.dashboard.statusPill(r.status)+'</td><td class="hide-sm cell-nowrap">'+JONE.esc(r.submitted_at?JONE.formatDateTime(r.submitted_at):"—")+'</td><td class="hide-sm cell-nowrap">'+JONE.esc(r.paystack_refund_reference||r.paystack_refund_id||"Awaiting Paystack")+'</td></tr>';
     }).join("");
   }
   async function loadRefunds(){
@@ -207,8 +207,8 @@
 })();
 
 </script>
-<script src="../js/pwa.js?v=1.1.0"></script>
-<script src="../js/version.js?v=1.1.0"></script>
-<script src="../js/update-checker.js?v=1.1.0"></script>
+<script src="../js/pwa.js?v=1.1.1"></script>
+<script src="../js/version.js?v=1.1.1"></script>
+<script src="../js/update-checker.js?v=1.1.1"></script>
 </body>
 </html>

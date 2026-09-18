@@ -118,6 +118,41 @@
     waitingWorker.postMessage({ type: "SKIP_WAITING" });
   }
 
+  /* User-driven "Refresh now": guarantee the reload lands on the NEW release.
+     1. If a new worker is already WAITING, activate it; the controllerchange
+        listener below performs the reload, so the fresh worker (and its fresh
+        versioned caches) serve the very next paint.
+     2. Otherwise ask the registration to check for one quickly, then reload
+        regardless — the ?v=-stamped assets and versioned SW caches take over.
+     Never blocks longer than ~2.5s; storage/session are never touched. */
+  function refreshToLatest(reload) {
+    var fallback = setTimeout(function () {
+      fallback = null;
+      if (!reloading) { reloading = true; reload(); }
+    }, 2500);
+    try {
+      var waiting = waitingWorker || (registration && registration.waiting);
+      if (waiting) {
+        // controllerchange fires once the new worker takes control and the
+        // registered listener reloads; the timeout above is only a safety net
+        // (e.g. the browser refused activation).
+        waiting.postMessage({ type: "SKIP_WAITING" });
+        return;
+      }
+      if (registration && registration.update) {
+        registration.update().catch(function () {}).then(function () {
+          var w = registration.waiting;
+          if (w) { w.postMessage({ type: "SKIP_WAITING" }); return; }
+          if (fallback) { clearTimeout(fallback); fallback = null; }
+          if (!reloading) { reloading = true; reload(); }
+        });
+        return;
+      }
+    } catch (_) { /* fall through to the timeout */ }
+    if (fallback) { clearTimeout(fallback); fallback = null; }
+    if (!reloading) { reloading = true; reload(); }
+  }
+
   var updateWatch = null;
   function offerUpdate(worker) {
     waitingWorker = worker;
@@ -417,6 +452,7 @@
     isCriticalFlowActive: function () { return criticalFlows > 0; },
     promptInstall: doInstall,
     applyUpdate: applyUpdate,
+    refreshToLatest: refreshToLatest,
     get registration() { return registration; }
   };
 })();

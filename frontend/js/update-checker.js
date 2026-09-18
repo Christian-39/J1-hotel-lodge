@@ -15,10 +15,15 @@
    - A version the user has already dismissed (or refreshed past) is
      remembered per version, so the modal never nags in a loop.
    - SAFETY (this is a live booking system): the checker never reloads on its
-     own, never clears booking drafts, tokens or any storage. On sensitive
-     pages (booking / payment / dashboard) and during active booking or
-     Paystack flows it stays completely silent — a quiet toast at most — and
-     the modal is only shown when it cannot interrupt anything.
+     own, never clears booking drafts, tokens or any storage. On PUBLIC
+     booking/payment flow pages and during active booking or Paystack flows it
+     stays quiet (a toast at most) and remembers the pending update, retrying
+     until it is safe to prompt. DASHBOARD staff DO get the modal — a staff
+     console must not silently run stale code — but never over a dirty form
+     or an in-flight critical operation.
+   - "Refresh now" also activates any WAITING service worker (via
+     JONE.pwa.refreshToLatest) before reloading, so the click genuinely lands
+     on the new release instead of the old worker's caches.
    ========================================================================== */
 
 (function () {
@@ -34,7 +39,16 @@
   var lastCheck = 0;
   var timer = null;
 
-  var SENSITIVE_PATH = /(booking|payment|checkout|check-in|check-out|cancellation|review|dashboard)/i;
+  /* PUBLIC guest flows where a modal could interrupt a live booking/payment.
+     The dashboard is intentionally NOT here anymore: staff must receive
+     deployment updates too. Their safety net is the dirty-form/critical-flow
+     checks below, plus retry-until-safe scheduling. Dashboard paths that ARE
+     mid-operation (check-in/check-out screens with a dirty form) are covered
+     by hasDirtyForm(). */
+  var SENSITIVE_PATH = /(booking|payment|checkout|check-in|check-out|cancellation|review)/i;
+  var RETRY_WHEN_SAFE_MS = 30 * 1000;  // pending update found but not safe yet
+  var pendingVersion = null;
+  var retryTimer = null;
 
   function isDevHost() {
     return ["localhost", "127.0.0.1", "[::1]", ""].indexOf(location.hostname) !== -1;
@@ -57,11 +71,16 @@
     try { localStorage.setItem(DISMISS_KEY, String(version)); } catch (_) {}
   }
 
-  /* A safe moment: not a sensitive page, no critical flow in progress, no
-     dirty form, page visible. On a sensitive page we defer entirely — the
-     booking/payment flow must never be interrupted (the user gets the modal
-     on the next non-sensitive page instead). */
+  /* A safe moment: not a sensitive PUBLIC flow page, no critical flow in
+     progress, no dirty form, page visible. On a sensitive page we defer and
+     RETRY — the booking/payment flow must never be interrupted, but the
+     update is offered as soon as the visitor is somewhere safe.
+
+     Dashboard pages are handled by the dirty-form/critical-flow checks alone:
+     staff must be told about deployments while ON the console, not after
+     they happen to leave it. */
   function isSensitivePage() {
+    if (/^\/dashboard\//i.test(location.pathname)) return false;
     return SENSITIVE_PATH.test(location.pathname + location.search);
   }
   function inCriticalFlow() {
@@ -170,13 +189,25 @@
       JONE.ui.modal.close();
     });
     refreshBtn.addEventListener("click", function () {
-      // Full reload pulls fresh ?v= stamped assets; the service worker also
-      // picks up its new version on navigation. Storage (bookings draft,
-      // session) is deliberately untouched.
+      // Storage (booking draft, session, theme) is deliberately untouched.
+      // JONE.pwa.refreshToLatest() first activates a WAITING service worker
+      // (so its versioned caches take over) and asks the registration to
+      // re-check for one, then reloads; the reload then pulls fresh
+      // ?v=-stamped assets. Without this, reload() alone could resurrect the
+      // OLD worker's stale-while-revalidate caches on the very next paint.
       refreshBtn.disabled = true;
       refreshBtn.innerHTML = '<span class="btn-spinner"></span> Refreshing\u2026';
       markDismissed(latest);
-      try { window.location.reload(); } catch (_) { window.location.href = window.location.pathname; }
+      var reloadNow = function () {
+        try { window.location.reload(); } catch (_) { window.location.href = window.location.pathname; }
+      };
+      try {
+        if (window.JONE && JONE.pwa && JONE.pwa.refreshToLatest) {
+          JONE.pwa.refreshToLatest(reloadNow);
+        } else {
+          reloadNow();
+        }
+      } catch (_) { reloadNow(); }
     });
 
     log("update modal shown for", latest);
@@ -197,6 +228,25 @@
     log("deferred update notice (sensitive page) for", latest);
   }
 
+  /* A deployment was detected but the moment was unsafe (payment in flight,
+     dirty form, hidden tab). Remember it and retry on a short LOCAL timer —
+     no network request, just re-evaluating safety — so the prompt appears as
+     soon as the user is free instead of waiting for the next slow poll. */
+  function rememberPending(latest, showQuietlyWhenSensitive) {
+    pendingVersion = latest;
+    if (showQuietlyWhenSensitive) quietNotice(latest);
+    if (retryTimer) return;
+    retryTimer = setInterval(function () {
+      if (!pendingVersion || modalShown) { clearInterval(retryTimer); retryTimer = null; return; }
+      if (document.visibilityState !== "visible") return;
+      if (isSensitivePage() || inCriticalFlow() || hasDirtyForm()) return;
+      var v = pendingVersion;
+      pendingVersion = null;
+      clearInterval(retryTimer); retryTimer = null;
+      if (v !== dismissedVersion()) showUpdateModal(v);
+    }, RETRY_WHEN_SAFE_MS);
+  }
+
   function check(showQuietlyWhenSensitive) {
     lastCheck = Date.now();
     var mine = currentVersion();
@@ -206,12 +256,12 @@
         if (!latest || latest === mine) return null;
         log("deployed version", latest, "≠ loaded version", mine);
         if (latest === dismissedVersion()) return null;     // already handled
-        if (document.visibilityState !== "visible") return null;
+        if (document.visibilityState !== "visible") { rememberPending(latest, false); return null; }
         if (isSensitivePage() || inCriticalFlow()) {
-          if (showQuietlyWhenSensitive) quietNotice(latest);
-          return null;                                       // try again later
+          rememberPending(latest, showQuietlyWhenSensitive);
+          return null;                                       // prompt when safe
         }
-        if (hasDirtyForm()) { quietNotice(latest); return null; }
+        if (hasDirtyForm()) { rememberPending(latest, true); return null; }
         showUpdateModal(latest);
         return latest;
       })

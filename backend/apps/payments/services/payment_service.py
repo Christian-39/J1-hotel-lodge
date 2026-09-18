@@ -370,12 +370,31 @@ def process_verification(*, reference, request=None, triggered_by="api"):
             raise PaymentAmountMismatchError()
 
         booking = Booking.objects.select_for_update().get(pk=payment.booking_id)
+        provider_paid_at = _parse_paid_at(data.get("paid_at") or data.get("paidAt"))
         if booking.status in (Booking.Status.CANCELLED, Booking.Status.EXPIRED):
             logger.error("Successful payment for non-payable booking: reference=%s booking_status=%s", reference, booking.status)
             raise BookingStateError("This booking is no longer able to accept payment. Please contact the hotel.")
+        if booking.is_expired_pending:
+            # Hold deadline passed but the periodic sweep has not flipped this
+            # booking yet. The provider's authoritative charge timestamp
+            # decides, under the same row lock the sweep takes:
+            #   * charged within the hold window → the guest beat the deadline
+            #     (the room hold still blocked inventory until expires_at, so
+            #     no double-booking is possible) — confirm normally;
+            #   * charged after the window → the hold is already released; a
+            #     late charge must never resurrect an expired hold whose room
+            #     may have been resold. The booking stays expired (the lazy
+            #     flip/beat sweep persists the EXPIRED state) and staff review
+            #     the settled charge.
+            if not (booking.expires_at and provider_paid_at and provider_paid_at <= booking.expires_at):
+                logger.error(
+                    "Successful payment charged after hold expiry: reference=%s expires_at=%s paid_at=%s",
+                    reference, booking.expires_at, provider_paid_at,
+                )
+                raise BookingStateError("This booking is no longer able to accept payment. Please contact the hotel.")
 
         payment.status = Payment.Status.SUCCESS
-        payment.paid_at = _parse_paid_at(data.get("paid_at") or data.get("paidAt"))
+        payment.paid_at = provider_paid_at
         payment.channel = str(data.get("channel") or "")[:40]
         payment.gateway_response = str(data.get("gateway_response") or "")[:255]
         payment.transaction_id = str(data.get("id") or "")[:60]

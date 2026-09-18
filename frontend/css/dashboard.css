@@ -244,7 +244,10 @@ body.drawer-open .dash-main { overflow: hidden; }
 .panel-grid > * { min-width: 0; }
 @media (max-width: 1100px) { .panel-grid { grid-template-columns: 1fr; } }
 
-.table-wrap { max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+/* position:relative makes the wrap the containing block for absolutely
+   positioned descendants (e.g. .sr-only header labels), so a table that
+   scrolls inside the wrap can never inflate the DOCUMENT's scroll width. */
+.table-wrap { position: relative; max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
 
 /* ------------------------------ Filter bar ------------------------------- */
 .filter-bar {
@@ -515,6 +518,37 @@ body.drawer-open .dash-main { overflow: hidden; }
    ========================================================================== */
 .table td, .table th { overflow-wrap: anywhere; word-break: break-word; }
 .table td a, .table td code { overflow-wrap: anywhere; }
+
+/* --------------------- Identifier / date / action cells -------------------
+   The blanket wrap-anywhere rule above is the overflow SAFETY net, but it
+   also lets the auto table layout squeeze identifier columns down until a
+   booking reference or a date shreds across four lines. Cells that hold
+   ATOMIC values (references, transaction ids, dates, amounts, IPs, action
+   buttons) opt out with .cell-nowrap: they stay on one line and the extra
+   width is handled by .table-wrap's own horizontal scroll — never by the
+   page (html/body keep overflow-x clipped in audit-fixes.css) and never by
+   destroying the value. Nothing is hidden or truncated: the full value is
+   always present and reachable by scrolling the table container. */
+.table td.cell-nowrap, .table th.cell-nowrap {
+  white-space: nowrap;
+  overflow-wrap: normal;
+  word-break: normal;
+}
+.table td.cell-nowrap a, .table td.cell-nowrap code { overflow-wrap: normal; }
+/* Secondary caption line under a nowrap value (guest name under the
+   reference) may still wrap gently — but never letter-by-letter. */
+.table td.cell-nowrap .caption,
+.table td.cell-nowrap .receipt-mobile-guest { white-space: normal; overflow-wrap: break-word; }
+
+/* Long free-text (audit summaries) stays readable: clamp the CELL width so
+   one verbose entry cannot force the whole table to 2000px, wrap within it,
+   and keep the complete text on the details page (and in the title attr). */
+.table td.cell-clamp {
+  max-width: 34ch;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+@media (max-width: 720px) { .table td.cell-clamp { max-width: 22ch; } }
 
 .nowrap-ellipsis {
   display: block; max-width: 100%;

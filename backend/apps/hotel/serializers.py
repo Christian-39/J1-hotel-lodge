@@ -71,3 +71,10 @@ class HotelSettingsAdminSerializer(serializers.ModelSerializer):
             if not isinstance(item, dict) or "platform" not in item or "url" not in item:
                 raise serializers.ValidationError('Each entry needs "platform" and "url".')
         return value
+
+    def validate_pending_booking_minutes(self, value):
+        # 0 would expire every new unpaid hold instantly; the model field is a
+        # PositiveIntegerField (allows 0), so the operational floor lives here.
+        if value < 1:
+            raise serializers.ValidationError("The pending window must be at least 1 minute.")
+        return value

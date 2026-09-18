@@ -70,10 +70,47 @@ test("sensitive booking page: modal deferred, quiet notice only", async () => {
   );
 });
 
-test("dashboard page: modal deferred (staff operations uninterrupted)", async () => {
+test("dashboard page: staff DO receive the update modal", async () => {
+  // Staff consoles must not silently run stale code after a deployment.
+  // (Dirty forms / critical flows still defer — covered separately below.)
   const t = bootContext({ latest: "1.2.0", loaded: "1.1.0", pathname: "/dashboard/bookings.html" });
   await t.ctx.window.JONE.updateChecker.check(true);
-  assert.equal(t.modalOpened(), 0);
+  assert.equal(t.modalOpened(), 1, "dashboard users must be told about new releases");
+});
+
+test("dashboard check-in page: still a dashboard page, still prompted", async () => {
+  // The public 'check-in' sensitive keyword must not swallow dashboard paths.
+  const t = bootContext({ latest: "1.2.0", loaded: "1.1.0", pathname: "/dashboard/check-in.html" });
+  await t.ctx.window.JONE.updateChecker.check(true);
+  assert.equal(t.modalOpened(), 1);
+});
+
+test("refresh now uses JONE.pwa.refreshToLatest when available (SW activation)", async () => {
+  const ctx = makeContext({ hostname: "www.jonehotel.test", pathname: "/index.html" });
+  ctx.window.JONE_VERSION = "1.1.0";
+  let reloaded = 0;
+  let swRefreshed = 0;
+  ctx.fetch = () => Promise.resolve({ ok: true, json: () => Promise.resolve({ version: "1.2.0" }) });
+  loadScript(ctx, "js/utils.js");
+  ctx.window.JONE = ctx.window.JONE || {};
+  ctx.window.JONE.ui = { modal: { open() {}, close() {} }, toast() {} };
+  ctx.window.JONE.pwa = {
+    isCriticalFlowActive: () => false,
+    // The real implementation activates any WAITING service worker, then
+    // invokes the reload callback. The checker must route through it.
+    refreshToLatest(reload) { swRefreshed += 1; reload(); },
+  };
+  ctx.location.reload = () => { reloaded += 1; };
+  loadScript(ctx, "js/update-checker.js");
+  await ctx.window.JONE.updateChecker.check(true);
+  ctx.window.JONE.updateChecker._internals.showUpdateModal("1.2.0");
+  const refreshBtn = ctx.document._created.find(
+    (el) => el.tagName === "BUTTON" && /Refresh now/i.test(el.textContent)
+  );
+  assert.ok(refreshBtn, "refresh button exists");
+  (refreshBtn.listeners.click || []).forEach((fn) => fn({}));
+  assert.equal(swRefreshed, 1, "refresh must go through the service-worker-aware path");
+  assert.equal(reloaded, 1, "and end in a reload");
 });
 
 test("critical flow in progress: no modal", async () => {

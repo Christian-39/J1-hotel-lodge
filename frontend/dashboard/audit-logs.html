@@ -13,7 +13,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="J-ONE Hotel">
-<link rel="stylesheet" href="../css/main.css?v=1.1.0">
+<link rel="stylesheet" href="../css/main.css?v=1.1.1">
 
 </head>
 <body>
@@ -64,16 +64,16 @@
     </div>
   </div>
 </div>
-<script src="../js/config.js?v=1.1.0"></script>
-<script src="../js/utils.js?v=1.1.0"></script>
-<script src="../js/icons.js?v=1.1.0"></script>
-<script src="../js/api.js?v=1.1.0"></script>
-<script src="../js/theme.js?v=1.1.0"></script>
-<script src="../js/ui.js?v=1.1.0"></script>
-<script src="../js/auth.js?v=1.1.0"></script>
-<script src="../js/hotel-data.js?v=1.1.0"></script>
-<script src="../js/navigation.js?v=1.1.0"></script>
-<script src="../js/dashboard.js?v=1.1.0"></script>
+<script src="../js/config.js?v=1.1.1"></script>
+<script src="../js/utils.js?v=1.1.1"></script>
+<script src="../js/icons.js?v=1.1.1"></script>
+<script src="../js/api.js?v=1.1.1"></script>
+<script src="../js/theme.js?v=1.1.1"></script>
+<script src="../js/ui.js?v=1.1.1"></script>
+<script src="../js/auth.js?v=1.1.1"></script>
+<script src="../js/hotel-data.js?v=1.1.1"></script>
+<script src="../js/navigation.js?v=1.1.1"></script>
+<script src="../js/dashboard.js?v=1.1.1"></script>
 <script>
   JONE.ui.initChrome();
   JONE.dashboard.boot("admin");
@@ -92,14 +92,18 @@
   function render(list){
     tbody.innerHTML=list.map(function(e){
       var href='audit-log-details.html?id='+encodeURIComponent(e.id);
+      // Long summaries are clamped to a readable column width (cell-clamp) —
+      // the COMPLETE text stays in the title attribute and on the details
+      // page; the audit record itself is never modified or truncated.
+      var summary=e.summary||'View details';
       return '<tr>'+
-        '<td class="caption">'+JONE.formatDateTime(e.created_at)+'</td>'+
+        '<td class="caption cell-nowrap">'+JONE.formatDateTime(e.created_at)+'</td>'+
         '<td>'+JONE.esc(user(e))+'</td>'+
-        '<td><span class="badge">'+JONE.esc(String(e.action||"").replace(/_/g," "))+'</span></td>'+
-        '<td class="hide-sm"><a href="'+href+'">'+JONE.esc(e.summary||'View details')+'</a></td>'+
-        '<td class="hide-sm caption">'+JONE.esc(e.ip_address||"")+'</td>'+
+        '<td class="cell-nowrap"><span class="badge">'+JONE.esc(String(e.action||"").replace(/_/g," "))+'</span></td>'+
+        '<td class="hide-sm cell-clamp"><a href="'+href+'" title="'+JONE.esc(summary)+'">'+JONE.esc(summary)+'</a></td>'+
+        '<td class="hide-sm caption cell-nowrap">'+JONE.esc(e.ip_address||"")+'</td>'+
         // Always-visible action so the detail can be opened on phones too.
-        '<td><a class="btn btn-sm btn-outline" href="'+href+'" aria-label="View audit event '+JONE.esc(e.id)+'"><span data-icon="eye" data-size="14"></span><span class="hide-sm"> View</span></a></td>'+
+        '<td class="cell-nowrap"><a class="btn btn-sm btn-outline" href="'+href+'" aria-label="View audit event '+JONE.esc(e.id)+'"><span data-icon="eye" data-size="14"></span><span class="hide-sm"> View</span></a></td>'+
       '</tr>';
     }).join("");
     JONE.icons.inject(tbody);
@@ -124,8 +128,8 @@
 })();
 
 </script>
-<script src="../js/pwa.js?v=1.1.0"></script>
-<script src="../js/version.js?v=1.1.0"></script>
-<script src="../js/update-checker.js?v=1.1.0"></script>
+<script src="../js/pwa.js?v=1.1.1"></script>
+<script src="../js/version.js?v=1.1.1"></script>
+<script src="../js/update-checker.js?v=1.1.1"></script>
 </body>
 </html>
