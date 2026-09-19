@@ -168,18 +168,32 @@ class PasswordResetRequestView(APIView):
         # Response is identical whether or not the account exists — do not
         # leak account existence to the internet.
         if user:
+            from apps.core.email_design import render_notice_email
+
             uid = urlsafe_base64_encode(force_bytes(user.pk))
             token = default_token_generator.make_token(user)
             reset_url = f"{settings.FRONTEND_URL}/reset-password.html?uid={uid}&token={token}"
+            text_body, html_body = render_notice_email(
+                category="Account security",
+                title="Reset your password",
+                greeting=f"Hello {user.first_name},",
+                paragraphs=[
+                    "We received a request to reset the password for your account. "
+                    "Use the button below to choose a new password.",
+                ],
+                cta_label="Reset Password",
+                cta_url=reset_url,
+                footnote=(
+                    "If you did not request this, you can safely ignore this email — "
+                    "your password will not be changed."
+                ),
+                preheader="Use this link to reset your account password.",
+            )
             queue_email(
                 kind="PASSWORD_RESET",
                 subject="Reset your J-ONE HOTEL & LODGE password",
-                message=(
-                    f"Hello {user.first_name},\n\n"
-                    f"We received a request to reset your password. Open this link to continue:\n{reset_url}\n\n"
-                    "If you did not request this, you can safely ignore this email.\n\n"
-                    "— J-ONE HOTEL & LODGE"
-                ),
+                message=text_body,
+                html_message=html_body,
                 recipients=[user.email],
             )
         return success_response(message="If an account exists for this email, a reset link has been sent.")

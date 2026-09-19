@@ -24,6 +24,8 @@ so the record of past sends is preserved.
 No secrets are ever stored here: SMTP credentials, API keys, tokens and
 passwords must never be written to ``error_message`` or any other field.
 """
+from datetime import timedelta
+
 from django.conf import settings
 from django.db import models
 
@@ -131,6 +133,41 @@ class EmailLog(models.Model):
     @property
     def is_terminal(self):
         return self.status in (self.Status.SENT, self.Status.FAILED)
+
+    # Delivery is synchronous: a row can only legitimately sit in PENDING or
+    # SENDING for the duration of one in-flight HTTP request to the provider.
+    # Anything older was interrupted (deploy/restart/worker kill mid-send) and,
+    # because no background worker exists, would otherwise stay non-terminal
+    # forever — silently blocking the idempotency guards that treat
+    # PENDING/SENDING as "an email is already on its way" (the automatic
+    # receipt after payment and the staff send-receipt endpoint both do).
+    STALE_AFTER = timedelta(minutes=15)
+
+    @classmethod
+    def resolve_stale(cls, queryset=None):
+        """Mark interrupted PENDING/SENDING rows as FAILED (truthfully).
+
+        Returns the number of rows resolved. Safe to call from any send path:
+        rows younger than ``STALE_AFTER`` (a genuinely in-flight synchronous
+        send) and terminal rows are never touched.
+        """
+        from django.utils import timezone
+
+        qs = queryset if queryset is not None else cls.objects.all()
+        return qs.filter(
+            status__in=[cls.Status.PENDING, cls.Status.SENDING],
+            created_at__lt=timezone.now() - cls.STALE_AFTER,
+        ).update(
+            status=cls.Status.FAILED,
+            error_class="StaleDelivery",
+            error_message=(
+                "This delivery attempt was interrupted before the provider "
+                "answered (deploy/restart mid-send). Re-send it if it is "
+                "still needed."
+            ),
+            failure_stage=cls.FailureStage.PROVIDER,
+            failed_at=timezone.now(),
+        )
 
 
 # Back-compat: older call sites/tests use EmailLog.FailureStage.SMTP; keep the

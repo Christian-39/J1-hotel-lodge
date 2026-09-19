@@ -682,38 +682,62 @@ def _notify_refund_status(refund_pk, previous_status, new_status):
     if event_key in events:
         return
 
-    if new_status in (Refund.Status.PENDING, Refund.Status.PROCESSING):
-        body = (
-            f"Hello {refund.booking.guest.first_name},\n\n"
-            f"A refund of {refund.currency} {money(refund.amount)} for booking "
-            f"{refund.booking.booking_reference} has been submitted to Paystack and is not complete yet. "
-            "We will notify you when Paystack confirms the final result.\n"
-        )
-    elif new_status == Refund.Status.PROCESSED:
-        body = (
-            f"Hello {refund.booking.guest.first_name},\n\n"
-            f"Paystack has confirmed that your refund of {refund.currency} {money(refund.amount)} "
-            f"for booking {refund.booking.booking_reference} has been processed. Your bank/card issuer may take additional time to reflect it.\n"
-        )
-    elif new_status == Refund.Status.FAILED:
-        body = (
-            f"Hello {refund.booking.guest.first_name},\n\n"
-            f"Paystack could not complete the refund request for booking {refund.booking.booking_reference}. "
-            "The hotel team will review it and contact you with the next step.\n"
-        )
-    else:
-        body = (
-            f"Hello {refund.booking.guest.first_name},\n\n"
-            f"Your refund request for booking {refund.booking.booking_reference} needs additional review. "
-            "The hotel team will contact you with the next step.\n"
-        )
+    from apps.core.email_design import render_notice_email
+    from apps.core.formatting import format_money
     from apps.hotel.models import HotelSettings
 
+    if new_status in (Refund.Status.PENDING, Refund.Status.PROCESSING):
+        title = "Your refund is being processed"
+        status_value = "Submitted to Paystack — in progress"
+        paragraphs = [
+            f"A refund of {format_money(refund.amount, refund.currency)} for booking "
+            f"{refund.booking.booking_reference} has been submitted to Paystack and is not complete yet. "
+            "We will notify you when Paystack confirms the final result.",
+        ]
+    elif new_status == Refund.Status.PROCESSED:
+        title = "Your refund has been processed"
+        status_value = "Processed by Paystack"
+        paragraphs = [
+            f"Paystack has confirmed that your refund of {format_money(refund.amount, refund.currency)} "
+            f"for booking {refund.booking.booking_reference} has been processed.",
+            "Your bank or card issuer may take additional time to reflect the amount in your account.",
+        ]
+    elif new_status == Refund.Status.FAILED:
+        title = "Refund update — action in progress"
+        status_value = "Could not be completed automatically"
+        paragraphs = [
+            f"Paystack could not complete the refund request for booking "
+            f"{refund.booking.booking_reference}. The hotel team will review it and "
+            "contact you with the next step.",
+        ]
+    else:
+        title = "Refund update — under review"
+        status_value = "Needs additional review"
+        paragraphs = [
+            f"Your refund request for booking {refund.booking.booking_reference} needs "
+            "additional review. The hotel team will contact you with the next step.",
+        ]
     hotel = HotelSettings.get_settings()
-    body += f"\n{hotel.hotel_name} · {hotel.phone}"
+    text_body, html_body = render_notice_email(
+        category="Refund update",
+        title=title,
+        greeting=f"Hello {refund.booking.guest.first_name},",
+        paragraphs=paragraphs,
+        details=[
+            {"label": "Booking reference", "value": refund.booking.booking_reference},
+            {"label": "Refund amount", "value": format_money(refund.amount, refund.currency)},
+            {"label": "Status", "value": status_value},
+        ],
+        footnote=(
+            "This message is about the hotel booking refund. Paystack may also send "
+            "its own separate provider notification."
+        ),
+        preheader=f"Refund update for booking {refund.booking.booking_reference}.",
+    )
     queue_email(
         subject=f"Refund update for {refund.booking.booking_reference} — {hotel.hotel_name}",
-        message=body,
+        message=text_body,
+        html_message=html_body,
         recipients=[refund.booking.guest.email],
         kind="REFUND",
         booking_reference=refund.booking.booking_reference,

@@ -389,7 +389,13 @@ class AdminBookingSendReceiptView(APIView):
 
         # Idempotency: block a duplicate while one is already in flight for
         # this booking. A previous FAILED/SENT does not block an intentional
-        # resend (staff explicitly clicked again).
+        # resend (staff explicitly clicked again). Sends interrupted by a
+        # deploy/timeout leave PENDING/SENDING rows behind with no worker to
+        # resolve them — mark stale ones FAILED first so they can never lock
+        # this booking's receipt button forever.
+        EmailLog.resolve_stale(
+            EmailLog.objects.filter(booking_reference=booking.booking_reference)
+        )
         in_flight = EmailLog.objects.filter(
             booking_reference=booking.booking_reference,
             kind=EmailLog.Kind.RECEIPT,

@@ -366,9 +366,13 @@ if EMAIL_USE_TLS and EMAIL_USE_SSL:
         EMAIL_USE_SSL = False
 EMAIL_HOST_USER = config("EMAIL_HOST_USER", default="")
 EMAIL_HOST_PASSWORD = config("EMAIL_HOST_PASSWORD", default="")
-# Connection timeout so a stuck SMTP handshake fails fast (and, in a Celery
-# task, is retried) instead of hanging the worker.
-EMAIL_TIMEOUT = config("EMAIL_TIMEOUT", default=60, cast=int)
+# Connection timeout so a stuck provider request fails fast. Email delivery is
+# SYNCHRONOUS (it runs inside the originating HTTP request), so this MUST stay
+# comfortably below the gunicorn request timeout (60s in production): a 60s
+# email timeout would let one slow provider call get the whole web worker
+# killed mid-request, losing the API response and stranding the EmailLog in
+# SENDING. 20s is ample for Brevo's HTTPS API.
+EMAIL_TIMEOUT = config("EMAIL_TIMEOUT", default=20, cast=int)
 # --- Transactional email provider ------------------------------------------
 
 BREVO_API_KEY = config("BREVO_API_KEY", default="")

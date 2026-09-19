@@ -115,6 +115,11 @@ class EmailLogListView(generics.ListAPIView):
     pagination_class = StandardPagination
 
     def get_queryset(self):
+        # Delivery is synchronous, so nothing can legitimately stay
+        # PENDING/SENDING beyond one request: resolve interrupted rows to
+        # FAILED before listing, so staff always see a truthful terminal state
+        # instead of a phantom "sending" that no worker will ever finish.
+        EmailLog.resolve_stale()
         qs = EmailLog.objects.all()
         status_param = (self.request.query_params.get("status") or "").upper()
         if status_param in EmailLog.Status.values:

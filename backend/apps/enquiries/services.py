@@ -157,38 +157,58 @@ def _mark_email_queued(enquiry: Enquiry, key: str) -> bool:
     return True
 
 
-def queue_enquiry_email(enquiry: Enquiry, key: str, *, subject: str, message: str, recipients):
-    """Queue an idempotent enquiry/cancellation email.
+def queue_enquiry_email(enquiry: Enquiry, key: str, *, subject: str, message: str,
+                        recipients, html_message="", kind="ENQUIRY"):
+    """Send an idempotent enquiry/cancellation email (once per event key).
 
-    The state flag is committed with the business transition; actual SMTP
-    delivery is queued after commit and may fail/retry without rolling back the
-    booking/payment/refund state.
+    The state flag is committed with the business transition; the actual
+    delivery runs synchronously right after the surrounding transaction
+    commits (``queue_email`` → ``transaction.on_commit`` → direct provider
+    call) and can fail without rolling back the booking/payment/refund state.
     """
     recipients = [r for r in (recipients or []) if r]
     if not recipients:
         return False
     if not _mark_email_queued(enquiry, key):
         return False
-    queue_email(subject, message, recipients)
+    queue_email(
+        subject, message, recipients,
+        html_message=html_message,
+        kind=kind,
+        booking_reference=enquiry.booking_reference or "",
+    )
     return True
 
 
 def _queue_cancellation_received_emails(enquiry: Enquiry, token: str):
+    from apps.core.email_design import render_notice_email
+
     hotel = HotelSettings.get_settings()
     status_url = cancellation_status_link(enquiry, token)
-    guest_message = (
-        f"Hello {enquiry.name},\n\n"
-        f"We received your cancellation/refund request for booking {enquiry.booking_reference or 'provided reference'}.\n\n"
-        f"Request reference: {enquiry.cancellation_reference}\n"
-        f"Current status: Under hotel review\n\n"
-        "Your booking has NOT been cancelled yet. Our team will verify the booking and payment details, then contact you with the outcome.\n\n"
-        f"You can check the request status here: {status_url}\n\n"
-        f"{hotel.hotel_name}\n{hotel.phone} · {hotel.email}"
+    guest_text, guest_html = render_notice_email(
+        category="Cancellation request",
+        title="We received your cancellation request",
+        greeting=f"Hello {enquiry.name},",
+        paragraphs=[
+            f"We received your cancellation/refund request for booking "
+            f"{enquiry.booking_reference or 'the reference you provided'}.",
+            "Your booking has NOT been cancelled yet. Our team will verify the "
+            "booking and payment details, then contact you with the outcome.",
+        ],
+        details=[
+            {"label": "Request reference", "value": enquiry.cancellation_reference},
+            {"label": "Booking reference", "value": enquiry.booking_reference or "—"},
+            {"label": "Current status", "value": "Under hotel review"},
+        ],
+        cta_label="Check Request Status",
+        cta_url=status_url,
+        preheader=f"Cancellation request {enquiry.cancellation_reference} is under review.",
     )
     queue_enquiry_email(
         enquiry, "cancellation_received_guest",
         subject=f"Cancellation request received: {enquiry.cancellation_reference} — {hotel.hotel_name}",
-        message=guest_message,
+        message=guest_text,
+        html_message=guest_html,
         recipients=[enquiry.email],
     )
 
@@ -429,20 +449,38 @@ def _queue_cancellation_approved_email(enquiry, booking, policy, payment):
                 f"A refund amount of {booking.currency} {money(policy['refund_amount'])} requires manual handling by the hotel team. "
                 "We will contact you with the next steps."
             )
+    from apps.core.email_design import render_notice_email
+    from apps.core.formatting import format_money
+
+    guest_text, guest_html = render_notice_email(
+        category="Cancellation approved",
+        title="Your booking has been cancelled",
+        greeting=f"Hello {enquiry.name},",
+        paragraphs=[
+            f"Your cancellation request {enquiry.cancellation_reference} has been approved "
+            f"and booking {booking.booking_reference} has been cancelled.",
+            refund_line,
+        ],
+        details=[
+            {"label": "Request reference", "value": enquiry.cancellation_reference},
+            {"label": "Booking reference", "value": booking.booking_reference},
+            {"label": "Cancellation fee", "value": format_money(policy["cancellation_fee"], booking.currency)},
+            {"label": "Calculated refund", "value": format_money(policy["refund_amount"], booking.currency)},
+            {"label": "Refund status", "value": enquiry.get_refund_status_display()},
+        ],
+        footnote=(
+            "This message is about the hotel booking cancellation. Paystack payment "
+            "receipts/refund notices are separate provider communications."
+        ),
+        preheader=f"Booking {booking.booking_reference} has been cancelled.",
+    )
     queue_enquiry_email(
         enquiry,
         "cancellation_approved_guest",
         subject=f"Booking cancelled: {booking.booking_reference} — {hotel.hotel_name}",
-        message=(
-            f"Hello {enquiry.name},\n\n"
-            f"Your cancellation request {enquiry.cancellation_reference} has been approved and booking {booking.booking_reference} has been cancelled.\n\n"
-            f"Cancellation fee: {booking.currency} {money(policy['cancellation_fee'])}\n"
-            f"Calculated refund amount: {booking.currency} {money(policy['refund_amount'])}\n"
-            f"Refund status: {enquiry.get_refund_status_display()}\n\n"
-            f"{refund_line}\n\n"
-            "This message is about the hotel booking cancellation. Paystack payment receipts/refund notices are separate provider communications.\n\n"
-            f"{hotel.hotel_name}\n{hotel.phone} · {hotel.email}"
-        ),
+        message=guest_text,
+        html_message=guest_html,
+        kind="CANCELLATION",
         recipients=[enquiry.email],
     )
 
@@ -478,17 +516,34 @@ def reject_cancellation(enquiry_id, *, staff_user, notes="", resolution="", requ
         link=_admin_enquiry_link(enquiry),
     )
     hotel = HotelSettings.get_settings()
+    from apps.core.email_design import render_notice_email
+
+    guest_text, guest_html = render_notice_email(
+        category="Cancellation request",
+        title="Update on your cancellation request",
+        greeting=f"Hello {enquiry.name},",
+        paragraphs=[
+            f"We reviewed your cancellation request {enquiry.cancellation_reference}. "
+            "It has not been approved at this time.",
+            f"Reason/update: {enquiry.resolution}",
+            "Your booking has not been cancelled through this request.",
+        ],
+        details=[
+            {"label": "Request reference", "value": enquiry.cancellation_reference},
+            {"label": "Booking reference", "value": enquiry.booking_reference or "—"},
+            {"label": "Status", "value": "Not approved"},
+        ],
+        footnote=(
+            f"If you have questions, please contact {hotel.phone or hotel.email}."
+        ),
+        preheader=f"Update on cancellation request {enquiry.cancellation_reference}.",
+    )
     queue_enquiry_email(
         enquiry,
         "cancellation_rejected_guest",
         subject=f"Cancellation request update: {enquiry.cancellation_reference} — {hotel.hotel_name}",
-        message=(
-            f"Hello {enquiry.name},\n\n"
-            f"We reviewed your cancellation request {enquiry.cancellation_reference}. It has not been approved at this time.\n\n"
-            f"Reason/update: {enquiry.resolution}\n\n"
-            f"Your booking has not been cancelled through this request. If you have questions, please contact {hotel.phone} or {hotel.email}.\n\n"
-            f"{hotel.hotel_name}"
-        ),
+        message=guest_text,
+        html_message=guest_html,
         recipients=[enquiry.email],
     )
     return enquiry

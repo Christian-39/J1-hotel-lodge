@@ -414,22 +414,44 @@ def create_booking(*, room_type_value, check_in, check_out, rooms, adults, child
     # booking sends nothing.
     if booking.guest.email:
         if pending:
+            from apps.core.email_design import render_notice_email
+            from apps.core.formatting import format_date, format_datetime, format_money
+
             hotel = HotelSettings.get_settings()
+            hold_until = format_datetime(booking.expires_at) if booking.expires_at else ""
+            text_body, html_body = render_notice_email(
+                category="Reservation on hold",
+                title="Complete your booking",
+                greeting=f"Hello {booking.guest.first_name},",
+                paragraphs=[
+                    (
+                        f"Your reservation at {hotel.hotel_name} has been created and is "
+                        + (f"on hold until {hold_until}. " if hold_until else "awaiting payment. ")
+                        + "Please complete the payment below to confirm your stay."
+                    ),
+                ],
+                details=[
+                    {"label": "Booking reference", "value": booking.booking_reference},
+                    {"label": "Room", "value": f"{booking.number_of_rooms} × {room_type.name}"},
+                    {"label": "Check-in", "value": format_date(booking.check_in)},
+                    {"label": "Check-out", "value": f"{format_date(booking.check_out)} · {booking.nights} night(s)"},
+                    {"label": "Total", "value": format_money(booking.total_amount, booking.currency)},
+                    {"label": "Amount to confirm", "value": format_money(booking.required_payment, booking.currency)},
+                ],
+                cta_label="Complete Payment",
+                cta_url=guest_booking_link(booking),
+                footnote=(
+                    "If the hold expires before payment is received, the rooms are "
+                    "released automatically and the reservation cannot be confirmed."
+                ),
+                preheader=f"Complete payment to confirm booking {booking.booking_reference}.",
+            )
             queue_email(
                 kind="BOOKING_PENDING",
                 booking_reference=booking.booking_reference,
-                subject=f"Complete your booking {booking.booking_reference} — J-ONE HOTEL & LODGE",
-                message=(
-                    f"Hello {booking.guest.first_name},\n\n"
-                    f"Your reservation is on hold until "
-                    f"{timezone.localtime(booking.expires_at):%d %b %Y %H:%M}.\n\n"
-                    f"Room: {booking.number_of_rooms} × {room_type.name}\n"
-                    f"Dates: {booking.check_in} → {booking.check_out} ({booking.nights} night(s))\n"
-                    f"Total: {booking.currency} {booking.total_amount}\n"
-                    f"Amount required to confirm: {booking.currency} {booking.required_payment}\n\n"
-                    f"Secure booking access and payment: {guest_booking_link(booking)}\n\n"
-                    f"{hotel.hotel_name} · {hotel.phone}"
-                ),
+                subject=f"Complete your booking {booking.booking_reference} — {hotel.hotel_name}",
+                message=text_body,
+                html_message=html_body,
                 recipients=[booking.guest.email],
             )
         else:
@@ -458,6 +480,13 @@ def _send_confirmation_email(booking, hotel=None):
 
     receipt = ReceiptSerializer().to_representation(booking)
     payment_reference = receipt.get("receipt_reference") or booking.booking_reference
+    # Interrupted synchronous sends (deploy/timeout mid-request) leave rows in
+    # PENDING/SENDING with no worker to ever resolve them. Resolve stale rows
+    # to FAILED first, otherwise one interrupted attempt would silently block
+    # this guest's automatic receipt forever.
+    EmailLog.resolve_stale(
+        EmailLog.objects.filter(booking_reference=booking.booking_reference)
+    )
     if EmailLog.objects.filter(
         kind=EmailLog.Kind.RECEIPT,
         booking_reference=booking.booking_reference,
@@ -709,18 +738,38 @@ def cancel_booking(
             link=guest_booking_link(booking),
         )
     if send_guest_email and booking.guest.email:
+        from apps.core.email_design import render_notice_email
+        from apps.core.formatting import format_date
+
         hotel = HotelSettings.get_settings()
+        text_body, html_body = render_notice_email(
+            category="Booking update",
+            title="Your booking has been cancelled",
+            greeting=f"Hello {booking.guest.first_name},",
+            paragraphs=[
+                f"Booking {booking.booking_reference} at {hotel.hotel_name} has been cancelled.",
+                "Refunds, if applicable, are reviewed and processed separately. "
+                "You will receive a separate update only when a refund is submitted or confirmed.",
+            ],
+            details=[
+                {"label": "Booking reference", "value": booking.booking_reference},
+                {"label": "Room", "value": f"{booking.number_of_rooms} × {booking.room_type.name}"},
+                {"label": "Check-in", "value": format_date(booking.check_in)},
+                {"label": "Check-out", "value": format_date(booking.check_out)},
+                {"label": "Status", "value": "Cancelled"},
+            ],
+            footnote=(
+                f"If you have any questions about this cancellation, please contact "
+                f"{hotel.phone or hotel.email}."
+            ),
+            preheader=f"Booking {booking.booking_reference} has been cancelled.",
+        )
         queue_email(
             kind="CANCELLATION",
             booking_reference=booking.booking_reference,
             subject=f"Booking cancelled: {booking.booking_reference} — {hotel.hotel_name}",
-            message=(
-                f"Hello {booking.guest.first_name},\n\n"
-                f"Booking {booking.booking_reference} has been cancelled.\n\n"
-                "Refunds, if applicable, are reviewed and processed separately. "
-                "You will receive a separate update only when a refund is submitted or confirmed.\n\n"
-                f"{hotel.hotel_name} · {hotel.phone}"
-            ),
+            message=text_body,
+            html_message=html_body,
             recipients=[booking.guest.email],
         )
     logger.info("Booking cancelled: %s (staff=%s, calculated_refund=%s)", booking.booking_reference, staff, refund_due)
