@@ -149,8 +149,20 @@
     </div>
   </section>
 
+  <!-- LATEST OFFER (API-driven) — shown ABOVE the rooms so guests see the
+       current deal before they choose a room. -->
+  <section class="section section-subtle" id="featured-offer">
+    <div class="container">
+      <div class="section-head">
+        <span class="eyebrow">Current offers</span>
+        <h2>Worth knowing</h2>
+      </div>
+      <div class="offer-banner" id="featured-offer-banner"></div>
+    </div>
+  </section>
+
   <!-- FEATURED ROOMS (API-driven) -->
-  <section class="section section-subtle" id="rooms">
+  <section class="section" id="rooms">
     <div class="container">
       <div class="section-head">
         <span class="eyebrow">Stay with us</span>
@@ -189,17 +201,6 @@
       <div class="center" style="margin-top:2.5rem;">
         <a class="btn btn-outline" href="gallery.html">View full gallery</a>
       </div>
-    </div>
-  </section>
-
-  <!-- OFFER -->
-  <section class="section" id="featured-offer">
-    <div class="container">
-      <div class="section-head">
-        <span class="eyebrow">Current offers</span>
-        <h2>Worth knowing</h2>
-      </div>
-      <div class="offer-banner" id="featured-offer-banner"></div>
     </div>
   </section>
 
@@ -469,20 +470,29 @@
     const section = document.getElementById("featured-offer");
     if (!banner) return;
     try {
-      const res = await window.API.getOffers({ active: true, page_size: 1 });
+      /* The homepage shows the LATEST offer. The API orders by
+         (-is_featured, -start_date, title), so a long-standing featured offer
+         would otherwise outrank a newer one — pick the most recent start_date
+         from the first page and fall back to the API's own ordering. */
+      const res = await window.API.getOffers({ active: true, page_size: 10 });
       const offers = (res.data && res.data.results) || res.data || [];
       if (offers.length) {
         /* Verified fields: discount_type PERCENTAGE|FIXED_AMOUNT + discount_value */
-        const o = offers[0];
+        const o = offers.slice().sort(function (a, b) {
+          return String(b.start_date || "").localeCompare(String(a.start_date || ""));
+        })[0];
         const img = o.image_url
           ? '<div class="offer-banner-media"><img src="' + JONE.esc(o.image_url) + '" alt="' + JONE.esc(o.title) + '" loading="lazy"></div>'
           : '';
         const tag = o.discount_type === "PERCENTAGE"
           ? JONE.esc(String(o.discount_value)) + "% off"
           : (o.discount_type === "FIXED_AMOUNT" ? JONE.formatNaira(o.discount_value) + " off" : "");
+        const period = JONE.offerPeriod(o, "mid");
+        const note = JONE.offerStatusNote(o);
         banner.innerHTML = img +
           '<div class="offer-banner-body">' +
             (tag ? '<span class="offer-tag">' + tag + '</span>' : '') +
+            (period ? '<p class="meta offer-period">Valid ' + JONE.esc(period) + (note ? ' \u00b7 ' + JONE.esc(note) : '') + '</p>' : '') +
             '<h3>' + JONE.esc(o.title) + '</h3>' +
             '<p>' + JONE.esc(o.short_description || o.description || "") + '</p>' +
             '<a class="btn btn-accent" href="offers.html">View offers</a> ' +

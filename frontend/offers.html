@@ -190,11 +190,16 @@
         ? (Number(o.discount_value || 0) + "% off")
         : (o.discount_value ? JONE.formatNaira(o.discount_value) + " off" : "Special offer");
       var bookHref = o.code ? "booking.html?offer=" + encodeURIComponent(o.code) : "booking.html";
+      var period = JONE.offerPeriod(o, "mid");
+      var note = JONE.offerStatusNote(o);
       return '<article class="card card-hover">' + img + '<div class="card-pad">' +
         '<span class="offer-tag" style="margin-bottom:0.75rem;">' + JONE.esc(disc) + '</span>' +
         '<h3 style="font-size:var(--fs-lg);margin:0.5rem 0;">' + JONE.esc(o.title || "Offer") + '</h3>' +
         '<p class="muted" style="font-size:var(--fs-sm);">' + JONE.esc(o.short_description || o.description || "") + '</p>' +
-        (o.end_date ? '<p class="caption">Valid until ' + JONE.formatDate(o.end_date, "mid") + '</p>' : '') +
+        /* Guests need the START date too: an offer that has not begun yet
+           must not look like it applies to tonight's booking. */
+        (period ? '<p class="caption offer-period"><span data-icon="calendar" data-size="14"></span> Valid ' + JONE.esc(period) + '</p>' : '') +
+        (note ? '<p class="caption offer-note">' + JONE.esc(note) + '</p>' : '') +
         '<div style="display:flex;gap:0.75rem;margin-top:1rem;flex-wrap:wrap;">' +
           '<a class="btn btn-sm btn-accent" href="' + bookHref + '">Book with this offer</a>' +
         '</div></div></article>';

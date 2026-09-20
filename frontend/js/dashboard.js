@@ -15,8 +15,10 @@
     { group: "Operations", items: [
       { label: "Bookings", href: "bookings.html", icon: "calendar", view: "bookings" },
       { label: "Availability", href: "availability.html", icon: "grid", view: "availability" },
+      { label: "Occupancy", href: "occupancy.html", icon: "calendar", view: "occupancy" },
       { label: "Check-in", href: "check-in.html", icon: "logOut", view: "check-in" },
       { label: "Check-out", href: "check-out.html", icon: "logOut", view: "check-out" },
+      { label: "Missed bookings", href: "missed-bookings.html", icon: "userX", view: "missed-bookings" },
       { label: "Guests", href: "guests.html", icon: "users", view: "guests" },
       { label: "Rooms", href: "rooms.html", icon: "bed", view: "rooms" },
     ]},
@@ -461,18 +463,29 @@
      delegated and attached exactly once per container.
      ====================================================================== */
 
+  /* The rows-per-page every dashboard list requests. Single source of truth:
+     APP_CONFIG.PAGE_SIZE, which matches the backend's default page size. */
+  function pageSize() {
+    const configured = parseInt(
+      (window.APP_CONFIG && window.APP_CONFIG.PAGE_SIZE) || 10, 10
+    );
+    return configured > 0 ? configured : 10;
+  }
+
   /* Accepts either pagination shape and derives anything missing. */
   function pagerMeta(meta) {
     if (!meta || typeof meta !== "object") return null;
     const page = Math.max(1, parseInt(meta.page, 10) || 1);
-    const pageSize = Math.max(1, parseInt(meta.page_size != null ? meta.page_size : meta.pageSize, 10) || 20);
+    const size = Math.max(
+      1, parseInt(meta.page_size != null ? meta.page_size : meta.pageSize, 10) || pageSize()
+    );
     let totalPages = meta.total_pages != null ? meta.total_pages : meta.totalPages;
     totalPages = totalPages == null ? null : Math.max(1, parseInt(totalPages, 10) || 1);
     const count = meta.count != null && !isNaN(parseInt(meta.count, 10))
       ? Math.max(0, parseInt(meta.count, 10)) : null;
-    if (totalPages == null && count != null) totalPages = Math.max(1, Math.ceil(count / pageSize));
+    if (totalPages == null && count != null) totalPages = Math.max(1, Math.ceil(count / size));
     if (totalPages == null) totalPages = page;
-    return { page: Math.min(page, totalPages), pageSize, totalPages, count };
+    return { page: Math.min(page, totalPages), pageSize: size, totalPages, count };
   }
 
   /* Compact numbered window: page ±1 plus both ends, nulls = ellipses. */
@@ -1192,6 +1205,28 @@
     { value: "BANK_TRANSFER", label: "Bank transfer" },
   ];
 
+  /* Statuses whose booking can still legitimately take money at the desk.
+     Mirrors the backend rule in payments.services.record_offline_payment. */
+  const PAYABLE_BOOKING_STATUSES = ["PENDING", "CONFIRMED", "CHECKED_IN"];
+
+  /* Whether the "Record payment" control should be offered at all.
+
+     A payment that is already settled must not present the action: the
+     backend refuses it (PaymentAlreadyCompletedError / INVALID_BOOKING_STATE),
+     so showing the button only invites an error. The rule is derived from the
+     authoritative booking snapshot — outstanding balance AND a status that can
+     still accept money — never from a client-side flag.
+     This is the single place the rule lives; every console page calls it. */
+  function canRecordPayment(booking) {
+    if (!booking) return false;
+    const status = String(booking.status || "").toUpperCase();
+    if (status && PAYABLE_BOOKING_STATUSES.indexOf(status) === -1) return false;
+    const paymentStatus = String(booking.payment_status || "").toUpperCase();
+    if (paymentStatus === "PAID" || paymentStatus === "REFUNDED") return false;
+    const due = Number(booking.amount_due != null ? booking.amount_due : 0);
+    return Number.isFinite(due) && due > 0;
+  }
+
   function paymentModal(booking, opts = {}) {
     opts = opts || {};
     const b = booking || {};
@@ -1554,6 +1589,91 @@
     return g;
   }
 
+  /* ----------------------------------------------------------------------
+     Payment detail panel (the payments table's "View" action).
+
+     Shows the complete payment record the backend returns — reference,
+     booking, guest, method, channel, status, gateway response, transaction id,
+     timestamps, staff member and notes. No card details exist in the API and
+     none are displayed. The list row is shown immediately so the panel is
+     never blank, then refreshed from the detail endpoint.
+     ---------------------------------------------------------------------- */
+  function paymentDetailBody(p) {
+    p = p || {};
+    const provider = String(p.provider || "").replace(/_/g, " ").toLowerCase();
+    const title = p.reference || "Payment";
+    return (
+      '<div class="profile-card">' +
+        '<div class="profile-identity">' +
+          '<div class="profile-identity-text">' +
+            "<h3>" + JONE.esc(money(p.amount, p.currency) || "—") + "</h3>" +
+            '<p class="muted">' + JONE.esc(title) + "</p>" +
+            '<div class="profile-tags">' + statusPill(p.status) +
+              (provider ? statusPill("confirmed", provider.toUpperCase()) : "") +
+            "</div>" +
+          "</div>" +
+        "</div>" +
+        '<dl class="profile-grid">' +
+          row("Guest", p.guest_name) +
+          row("Booking", p.booking_reference) +
+          row("Method", provider) +
+          row("Channel", p.channel) +
+          row("Status", p.status) +
+          row("Amount", money(p.amount, p.currency)) +
+          row("Paid at", p.paid_at ? JONE.formatDateTime(p.paid_at) : "—") +
+          row("Recorded", p.created_at ? JONE.formatDateTime(p.created_at) : "—") +
+          row("Transaction ID", p.transaction_id) +
+          row("Recorded by", p.staff_email) +
+          row("Gateway response", p.gateway_response) +
+          row("Notes", p.notes) +
+        "</dl>" +
+      "</div>"
+    );
+  }
+
+  async function paymentDetailPanel(paymentId, rowData) {
+    const initial = rowData || {};
+    const heading = "Payment " + (initial.reference || "");
+    openPanel(
+      heading.trim(),
+      rowData
+        ? paymentDetailBody(initial)
+        : '<div class="loading-block"><div class="spinner" role="status"></div></div>',
+      '<button class="btn btn-sm btn-ghost" data-pd-close>Close</button>' +
+      (initial.booking_reference
+        ? ' <a class="btn btn-sm btn-outline" href="booking-details.html?ref=' +
+          encodeURIComponent(initial.booking_reference) + '">Open booking</a>'
+        : "")
+    );
+    const wire = () => {
+      const panel = lastPanel;
+      if (!panel) return;
+      const close = panel.querySelector("[data-pd-close]");
+      if (close) close.addEventListener("click", closePanel);
+      JONE.icons.inject(panel);
+    };
+    wire();
+
+    let payment = initial;
+    try {
+      const res = await window.API.getOne("payments", paymentId);
+      payment = Object.assign({}, initial, (res && res.data) || {});
+    } catch (err) {
+      if (!rowData) {
+        closePanel();
+        JONE.ui.toast((err && err.message) || "This payment couldn't be loaded.", "error");
+        return null;
+      }
+      // The row we already have is authoritative enough to keep on screen.
+    }
+    const body = lastPanel && lastPanel.querySelector("[data-panel-body]");
+    if (body) {
+      body.innerHTML = paymentDetailBody(payment);
+      JONE.icons.inject(body);
+    }
+    return payment;
+  }
+
   /* ======================================================================
      Minimal generic panel host for the read-only dialogs above.
      Uses the same .modal markup + focus handling as formModal so the look,
@@ -1613,10 +1733,10 @@
       }),
     },
     // List pagination (requests pages from the API; never slices in-browser)
-    renderPagination, paginationHTML,
+    renderPagination, paginationHTML, pageSize,
     // Operational components
     currentRole, hasRole, canManageRooms, canManageStaff, money,
-    paymentModal, staffProfileModal, editStaffModal, roomTypeRoomsModal,
-    guestProfileModal, openPanel, closePanel,
+    paymentModal, canRecordPayment, staffProfileModal, editStaffModal, roomTypeRoomsModal,
+    guestProfileModal, paymentDetailPanel, openPanel, closePanel,
   };
 })();

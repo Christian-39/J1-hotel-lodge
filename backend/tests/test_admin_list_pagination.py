@@ -15,6 +15,7 @@ from datetime import timedelta
 from apps.accounts.models import User
 from apps.audit.models import AuditLog
 from apps.bookings.models import Booking, Guest
+from apps.core.pagination import StandardPagination
 from apps.core.utils import hotel_today
 from apps.payments.models import Payment
 
@@ -23,7 +24,14 @@ from .factories import make_booking, make_guest, make_room, make_room_type
 
 
 class PageContractMixin:
-    """Shared assertions for every paginated admin list."""
+    """Shared assertions for every paginated admin list.
+
+    PAGE_SIZE mirrors apps.core.pagination.StandardPagination.page_size, which
+    the staff console relies on (10 rows per page); it is read from the class
+    under test rather than hardcoded twice.
+    """
+
+    PAGE_SIZE = StandardPagination.page_size
 
     @staticmethod
     def pagination(res):
@@ -35,28 +43,40 @@ class PageContractMixin:
             assert key in pg, f"pagination block is missing {key!r}: {pg}"
         return pg
 
-    def assert_first_page(self, res, *, expected_rows, expected_count):
+    def expected_total_pages(self, count):
+        return max(1, -(-count // self.PAGE_SIZE))
+
+    def assert_page(self, res, *, page, expected_count):
+        """Assert one page of a list of ``expected_count`` rows at PAGE_SIZE."""
         self.assertEqual(res.status_code, 200, res.json())
         pg = self.assert_contract_shape(res)
         rows = res.json()["data"]
-        self.assertEqual(len(rows), expected_rows)
+        total_pages = self.expected_total_pages(expected_count)
+        remaining = max(0, expected_count - (page - 1) * self.PAGE_SIZE)
+        self.assertEqual(len(rows), min(self.PAGE_SIZE, remaining))
         self.assertEqual(pg["count"], expected_count)
-        self.assertEqual(pg["page"], 1)
-        self.assertEqual(pg["page_size"], 20)
-        self.assertEqual(pg["total_pages"], max(1, -(-expected_count // 20)) if expected_count else 1)
-        self.assertIsNone(pg["previous"])
-        self.assertEqual(bool(pg["next"]), expected_count > 20)
+        self.assertEqual(pg["page"], page)
+        self.assertEqual(pg["page_size"], self.PAGE_SIZE)
+        self.assertEqual(pg["total_pages"], total_pages)
+        if page == 1:
+            self.assertIsNone(pg["previous"])
+        else:
+            self.assertIsNotNone(pg["previous"])
+        self.assertEqual(bool(pg["next"]), page < total_pages)
         return rows
 
-    def assert_second_page(self, res, *, expected_rows, expected_count):
-        self.assertEqual(res.status_code, 200, res.json())
-        pg = self.assert_contract_shape(res)
-        rows = res.json()["data"]
-        self.assertEqual(len(rows), expected_rows)
-        self.assertEqual(pg["page"], 2)
-        self.assertEqual(pg["count"], expected_count)
-        self.assertIsNotNone(pg["previous"])
-        self.assertIsNone(pg["next"])
+    def assert_first_page(self, res, *, expected_count, expected_rows=None):
+        return self.assert_page(res, page=1, expected_count=expected_count)
+
+    def assert_second_page(self, res, *, expected_count, expected_rows=None):
+        return self.assert_page(res, page=2, expected_count=expected_count)
+
+    def all_rows(self, getter, *, expected_count, **params):
+        """Walk every page of a list, asserting the contract on each one."""
+        rows = []
+        for page in range(1, self.expected_total_pages(expected_count) + 1):
+            rows += self.assert_page(getter(page=page, **params), page=page,
+                                     expected_count=expected_count)
         return rows
 
 
@@ -84,16 +104,17 @@ class AdminBookingPaginationTests(PageContractMixin, BaseAPITestCase):
         return self.client.get("/api/admin/bookings/", params)
 
     def test_default_page_one_and_two_split_without_overlap(self):
-        page1 = self.assert_first_page(self.get(), expected_rows=20, expected_count=25)
-        page2 = self.assert_second_page(self.get(page=2), expected_rows=5, expected_count=25)
+        page1 = self.assert_first_page(self.get(), expected_count=25)
+        page2 = self.assert_second_page(self.get(page=2), expected_count=25)
         ids1 = {row["id"] for row in page1}
         ids2 = {row["id"] for row in page2}
         self.assertFalse(ids1 & ids2, "pages must not overlap")
-        self.assertEqual(len(ids1 | ids2), 25)
+        all_ids = {row["id"] for row in self.all_rows(self.get, expected_count=25)}
+        self.assertEqual(len(all_ids), 25)
 
     def test_total_pages_next_previous_contract(self):
         pg = self.assert_contract_shape(self.get())
-        self.assertEqual(pg["total_pages"], 2)
+        self.assertEqual(pg["total_pages"], self.expected_total_pages(25))
         self.assertEqual(pg["page"], 1)
         assert "page=2" in pg["next"]
         pg2 = self.assert_contract_shape(self.get(page=2))
@@ -111,21 +132,19 @@ class AdminBookingPaginationTests(PageContractMixin, BaseAPITestCase):
             b.status = Booking.Status.PENDING
             b.save(update_fields=["status"])
         res = self.get(status="PENDING")
-        rows = self.assert_first_page(res, expected_rows=7, expected_count=7)
+        rows = self.assert_first_page(res, expected_count=7)
         assert {row["status"] for row in rows} == {"PENDING"}
         # The filtered set fits on one page: asking for page 2 is a graceful
         # 404 (DRF behaviour — never a 500, never fabricated rows).
         self.assertEqual(self.get(status="PENDING", page=2).status_code, 404)
 
     def test_search_paginates_the_matched_set(self):
-        res = self.get(search=self.guest.email)
-        self.assert_first_page(res, expected_rows=20, expected_count=25)
-        res = self.get(search=self.guest.email, page=2)
-        self.assert_second_page(res, expected_rows=5, expected_count=25)
+        self.assert_first_page(self.get(search=self.guest.email), expected_count=25)
+        self.assert_second_page(self.get(search=self.guest.email, page=2), expected_count=25)
 
     def test_ordering_is_honoured_within_pages(self):
         res = self.get(ordering="check_in")
-        rows = self.assert_first_page(res, expected_rows=20, expected_count=25)
+        rows = self.assert_first_page(res, expected_count=25)
         checkins = [row["check_in"] for row in rows]
         self.assertEqual(checkins, sorted(checkins))
 
@@ -171,8 +190,8 @@ class AdminPaymentPaginationTests(PageContractMixin, BaseAPITestCase):
         return self.client.get("/api/admin/payments/", params)
 
     def test_default_page_one_and_two_split(self):
-        page1 = self.assert_first_page(self.get(), expected_rows=20, expected_count=25)
-        page2 = self.assert_second_page(self.get(page=2), expected_rows=5, expected_count=25)
+        page1 = self.assert_first_page(self.get(), expected_count=25)
+        page2 = self.assert_second_page(self.get(page=2), expected_count=25)
         self.assertFalse({r["id"] for r in page1} & {r["id"] for r in page2})
 
     def test_receipts_query_status_success_paginates(self):
@@ -196,9 +215,9 @@ class AdminPaymentPaginationTests(PageContractMixin, BaseAPITestCase):
         res = self.get(search=self.guest.email)
         pg = self.assert_contract_shape(res)
         self.assertEqual(pg["count"], 25)
-        self.assertEqual(pg["total_pages"], 2)
+        self.assertEqual(pg["total_pages"], self.expected_total_pages(25))
         page2 = self.assert_second_page(self.get(search=self.guest.email, page=2),
-                                        expected_rows=5, expected_count=25)
+                                        expected_count=25)
         self.assertFalse({r["id"] for r in res.json()["data"]} & {r["id"] for r in page2})
         # An exact reference search selects exactly this row.
         res = self.get(search="J1P-PAGE-007")
@@ -227,8 +246,8 @@ class AdminAuditLogPaginationTests(PageContractMixin, BaseAPITestCase):
         return self.client.get("/api/admin/audit-logs/", params)
 
     def test_default_page_one_and_two_split(self):
-        page1 = self.assert_first_page(self.get(), expected_rows=20, expected_count=25)
-        page2 = self.assert_second_page(self.get(page=2), expected_rows=5, expected_count=25)
+        page1 = self.assert_first_page(self.get(), expected_count=25)
+        page2 = self.assert_second_page(self.get(page=2), expected_count=25)
         self.assertFalse({r["id"] for r in page1} & {r["id"] for r in page2})
 
     def test_action_filter_paginates(self):
@@ -260,9 +279,9 @@ class AdminGuestPaginationTests(PageContractMixin, BaseAPITestCase):
         return self.client.get("/api/admin/guests/", params)
 
     def test_default_page_one_and_two_split(self):
-        page1 = self.assert_first_page(self.get(), expected_rows=20, expected_count=Guest.objects.count())
-        page2 = self.assert_second_page(self.get(page=2), expected_rows=Guest.objects.count() - 20,
-                                        expected_count=Guest.objects.count())
+        total = Guest.objects.count()
+        page1 = self.assert_first_page(self.get(), expected_count=total)
+        page2 = self.assert_second_page(self.get(page=2), expected_count=total)
         self.assertFalse({r["id"] for r in page1} & {r["id"] for r in page2})
 
     def test_search_paginates_the_matched_set(self):

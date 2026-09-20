@@ -109,9 +109,10 @@
   var rowIndex = {};
 
   function actionCell(b){
-    var due = Number(b.amount_due || 0);
-    var canPay = b.status === "CONFIRMED" || b.status === "PENDING" || b.status === "CHECKED_IN";
-    var payBtn = (canPay && due > 0)
+    /* One shared rule (JONE.dashboard.canRecordPayment): the action is only
+       offered when the booking can still accept money AND a balance is
+       outstanding — a confirmed/settled payment shows no button. */
+    var payBtn = JONE.dashboard.canRecordPayment(b)
       ? '<button class="btn btn-sm btn-accent" data-pay="' + JONE.esc(b.id) + '">' +
         '<span data-icon="wallet" data-size="14"></span> Record payment</button>'
       : "";
@@ -168,7 +169,7 @@
   function renderPager(meta){ JONE.dashboard.renderPagination(pager, meta, { onPage: load }); }
 
   function filters(){
-    var f = { page: state.page, page_size: 20, ordering: "-created_at" };
+    var f = { page: state.page, page_size: JONE.dashboard.pageSize(), ordering: "-created_at" };
     var q = document.getElementById("bk-q"); if (q && q.value.trim()) f.search = q.value.trim();
     var st = document.getElementById("bk-status"); if (st && st.value) f.status = st.value;
     var py = document.getElementById("bk-pay"); if (py && py.value) f.payment_status = py.value;
@@ -394,8 +395,7 @@
     JONE.ui.toast("Booking " + (ref || "") + " created.", "success");
     prependRow(created);
 
-    var due = Number(created.amount_due || 0);
-    if (created.status !== "CANCELLED" && due > 0) {
+    if (JONE.dashboard.canRecordPayment(created)) {
       if (created.room_substitution) {
         JONE.ui.toast("Room " + created.room_substitution.requested_room_number +
           " was taken — Room " + created.room_substitution.assigned_room_number +

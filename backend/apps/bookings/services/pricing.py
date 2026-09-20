@@ -35,6 +35,10 @@ class Quote:
     subtotal: Decimal
     offer: object = None
     discount: Decimal = Decimal("0.00")
+    # Personal (per-guest) discount when it beat the public offer. Offers and
+    # guest discounts never stack — see apps.offers.services.best_discount_for_stay.
+    guest_discount: object = None
+    discount_source: str = ""
     extra_guests: int = 0
     extra_guest_fee: Decimal = Decimal("0.00")
     tax: Decimal = Decimal("0.00")
@@ -53,6 +57,17 @@ class Quote:
             "price_per_night": money(self.price_per_night),
             "subtotal": money(self.subtotal),
             "discount": money(self.discount),
+            "discount_source": self.discount_source,
+            "guest_discount": (
+                {
+                    "id": self.guest_discount.pk,
+                    "discount_type": self.guest_discount.discount_type,
+                    "discount_value": money(self.guest_discount.discount_value),
+                    "reason": self.guest_discount.reason,
+                }
+                if self.guest_discount
+                else None
+            ),
             "offer": (
                 {
                     "id": self.offer.pk,
@@ -110,7 +125,8 @@ def validate_capacity(room_type, rooms, guests):
 
 
 def calculate_quote(*, room_type, check_in, check_out, rooms, adults, children,
-                    offer_code=None, settings_obj=None, for_staff=False) -> Quote:
+                    offer_code=None, settings_obj=None, for_staff=False,
+                    guest=None) -> Quote:
     """Full server-side price computation for a stay."""
     settings_obj = settings_obj or HotelSettings.get_settings()
     nights = validate_stay_dates(check_in, check_out, for_staff=for_staff, settings_obj=settings_obj)
@@ -120,14 +136,18 @@ def calculate_quote(*, room_type, check_in, check_out, rooms, adults, children,
     price_per_night = q(room_type.base_price)
     subtotal = q(price_per_night * nights * rooms)
 
-    # Offers: explicit promo code wins; otherwise auto-apply the best eligible offer.
-    offer, discount = None, Decimal("0.00")
-    if offer_code:
-        offer, discount = offer_services.validate_offer_code(
-            offer_code, room_type, check_in, check_out, nights, subtotal
-        )
-    else:
-        offer, discount = offer_services.best_offer(room_type, check_in, check_out, nights, subtotal)
+    # ONE authoritative discount decision. A public offer and a personal guest
+    # discount never stack: the backend applies whichever is larger and reports
+    # which source won. An invalid promo code still raises here.
+    offer, guest_discount, discount, discount_source = offer_services.best_discount_for_stay(
+        guest=guest,
+        room_type=room_type,
+        check_in=check_in,
+        check_out=check_out,
+        nights=nights,
+        subtotal=subtotal,
+        offer_code=offer_code,
+    )
 
     extra_guest_fee = q((room_type.extra_guest_fee or Decimal("0.00")) * extra_guests * nights)
     taxable = q(subtotal - discount + extra_guest_fee)
@@ -149,6 +169,8 @@ def calculate_quote(*, room_type, check_in, check_out, rooms, adults, children,
         price_per_night=price_per_night,
         subtotal=subtotal,
         offer=offer,
+        guest_discount=guest_discount,
+        discount_source=discount_source,
         discount=q(discount),
         extra_guests=extra_guests,
         extra_guest_fee=extra_guest_fee,

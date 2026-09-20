@@ -480,10 +480,37 @@ body.modal-open { overflow: hidden; }
 @media (max-width: 640px) {
   .pagination { justify-content: center; gap: 0.5rem; }
   .pagination > .muted { flex-basis: 100%; text-align: center; }
-  /* numbered window collapses; Prev/Next + the range line stay reachable
-     (the range already states the position: "Showing 21–40 of 137"). */
-  .pagination .page-nums { display: none; }
+  /* Page NUMBERS stay visible on mobile — jumping straight to a page is the
+     whole point of the pager, and Prev/Next alone makes a long list unusable.
+     The numbered window wraps onto its own centred line and scrolls sideways
+     only if a very narrow screen cannot fit the compact window. */
+  .pagination .page-nums {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.35rem;
+    order: 2;
+    max-width: 100%;
+  }
+  .pagination .page-nums .page-num {
+    min-width: 2.25rem;
+    padding: 0.45rem 0.5rem;
+    font-size: var(--fs-sm);
+  }
   .pagination .page-label { font-size: var(--fs-xs); }
+}
+
+@media (max-width: 380px) {
+  /* Touch targets stay at 44px-ish; on the very smallest phones the window
+     scrolls horizontally inside the pager rather than shrinking below that. */
+  .pagination .page-nums {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    padding-bottom: 0.15rem;
+  }
+  .pagination .page-nums::-webkit-scrollbar { display: none; }
 }
 
 /* ------------------------- Confirmation dialog -------------------------- */

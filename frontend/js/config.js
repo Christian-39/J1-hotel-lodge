@@ -51,6 +51,9 @@
     bookings:      "/api/admin/bookings/",        // list/create; detail {id|ref}; actions via API.checkInBooking() etc.
     booking:       "/api/admin/bookings/",        // detail view alias (booking-details page)
     guests:        "/api/admin/guests/",
+    guestDiscounts:"/api/admin/guest-discounts/", // individual guest discounts (manager write, staff read)
+    occupancy:     "/api/admin/bookings/calendar/", // month occupancy grid (per room, per date)
+    missedBookings:"/api/admin/bookings/missed/",   // guests who never arrived
     rooms:         "/api/admin/rooms/",           // physical rooms (status/housekeeping)
     roomTypes:     "/api/admin/room-types/",      // catalog CRUD + images upload
     roomImages:    "/api/admin/room-images/",      // room-type image detail (PATCH/DELETE)
@@ -60,6 +63,7 @@
     receipts:      "/api/admin/payments/",        // receipts view = payment records
     enquiries:     "/api/admin/enquiries/",       // includes cancellation/refund review actions
     auditLogs:     "/api/admin/audit-logs/",      // ADMIN, read-only
+    auditLogActions: "/api/admin/audit-logs/actions/",  // ADMIN, filter choices
     reviews:       "/api/admin/reviews/",         // ADMIN-only guest reviews (private)
     users:         "/api/admin/users/",           // ADMIN
     settings:      "/api/admin/settings/",        // GET manager+, PATCH admin-only

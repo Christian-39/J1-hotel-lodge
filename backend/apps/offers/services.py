@@ -102,3 +102,81 @@ def offers_for_room_type(room_type, limit=5):
         }
         for o in qs
     ]
+
+
+# ---------------------------------------------------------------------------
+# Individual guest discounts
+#
+# PRECEDENCE RULE (single, deterministic, backend-only):
+#   A public Offer and a personal GuestDiscount NEVER stack. The backend
+#   computes both candidate discounts against the same subtotal and applies
+#   whichever is LARGER for the guest; ties go to the public offer so a booking
+#   keeps its advertised offer link. The applied source is reported to the
+#   caller so staff and the guest can always see which one was used.
+# ---------------------------------------------------------------------------
+def guest_discount_amount(discount, subtotal: Decimal) -> Decimal:
+    """Absolute discount for a subtotal (never more than the subtotal)."""
+    from .models import GuestDiscount
+
+    if discount.discount_type == GuestDiscount.DiscountType.PERCENTAGE:
+        amount = subtotal * (Decimal(discount.discount_value) / Decimal("100"))
+    else:
+        amount = Decimal(discount.discount_value)
+    return max(_ZERO, min(_q(amount), subtotal))
+
+
+def active_guest_discount(guest, on_date=None):
+    """The best currently-valid personal discount for a guest, or None.
+
+    ``guest`` may be a Guest instance or None (guest-checkout before the row
+    exists). Validity is judged against ``on_date`` (defaults to today) so a
+    discount that has not started or has expired is never applied.
+    """
+    from .models import GuestDiscount
+
+    if guest is None or getattr(guest, "pk", None) is None:
+        return None
+    day = on_date or timezone.localdate()
+    qs = GuestDiscount.objects.filter(
+        guest=guest,
+        is_active=True,
+        start_date__lte=day,
+    ).filter(Q_end_date_open(day))
+    # Deterministic pick: the largest percentage/amount, newest first on ties.
+    return qs.order_by("-discount_value", "-created_at").first()
+
+
+def Q_end_date_open(day):
+    from django.db.models import Q
+
+    return Q(end_date__isnull=True) | Q(end_date__gte=day)
+
+
+def best_discount_for_stay(*, guest, room_type, check_in, check_out, nights,
+                           subtotal, offer_code=None):
+    """THE authoritative discount decision for a stay.
+
+    Returns ``(offer, guest_discount, amount, source)`` where ``source`` is one
+    of ``"OFFER"``, ``"GUEST_DISCOUNT"`` or ``""`` (no discount).
+
+    * An explicit promo code always resolves the public offer (and raises when
+      it is not applicable) — but a bigger personal discount still wins.
+    * Otherwise the best eligible public offer competes with the guest's
+      personal discount and the larger of the two is applied. They never stack.
+    """
+    if offer_code:
+        offer, offer_discount = validate_offer_code(
+            offer_code, room_type, check_in, check_out, nights, subtotal
+        )
+    else:
+        offer, offer_discount = best_offer(room_type, check_in, check_out, nights, subtotal)
+
+    discount = active_guest_discount(guest, on_date=check_in)
+    personal_amount = guest_discount_amount(discount, subtotal) if discount else _ZERO
+
+    # Larger wins; ties keep the public offer so the booking retains its link.
+    if personal_amount > offer_discount:
+        return None, discount, personal_amount, "GUEST_DISCOUNT"
+    if offer is not None and offer_discount > _ZERO:
+        return offer, None, offer_discount, "OFFER"
+    return None, None, _ZERO, ""

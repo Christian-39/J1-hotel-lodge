@@ -55,17 +55,22 @@
 <section class="panel">
   <div class="panel-head">
     <h2>Availability search</h2>
-    <div class="panel-actions" style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:end;">
-      <div class="field"><label class="field-label" for="av-from">Check-in</label><input class="input" type="date" id="av-from"></div>
-      <div class="field"><label class="field-label" for="av-to">Check-out</label><input class="input" type="date" id="av-to"></div>
-      <div class="field"><label class="field-label" for="av-guests">Guests</label><input class="input" type="number" id="av-guests" min="1" value="2" style="width:90px;"></div>
-      <div class="field"><label class="field-label" for="av-rooms">Rooms</label><input class="input" type="number" id="av-rooms" min="1" value="1" style="width:90px;"></div>
-      <button class="btn btn-sm btn-accent" id="av-search" type="button">Search</button>
-    </div>
   </div>
+  <!-- The search controls are their own responsive grid rather than crammed
+       into .panel-actions: on a phone the four fields stack into two readable
+       columns with a full-width Search button, instead of overflowing the
+       header row. -->
+  <form class="av-search-form" id="av-form" novalidate>
+    <div class="field"><label class="field-label" for="av-from">Check-in</label><input class="input" type="date" id="av-from"></div>
+    <div class="field"><label class="field-label" for="av-to">Check-out</label><input class="input" type="date" id="av-to"></div>
+    <div class="field"><label class="field-label" for="av-guests">Guests</label><input class="input" type="number" id="av-guests" min="1" value="2" inputmode="numeric"></div>
+    <div class="field"><label class="field-label" for="av-rooms">Rooms</label><input class="input" type="number" id="av-rooms" min="1" value="1" inputmode="numeric"></div>
+    <div class="field av-search-submit"><button class="btn btn-accent" id="av-search" type="submit">
+      <span data-icon="search" data-size="16"></span> Search</button></div>
+  </form>
   <div class="panel-body no-pad">
     <p class="caption" style="padding:0.75rem 1.1rem 0;">Results come straight from the booking system: rooms free for the whole stay, with the system-computed total for the party size.</p>
-    <div class="table-wrap"><table class="table">
+    <div class="table-wrap table-scroll-x" tabindex="0" role="region" aria-label="Availability results, scroll sideways to see every column"><table class="table table-availability">
       <thead><tr><th>Room type</th><th class="hide-sm">Sleeps</th><th>Rooms free</th><th class="hide-sm">Rate / night</th><th>Est. total</th><th>Status</th></tr></thead>
       <tbody data-tbody="av-results"></tbody>
     </table></div>
@@ -153,7 +158,12 @@
     }
   }
 
-  document.getElementById("av-search").addEventListener("click",search);
+  /* Submitting the form (Enter in any field or the Search button) runs the
+     same single search path. */
+  document.getElementById("av-form").addEventListener("submit", function(e){
+    e.preventDefault();
+    search();
+  });
   // first search is triggered by firstSearch() above (hotel-timezone aware)
 })();
 

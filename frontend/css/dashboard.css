@@ -728,6 +728,11 @@ tr.is-muted { opacity: 0.55; }
 
 /* Compact, wrapping action clusters inside table cells. */
 .row-actions { display: flex; flex-wrap: wrap; gap: 0.35rem; align-items: center; }
+/* Icon spans inside flex-shrunk row-action buttons must not collapse to zero
+   width (the SVG keeps its size, but the wrapping span would otherwise be
+   squeezed away when the button is flex: 1 1 0). */
+.row-actions .btn [data-icon] { flex: 0 0 auto; }
+
 .row-actions-end { justify-content: flex-end; }
 @media (max-width: 560px) {
   .row-actions { width: 100%; }
@@ -787,6 +792,7 @@ tr.is-muted { opacity: 0.55; }
   .table-staff thead { display: none; }
   .table-staff, .table-staff tbody, .table-staff tr, .table-staff td { display: block; width: 100%; }
   .table-staff tr {
+    width: auto;
     border: 1px solid var(--color-border);
     border-radius: var(--radius);
     background: var(--color-surface);
@@ -1378,3 +1384,324 @@ body.receipt-view-page .receipt-utility-actions .btn-outline:hover {
 .receipt-send-dialog .spinner { display:inline-block; width:1em; height:1em; border:.15em solid currentColor; border-right-color:transparent; border-radius:50%; animation:receipt-spin .7s linear infinite; vertical-align:-.15em; }
 @keyframes receipt-spin { to { transform:rotate(360deg); } }
 @media (max-width:480px) { .receipt-send-summary { grid-template-columns:1fr; gap:.2rem; } .receipt-send-summary dd { margin-bottom:.45rem; } }
+/* --------------------------- Guests table layout --------------------------
+   Desktop: a normal five-column table.
+   ≤720px: the SAME rows restack as guest cards (identical technique to
+   .table-staff — one DOM, no duplicated markup, no horizontal scrolling of a
+   five-column table on a phone). The booking count rides with the email so it
+   is legible at both sizes. */
+.table-guests .btn-label { display: none; }
+.table-guests td[data-label="Actions"] .row-actions { justify-content: flex-end; }
+.guest-count { font-weight: 700; color: var(--color-text); white-space: nowrap; }
+
+@media (max-width: 720px) {
+  /* The generic "wide tables scroll" rule (min-width: 600px) must not apply
+     once rows become cards, or each card would be 600px wide. */
+  .table-wrap .table-guests,
+  .table-guests { table-layout: auto; min-width: 0; }
+  .table-guests thead { display: none; }
+  .table-guests,
+  .table-guests tbody,
+  .table-guests tr,
+  .table-guests td { display: block; width: 100%; }
+  /* Cards are auto-width: with width:100% the side margins would push them
+     past the wrapper and create a phantom sideways scroll. */
+  .table-guests tr {
+    width: auto;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    background: var(--color-surface);
+    padding: 0.85rem 0.9rem;
+    margin: 0 0.9rem 0.75rem;
+  }
+  .table-guests tbody tr:last-child { margin-bottom: 0.9rem; }
+  .table-guests td {
+    border: 0; padding: 0.2rem 0; min-width: 0;
+    overflow: visible; white-space: normal;
+  }
+  .table-guests td[data-label]::before {
+    content: attr(data-label);
+    display: block;
+    font-size: 0.66rem;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--color-text-faint);
+  }
+  .table-guests td[data-label="Guest"] { padding-bottom: 0.5rem; }
+  .table-guests td[data-label="Guest"]::before { display: none; }
+  .table-guests td[data-label="Guest"] .cell-guest-name { font-size: var(--fs-md); }
+  /* In card mode the email has the full card width, so it wraps in full
+     instead of being ellipsised — the booking count must never be cut off. */
+  .table-guests td[data-label="Guest"].cell-guest { max-width: none; }
+  .table-guests td[data-label="Guest"] .cell-guest-contact {
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
+    overflow-wrap: anywhere;
+  }
+  /* Contact, bookings and last stay share one compact meta line. */
+  .table-guests td[data-label="Contact"],
+  .table-guests td[data-label="Bookings"],
+  .table-guests td[data-label="Last stay"] {
+    display: inline-block; width: auto; margin-right: 0.9rem; text-align: left;
+  }
+  .table-guests td[data-label="Contact"]::before,
+  .table-guests td[data-label="Bookings"]::before,
+  .table-guests td[data-label="Last stay"]::before {
+    display: inline-block; margin-right: 0.35rem;
+  }
+  .table-guests td[data-label="Actions"] { padding-top: 0.6rem; }
+  .table-guests td[data-label="Actions"].cell-nowrap { white-space: normal; }
+  .table-guests td[data-label="Actions"] .row-actions { justify-content: stretch; gap: 0.4rem; }
+  .table-guests td[data-label="Actions"] .btn { flex: 1 1 0; min-width: 0; justify-content: center; }
+  .table-guests .btn-label { display: inline; }
+}
+
+/* --------------------------- Payments table ------------------------------
+   The payments table has more columns than a phone can show, so on mobile it
+   scrolls sideways inside its own wrapper (never the page body — there is no
+   blanket overflow-x:hidden anywhere). The wrapper is focusable so the scroll
+   region is reachable by keyboard, and a subtle edge fade signals that more
+   columns exist. */
+.table-scroll-x { scroll-snap-type: none; }
+.table-scroll-x:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
+.pay-mobile-guest {
+  display: none;
+  margin-top: .2rem;
+  color: var(--color-text-muted);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  line-height: 1.35;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 720px) {
+  /* The guest column is hidden at this width, so the name rides under the
+     payment reference instead — a payment row must always say who paid. */
+  .pay-mobile-guest { display: block; }
+  .table-payments { min-width: 680px; }
+  .table-scroll-x {
+    /* Full-bleed inside the panel so the scrollable area uses the whole
+       screen width and the first column is not clipped. */
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-x: contain;
+  }
+  .table-payments td, .table-payments th { padding: .6rem .5rem; }
+}
+
+/* ------------------------- Availability search form -----------------------
+   Desktop: one row of compact fields ending in the Search button.
+   Mobile: two readable columns (dates on their own full-width rows, the two
+   small number fields side by side) with a full-width Search button. No field
+   is ever narrower than a thumb, and nothing overflows the panel. */
+.av-search-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: var(--sp-3);
+  align-items: end;
+  padding: var(--sp-4) var(--sp-5) 0;
+}
+.av-search-form .field { min-width: 0; margin: 0; }
+.av-search-form .input { width: 100%; }
+.av-search-submit .btn { width: 100%; justify-content: center; }
+
+@media (max-width: 720px) {
+  .av-search-form {
+    grid-template-columns: 1fr 1fr;
+    padding: var(--sp-4) var(--sp-4) 0;
+  }
+  /* Dates need the full width to stay legible in the native date picker. */
+  .av-search-form .field:nth-child(1),
+  .av-search-form .field:nth-child(2) { grid-column: 1 / -1; }
+  .av-search-submit { grid-column: 1 / -1; }
+  .av-search-form .input { min-height: 44px; }
+  .av-search-submit .btn { min-height: 44px; }
+}
+
+/* ========================================================================
+   OCCUPANCY CALENDAR (staff)
+   A month grid whose cells list the ROOM NUMBERS occupied that night. The
+   cells stay compact so a whole month fits without horizontal scrolling;
+   on a phone the grid becomes a single-column day list, which is the only
+   readable form of a 7-column calendar at that width.
+   ======================================================================== */
+.cal-nav { display: flex; gap: 0.4rem; align-items: center; flex-wrap: nowrap; }
+.cal-nav .btn { flex: 0 0 auto; }
+.cal-month-input { width: 11rem; min-width: 0; }
+
+.cal-legend { display: flex; flex-wrap: wrap; gap: 0.9rem; margin: 0.75rem 0 1rem; font-size: var(--fs-xs); color: var(--color-text-muted); }
+.cal-legend-item { display: inline-flex; align-items: center; gap: 0.35rem; }
+
+.cal-grid { width: 100%; }
+.cal-weekdays {
+  display: grid; grid-template-columns: repeat(7, 1fr); gap: 0.35rem;
+  font-size: var(--fs-xs); letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--color-text-faint); padding-bottom: 0.4rem;
+}
+.cal-weekdays span { text-align: center; }
+.cal-days { display: grid; grid-template-columns: repeat(7, 1fr); gap: 0.35rem; }
+
+.cal-cell {
+  display: flex; flex-direction: column; align-items: stretch; gap: 0.3rem;
+  min-height: 92px; padding: 0.4rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  font: inherit; color: inherit; text-align: left; cursor: pointer;
+}
+.cal-cell.is-blank { border: 0; background: none; cursor: default; min-height: 0; }
+.cal-cell[disabled] { cursor: default; background: var(--color-surface-alt); }
+.cal-cell.has-rooms:hover { border-color: var(--color-primary); }
+.cal-cell:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
+.cal-cell.is-today { border-color: var(--color-primary); box-shadow: inset 0 0 0 1px var(--color-primary); }
+.cal-daynum { font-weight: 700; font-size: var(--fs-sm); }
+/* The weekday is only needed where the grid's column headers are hidden. */
+.cal-weekday { display: none; }
+.cal-rooms { display: flex; flex-wrap: wrap; gap: 0.2rem; }
+.cal-count { margin-top: auto; font-size: 0.66rem; color: var(--color-text-faint); }
+.cal-empty { margin-top: auto; font-size: 0.66rem; color: var(--color-text-faint); }
+
+/* Room-number chip, coloured by booking status. */
+.cal-chip {
+  display: inline-block; min-width: 1.6rem; padding: 0.05rem 0.3rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.68rem; font-weight: 700; line-height: 1.5; text-align: center;
+  background: var(--color-surface-deep); color: var(--color-text);
+  border: 1px solid var(--color-border);
+}
+.cal-chip-confirmed { background: rgba(47, 128, 237, 0.14); border-color: rgba(47, 128, 237, 0.45); }
+.cal-chip-checked_in { background: rgba(39, 174, 96, 0.16); border-color: rgba(39, 174, 96, 0.5); }
+.cal-chip-checked_out { background: var(--color-surface-alt); color: var(--color-text-muted); }
+.cal-legend .cal-chip { width: 1.1rem; min-width: 1.1rem; height: 1.1rem; padding: 0; }
+
+@media (max-width: 720px) {
+  /* A 7-column month grid is unreadable on a phone: the same cells become a
+     one-per-row day list, so the room numbers stay full size. */
+  .cal-weekdays { display: none; }
+  .cal-days { grid-template-columns: 1fr; gap: 0.4rem; }
+  .cal-cell {
+    flex-direction: row; align-items: center; gap: 0.6rem;
+    min-height: 52px; padding: 0.55rem 0.7rem;
+  }
+  .cal-cell.is-blank { display: none; }
+  .cal-daynum {
+    display: flex; flex-direction: column; align-items: center;
+    min-width: 2.6rem; font-size: var(--fs-md); line-height: 1.1;
+  }
+  .cal-weekday {
+    display: block;
+    font-size: 0.6rem; font-weight: 600; letter-spacing: 0.05em;
+    text-transform: uppercase; color: var(--color-text-faint);
+  }
+  .cal-rooms { flex: 1 1 auto; }
+  .cal-count, .cal-empty { margin: 0; white-space: nowrap; }
+  .cal-nav { width: 100%; }
+  .cal-month-input { flex: 1 1 8rem; min-width: 0; }
+}
+
+/* ------------------------- Missed bookings table -------------------------
+   Same restack-as-cards technique as the staff and guests tables: an
+   eight-column operational table is unusable on a phone, and the actions
+   (no-show, reschedule, refund) need full-width tap targets there. */
+.table-missed td, .table-missed th { vertical-align: middle; }
+/* The three actions stay on ONE line; the column is sized to fit them. */
+.table-missed td[data-label="Actions"] { width: 1%; min-width: 9rem; }
+.table-missed td[data-label="Actions"] .row-actions { flex-wrap: nowrap; justify-content: flex-end; }
+.table-missed td[data-label="Actions"] .btn { flex: 0 0 auto; }
+.table-missed td[data-label="Guest"] { min-width: 9rem; }
+.table-missed td[data-label="Guest"] .caption { white-space: nowrap; }
+
+@media (max-width: 1300px) {
+  /* Below this width the eight columns no longer fit comfortably: the stay
+     dates stack onto two lines rather than forcing the whole table to scroll. */
+  .table-missed td[data-label="Stay"].cell-nowrap { white-space: normal; }
+  .table-missed td[data-label="Stay"] { min-width: 7.5rem; }
+}
+.table-missed td[data-label="Status"] { white-space: nowrap; }
+.table-missed .status-pill { white-space: nowrap; }
+/* Action labels only appear when the row has room for them; below that the
+   icons carry the meaning (each button keeps a title and aria-label). */
+@media (max-width: 1399px) { .table-missed .btn-label { display: none; } }
+
+@media (max-width: 720px) {
+  .table-wrap .table-missed,
+  .table-missed { table-layout: auto; min-width: 0; }
+  .table-missed thead { display: none; }
+  .table-missed, .table-missed tbody, .table-missed tr, .table-missed td { display: block; width: 100%; }
+  .table-missed tr {
+    width: auto;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    background: var(--color-surface);
+    padding: 0.85rem 0.9rem;
+    margin: 0 0.9rem 0.75rem;
+  }
+  .table-missed tbody tr:last-child { margin-bottom: 0.9rem; }
+  .table-missed td {
+    border: 0; padding: 0.2rem 0; min-width: 0;
+    overflow: visible; white-space: normal; text-align: left;
+  }
+  .table-missed td[data-label]::before {
+    content: attr(data-label);
+    display: block;
+    font-size: 0.66rem;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--color-text-faint);
+  }
+  .table-missed td[data-label="Booking"]::before { display: none; }
+  .table-missed td[data-label="Booking"] { padding-bottom: 0.35rem; font-size: var(--fs-md); }
+  .table-missed td[data-label="Stay"],
+  .table-missed td[data-label="Refundable"],
+  .table-missed td[data-label="Status"] {
+    display: inline-block; width: auto; margin-right: 0.9rem;
+  }
+  .table-missed td[data-label="Stay"]::before,
+  .table-missed td[data-label="Refundable"]::before,
+  .table-missed td[data-label="Status"]::before {
+    display: inline-block; margin-right: 0.35rem;
+  }
+  .table-missed td[data-label="Actions"] { padding-top: 0.6rem; }
+  .table-missed td[data-label="Actions"].cell-nowrap { white-space: normal; }
+  .table-missed td[data-label="Actions"] .row-actions { justify-content: stretch; gap: 0.4rem; }
+  .table-missed td[data-label="Actions"] .btn { flex: 1 1 0; min-width: 0; justify-content: center; }
+  .table-missed .btn-label { display: inline; }
+}
+
+/* Occupancy date modal: the five-column room list restacks into labelled
+   blocks on a phone so nothing is cut off inside the dialog. */
+@media (max-width: 720px) {
+  .table-wrap .table-cal-day,
+  .table-cal-day { table-layout: auto; min-width: 0; }
+  .table-cal-day thead { display: none; }
+  .table-cal-day, .table-cal-day tbody, .table-cal-day tr, .table-cal-day td { display: block; width: 100%; }
+  .table-cal-day tr {
+    width: auto;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    padding: 0.7rem 0.8rem;
+    margin-bottom: 0.6rem;
+  }
+  .table-cal-day td {
+    border: 0; padding: 0.15rem 0; white-space: normal; overflow: visible;
+  }
+  .table-cal-day td[data-label]::before {
+    content: attr(data-label);
+    display: inline-block; margin-right: 0.4rem;
+    font-size: 0.66rem; letter-spacing: 0.07em; text-transform: uppercase;
+    color: var(--color-text-faint);
+  }
+  .table-cal-day td[data-label="Room"]::before { display: none; }
+  .table-cal-day td[data-label="Room"] strong { font-size: var(--fs-md); }
+  .table-cal-day td[data-label="Room"] .caption { display: inline; margin-left: 0.4rem; }
+}
+
+/* Availability results keep all six columns on a phone and scroll sideways
+   inside their own wrapper (the room type stays readable rather than being
+   squeezed). */
+@media (max-width: 720px) {
+  .table-availability { min-width: 560px; }
+  .table-availability td, .table-availability th { padding: .6rem .5rem; }
+}

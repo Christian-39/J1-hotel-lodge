@@ -746,3 +746,14 @@ html[data-theme="dark"] .theme-toggle .icon-moon { opacity: 0; }
   padding-top: var(--sp-5);
   border-top: 1px solid var(--color-border);
 }
+
+/* Offer validity line (start + end dates). Shown on the homepage banner and
+   on every public offer card so a guest can see when an offer applies. */
+.offer-period {
+  display: inline-flex; align-items: center; gap: 0.4em;
+  margin-top: 0.6rem; margin-bottom: 0;
+}
+.offer-period [data-icon] { flex: 0 0 auto; }
+.offer-note { margin-top: 0.2rem; font-weight: 600; color: var(--color-accent-strong, var(--color-accent)); }
+.offer-banner-body .offer-period,
+.offer-banner-body .offer-note { color: rgba(255,255,255,0.85); }

@@ -5,6 +5,7 @@ Every state change is audited; every public notification is emitted here.
 """
 import logging
 from datetime import timedelta
+from decimal import Decimal
 
 from django.db import transaction
 from django.db.models import Count, F, Prefetch, Q
@@ -27,7 +28,7 @@ from apps.offers import services as offer_services
 from apps.rooms.models import Room, RoomType, RoomTypeImage
 
 from ..models import Booking, BookingRoom, Guest
-from . import availability
+from . import availability, pricing
 from .pricing import calculate_quote
 
 logger = logging.getLogger("apps")
@@ -236,10 +237,16 @@ def create_booking(*, room_type_value, check_in, check_out, rooms, adults, child
     if rooms < 1:
         raise InvalidDatesError("At least one room must be requested.")
 
+    # The guest row is resolved BEFORE pricing: a personal (per-guest) discount
+    # is part of the authoritative price, so the pricing engine must know who
+    # is booking. Everything here runs inside the same atomic block, so an
+    # unsuccessful booking never leaves a stray guest behind.
+    guest = upsert_guest(user=user, guest_data=guest_data)
+
     quote = calculate_quote(
         room_type=room_type, check_in=check_in, check_out=check_out, rooms=rooms,
         adults=adults, children=children, offer_code=offer_code,
-        settings_obj=settings_obj, for_staff=is_staff,
+        settings_obj=settings_obj, for_staff=is_staff, guest=guest,
     )
 
     # Re-verify inventory INSIDE the lock; this check is authoritative —
@@ -295,7 +302,7 @@ def create_booking(*, room_type_value, check_in, check_out, rooms, adults, child
                 quote = calculate_quote(
                     room_type=room_type, check_in=check_in, check_out=check_out, rooms=rooms,
                     adults=adults, children=children, offer_code=offer_code,
-                    settings_obj=settings_obj, for_staff=is_staff,
+                    settings_obj=settings_obj, for_staff=is_staff, guest=guest,
                 )
             free_rooms = [substitute["room"]] + [
                 r for r in free_rooms if r.pk != substitute["room"].pk
@@ -320,8 +327,6 @@ def create_booking(*, room_type_value, check_in, check_out, rooms, adults, child
             f"Only {remaining} room(s) of this type remain for the selected dates."
         )
     free_rooms = chosen_rooms
-
-    guest = upsert_guest(user=user, guest_data=guest_data)
 
     pending = require_payment
     booking = Booking.objects.create(
@@ -362,6 +367,23 @@ def create_booking(*, room_type_value, check_in, check_out, rooms, adults, child
             for room in free_rooms
         ]
     )
+    # Immutable snapshot of a personal discount that was applied. Written once,
+    # never re-read from the GuestDiscount row, so deactivating or editing the
+    # discount later can never change this booking's historical amounts.
+    if quote.guest_discount is not None and quote.discount > 0:
+        from apps.offers.models import GuestDiscountApplication
+
+        GuestDiscountApplication.objects.create(
+            booking=booking,
+            guest_discount=quote.guest_discount,
+            guest=guest,
+            discount_type=quote.guest_discount.discount_type,
+            discount_value=quote.guest_discount.discount_value,
+            amount=quote.discount,
+            currency=booking.currency,
+            reason=quote.guest_discount.reason,
+        )
+
     # Transient (not persisted) hand-off to the API layer: when the exact room
     # the guest picked could not be held, callers MUST surface this to them.
     booking.room_substitution = substitution
@@ -1221,4 +1243,291 @@ def modify_booking(booking: Booking, *, staff_user, data: dict, request=None):
             link=staff_booking_link(booking),
         )
     logger.info("Booking modified: %s changes=%s", booking.booking_reference, list(changes))
+    return booking
+
+
+# ---------------------------------------------------------------------------
+# Occupancy calendar (staff)
+# ---------------------------------------------------------------------------
+# Statuses that represent REAL occupancy of a physical room. Cancelled, expired
+# and no-show bookings never occupy a room; PENDING holds are excluded too —
+# an unpaid hold is inventory pressure, not an occupied room. This mirrors the
+# availability engine's BLOCKING_STATUSES minus the transient pending hold.
+# Bookings that never became a stay. Excluded from any "how many bookings does
+# this guest have" figure shown to staff.
+UNCOUNTED_BOOKING_STATUSES = (
+    Booking.Status.CANCELLED,
+    Booking.Status.EXPIRED,
+)
+
+OCCUPANCY_STATUSES = (
+    Booking.Status.CONFIRMED,
+    Booking.Status.CHECKED_IN,
+    Booking.Status.CHECKED_OUT,
+)
+
+
+def occupancy_calendar(*, year, month, include_pending=False):
+    """Room-night occupancy for one month, grouped by date.
+
+    Returns ``{"days": {"YYYY-MM-DD": [entry, ...]}, ...}`` where every entry is
+    ONE physical room assigned to one booking — so a 5-room booking contributes
+    five entries to every night of its stay.
+
+    The data comes from the authoritative ``BookingRoom`` assignment rows (not
+    payments, not the booking header), so multi-room bookings are represented
+    exactly as they were assigned.
+
+    Efficiency: ONE query with select_related over the whole month, then an
+    in-memory fan-out across each assignment's nights. No per-day queries and
+    no N+1 on room/guest/booking.
+    """
+    from calendar import monthrange
+    from datetime import date as _date
+
+    year, month = int(year), int(month)
+    first_day = _date(year, month, 1)
+    last_day = _date(year, month, monthrange(year, month)[1])
+    # A stay occupies [check_in, check_out) — the checkout day is NOT occupied.
+    day_after_last = last_day + timedelta(days=1)
+
+    statuses = list(OCCUPANCY_STATUSES)
+    if include_pending:
+        statuses.append(Booking.Status.PENDING)
+
+    assignments = (
+        BookingRoom.objects.filter(
+            booking__status__in=statuses,
+            check_in__lt=day_after_last,
+            check_out__gt=first_day,
+        )
+        .select_related("room", "room__room_type", "booking", "booking__guest")
+        .order_by("room__room_number")
+    )
+
+    days: dict[str, list] = {}
+    now = timezone.now()
+    for assignment in assignments:
+        booking = assignment.booking
+        # An expired, unpaid hold must never look like occupancy.
+        if (
+            booking.status == Booking.Status.PENDING
+            and booking.expires_at is not None
+            and booking.expires_at <= now
+        ):
+            continue
+        entry = {
+            "booking_id": booking.pk,
+            "booking_reference": booking.booking_reference,
+            "room_number": assignment.room.room_number,
+            "room_type_name": assignment.room.room_type.name,
+            "guest_name": booking.guest.full_name,
+            "status": booking.status,
+            "check_in": assignment.check_in.isoformat(),
+            "check_out": assignment.check_out.isoformat(),
+        }
+        night = max(assignment.check_in, first_day)
+        stay_end = min(assignment.check_out, day_after_last)
+        while night < stay_end:
+            days.setdefault(night.isoformat(), []).append(entry)
+            night += timedelta(days=1)
+
+    for key in days:
+        days[key].sort(key=lambda e: e["room_number"])
+
+    return {
+        "year": year,
+        "month": month,
+        "start_date": first_day.isoformat(),
+        "end_date": last_day.isoformat(),
+        "days": days,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Missed / no-show bookings
+# ---------------------------------------------------------------------------
+def missed_bookings_queryset(*, now=None, settings_obj=None):
+    """Bookings the guest booked but never arrived for.
+
+    A booking qualifies only when the backend can establish ALL of:
+
+    * it is still CONFIRMED (paid/held) or already flagged NO_SHOW — a
+      CHECKED_IN, CHECKED_OUT, CANCELLED or EXPIRED booking never qualifies;
+    * the arrival deadline has passed. That deadline is the hotel's check-out
+      time on the check-in date: the guest had the whole arrival day, and only
+      once the stay's first day is over is a no-show established.
+
+    A legitimately checked-in guest can never appear here because CHECKED_IN /
+    CHECKED_OUT are excluded outright.
+    """
+    settings_obj = settings_obj or HotelSettings.get_settings()
+    now = now or timezone.now()
+    today = hotel_today()
+
+    qs = (
+        Booking.objects.select_related("guest", "room_type")
+        .prefetch_related(
+            Prefetch("room_assignments",
+                     queryset=BookingRoom.objects.select_related("room"))
+        )
+        .filter(status__in=(Booking.Status.CONFIRMED, Booking.Status.NO_SHOW))
+    )
+
+    # Deadline: end of the check-in day (hotel check-out time on that date).
+    deadline_passed = Q(check_in__lt=today)
+    if now.time() >= settings_obj.check_out_time:
+        deadline_passed |= Q(check_in=today)
+    return qs.filter(deadline_passed).filter(checked_in_at__isnull=True).order_by("check_in")
+
+
+@transaction.atomic
+def reschedule_booking(booking: Booking, *, check_in, check_out, staff_user, request=None):
+    """Move a no-show/confirmed booking to new dates, re-checking availability.
+
+    Preserves the SAME booking (and therefore its payment history): nothing new
+    is created. Physical rooms are re-assigned through the authoritative
+    availability engine, so overbooking is impossible and multi-room bookings
+    keep their full room count.
+
+    Money is never silently changed: the stay is re-priced and the difference is
+    reported to the caller, but ``amount_paid`` and every historical payment row
+    are left untouched.
+    """
+    booking = (
+        Booking.objects.select_for_update()
+        .select_related("guest", "room_type")
+        .get(pk=booking.pk)
+    )
+    if booking.status not in (Booking.Status.CONFIRMED, Booking.Status.NO_SHOW):
+        raise BookingStateError(
+            f"A booking with status {booking.get_status_display()} cannot be rescheduled."
+        )
+
+    settings_obj = HotelSettings.get_settings()
+    # Staff rules: a reschedule may legitimately start today.
+    nights = pricing.validate_stay_dates(
+        check_in, check_out, for_staff=True, settings_obj=settings_obj
+    )
+    if check_in == booking.check_in and check_out == booking.check_out:
+        raise InvalidDatesError("The new dates are the same as the current booking dates.")
+
+    previous = {
+        "check_in": booking.check_in,
+        "check_out": booking.check_out,
+        "status": booking.status,
+        "total_amount": booking.total_amount,
+        "rooms": [a.room.room_number for a in booking.room_assignments.select_related("room")],
+    }
+    rooms_needed = booking.number_of_rooms
+
+    # Lock the room type, then re-check inventory for the NEW window while
+    # ignoring this booking's own current assignments.
+    RoomType.objects.select_for_update().get(pk=booking.room_type_id)
+    free_rooms = list(
+        availability.available_rooms_queryset(
+            room_type=booking.room_type,
+            check_in=check_in,
+            check_out=check_out,
+            for_update=True,
+            exclude_booking_id=booking.pk,
+        )[:rooms_needed]
+    )
+    if len(free_rooms) < rooms_needed:
+        raise RoomUnavailableError(
+            f"Only {len(free_rooms)} room(s) of this type are available for the new dates; "
+            f"{rooms_needed} are required."
+        )
+
+    # Re-price the stay on the backend. The guest discount/offer decision runs
+    # through the SAME authoritative pricing path as a new booking.
+    quote = pricing.calculate_quote(
+        room_type=booking.room_type, check_in=check_in, check_out=check_out,
+        rooms=rooms_needed, adults=booking.adults, children=booking.children,
+        settings_obj=settings_obj, for_staff=True, guest=booking.guest,
+    )
+
+    booking.room_assignments.all().delete()
+    BookingRoom.objects.bulk_create([
+        BookingRoom(booking=booking, room=room, check_in=check_in, check_out=check_out)
+        for room in free_rooms
+    ])
+
+    booking.check_in = check_in
+    booking.check_out = check_out
+    booking.price_per_night = quote.price_per_night
+    booking.subtotal = quote.subtotal
+    booking.discount_amount = quote.discount
+    booking.extra_guest_fee_amount = quote.extra_guest_fee
+    booking.tax_amount = quote.tax
+    booking.fee_amount = quote.service_fee
+    booking.total_amount = quote.total
+    # A rescheduled no-show becomes a live reservation again.
+    booking.status = Booking.Status.CONFIRMED
+    booking.save(update_fields=[
+        "check_in", "check_out", "price_per_night", "subtotal", "discount_amount",
+        "extra_guest_fee_amount", "tax_amount", "fee_amount", "total_amount",
+        "status", "updated_at",
+    ])
+    booking.refresh_from_db()
+
+    balance_due = booking.amount_due
+    overpaid = max(
+        Decimal(booking.amount_paid or 0) - Decimal(booking.total_amount or 0),
+        Decimal("0.00"),
+    )
+
+    log_action(
+        actor=staff_user,
+        action="BOOKING_RESCHEDULED",
+        instance=booking,
+        changes={
+            "check_in": [str(previous["check_in"]), str(booking.check_in)],
+            "check_out": [str(previous["check_out"]), str(booking.check_out)],
+            "status": [previous["status"], booking.status],
+            "total_amount": [str(previous["total_amount"]), str(booking.total_amount)],
+        },
+        metadata={
+            "reference": booking.booking_reference,
+            "previous_rooms": previous["rooms"],
+            "new_rooms": [r.room_number for r in free_rooms],
+            "balance_due": str(balance_due),
+            "overpaid_amount": str(overpaid),
+        },
+        request=request,
+        summary=(
+            f"Booking {booking.booking_reference} rescheduled "
+            f"{previous['check_in']}→{previous['check_out']} to {check_in}→{check_out}"
+        ),
+    )
+    notify_staff(
+        type="BOOKING_UPDATED",
+        title=f"Booking {booking.booking_reference} rescheduled",
+        message=(
+            f"{booking.guest.full_name} moved to {check_in} → {check_out} "
+            f"({nights} night(s)), rooms "
+            f"{', '.join(r.room_number for r in free_rooms)}."
+        ),
+        link=staff_booking_link(booking),
+    )
+    if booking.guest.user_id:
+        notify_users(
+            [booking.guest.user], type="BOOKING_UPDATED",
+            title=f"Booking {booking.booking_reference} rescheduled",
+            message=f"Your stay has been moved to {check_in} → {check_out}.",
+            link=guest_booking_link(booking),
+        )
+
+    booking.reschedule_result = {
+        "previous_check_in": previous["check_in"].isoformat(),
+        "previous_check_out": previous["check_out"].isoformat(),
+        "previous_rooms": previous["rooms"],
+        "new_rooms": [r.room_number for r in free_rooms],
+        "balance_due": str(balance_due),
+        "overpaid_amount": str(overpaid),
+    }
+    logger.info(
+        "Booking rescheduled: %s %s→%s by staff %s",
+        booking.booking_reference, check_in, check_out, staff_user.id,
+    )
     return booking

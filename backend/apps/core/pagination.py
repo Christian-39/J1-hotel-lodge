@@ -4,7 +4,10 @@ from rest_framework.response import Response
 
 
 class StandardPagination(PageNumberPagination):
-    page_size = 20
+    # Dashboard tables show 10 records per page. Clients may still request a
+    # different size via ?page_size= (bounded by max_page_size) for the few
+    # operational screens that legitimately need a longer list.
+    page_size = 10
     page_size_query_param = "page_size"
     max_page_size = 100
 

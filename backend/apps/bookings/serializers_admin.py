@@ -201,7 +201,17 @@ class AdminGuestDetailSerializer(serializers.ModelSerializer):
         return obj.user_id is not None
 
     def get_bookings_count(self, obj):
-        return getattr(obj, "bookings_count", None) or obj.bookings.count()
+        """Bookings that count as real history (cancelled/expired excluded).
+
+        Uses the list endpoint's annotation when present so the detail view is
+        the only place that pays for a query.
+        """
+        from apps.bookings.services.booking_service import UNCOUNTED_BOOKING_STATUSES
+
+        annotated = getattr(obj, "bookings_count", None)
+        if annotated is not None:
+            return annotated
+        return obj.bookings.exclude(status__in=UNCOUNTED_BOOKING_STATUSES).count()
 
     def get_last_booking_at(self, obj):
         value = getattr(obj, "last_booking_at", None)
@@ -267,3 +277,50 @@ class AdminGuestUpdateSerializer(serializers.ModelSerializer):
             "state", "country", "identification_type", "identification_number",
             "special_requests",
         ]
+
+
+class RescheduleBookingSerializer(serializers.Serializer):
+    """New dates for a no-show/confirmed booking. Availability is re-checked
+    server-side; these values are a request, never an instruction."""
+
+    check_in = serializers.DateField()
+    check_out = serializers.DateField()
+
+    def validate(self, attrs):
+        if attrs["check_out"] <= attrs["check_in"]:
+            raise serializers.ValidationError(
+                {"check_out": ["Check-out date must be after the check-in date."]}
+            )
+        return attrs
+
+
+class MissedBookingSerializer(AdminBookingListSerializer):
+    """A booking whose guest never arrived, plus what staff need to act on it."""
+
+    refundable_amount = serializers.SerializerMethodField()
+    cancellation_fee = serializers.SerializerMethodField()
+    nights_missed = serializers.SerializerMethodField()
+
+    class Meta(AdminBookingListSerializer.Meta):
+        fields = AdminBookingListSerializer.Meta.fields + [
+            "refundable_amount", "cancellation_fee", "nights_missed", "checked_in_at",
+        ]
+
+    def _policy(self, obj):
+        from apps.bookings.services.booking_service import calculate_cancellation_policy
+
+        cache = self.context.setdefault("_policy_cache", {})
+        if obj.pk not in cache:
+            cache[obj.pk] = calculate_cancellation_policy(obj)
+        return cache[obj.pk]
+
+    def get_refundable_amount(self, obj) -> str:
+        return money(self._policy(obj)["refund_amount"])
+
+    def get_cancellation_fee(self, obj) -> str:
+        return money(self._policy(obj)["cancellation_fee"])
+
+    def get_nights_missed(self, obj) -> int:
+        from apps.core.utils import hotel_today
+
+        return max(0, (hotel_today() - obj.check_in).days)

@@ -856,12 +856,44 @@ def initiate_cancellation_refund(*, enquiry, staff_user, customer_note="", merch
         if existing and existing.status == Refund.Status.PROCESSED:
             return existing
 
-        requested_amount = Decimal(enquiry.calculated_refund_amount or 0).quantize(Decimal("0.01"))
+        # AUTHORITATIVE refund amount = eligible refundable amount − cancellation
+        # fee, recomputed HERE from the existing policy engine at submission
+        # time. The enquiry snapshot taken at approval is only a review figure:
+        # if it is missing, stale (settings changed, a later payment landed) or
+        # was never net of the fee, it must not be what Paystack receives.
+        # The policy rule itself is unchanged — HotelSettings.cancellation_fee_percent
+        # applied by booking_service.calculate_cancellation_policy().
+        policy = booking_service.calculate_cancellation_policy(booking)
+        policy_refund = Decimal(policy["refund_amount"] or 0).quantize(Decimal("0.01"))
+        cancellation_fee = Decimal(policy["cancellation_fee"] or 0).quantize(Decimal("0.01"))
+        snapshot_amount = Decimal(enquiry.calculated_refund_amount or 0).quantize(Decimal("0.01"))
+
+        # Never refund more than the policy allows. A snapshot larger than the
+        # freshly computed net refund means the fee was not deducted (or the
+        # figure is stale) — the policy figure wins, so the fee is applied
+        # exactly once and can never be double-deducted.
+        requested_amount = policy_refund if snapshot_amount <= 0 else min(snapshot_amount, policy_refund)
+        if requested_amount < 0:
+            requested_amount = Decimal("0.00")
+
+        # Keep the reviewed figure honest for staff/guest-facing surfaces.
+        if snapshot_amount != requested_amount or Decimal(enquiry.calculated_cancellation_fee or 0) != cancellation_fee:
+            enquiry.calculated_refund_amount = requested_amount
+            enquiry.calculated_cancellation_fee = cancellation_fee
+            enquiry.save(update_fields=["calculated_refund_amount",
+                                        "calculated_cancellation_fee", "updated_at"])
+
         processed_total = _processed_refund_total(payment)
         active_total = _active_refund_total(payment, exclude_pk=getattr(existing, "pk", None))
         available = (Decimal(payment.amount or 0).quantize(Decimal("0.01")) - processed_total - active_total).quantize(Decimal("0.01"))
+        # Also bounded by what is genuinely still refundable on this payment
+        # (never more than paid, never more than the remaining balance).
         amount = min(requested_amount, available)
         if amount <= 0:
+            if cancellation_fee > 0 and policy_refund <= 0:
+                raise PaymentError(
+                    "No refund is due: the cancellation fee covers the full amount paid."
+                )
             raise PaymentError("There is no remaining Paystack amount available to refund.")
 
         refund_defaults = {
@@ -1078,6 +1110,18 @@ def record_offline_payment(*, booking: Booking, staff_user, amount, provider, no
     if booking.status not in (Booking.Status.PENDING, Booking.Status.CONFIRMED, Booking.Status.CHECKED_IN):
         raise BookingStateError(
             f"A booking with status {booking.get_status_display()} cannot accept payments."
+        )
+    # The dashboard hides "Record payment" once a booking is settled, but the
+    # endpoint is the authority: a settled or refunded payment record must not
+    # be able to take another offline payment even if a stale tab posts one.
+    if booking.payment_status in (
+        Booking.PaymentStatus.PAID,
+        Booking.PaymentStatus.REFUNDED,
+        Booking.PaymentStatus.PARTIALLY_REFUNDED,
+    ):
+        raise PaymentAlreadyCompletedError(
+            f"This booking is already marked {booking.get_payment_status_display().lower()}; "
+            "no further payment can be recorded against it."
         )
     if booking.amount_due <= 0:
         raise PaymentAlreadyCompletedError()

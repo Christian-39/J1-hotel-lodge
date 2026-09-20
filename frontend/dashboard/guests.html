@@ -58,8 +58,8 @@
     <div class="filter-actions"><a class="btn btn-sm btn-outline" href="bookings.html" title="Create a booking — the guest profile is created with it"><span data-icon="plus" data-size="14"></span> New booking</a></div>
   </div>
   <div class="panel-body no-pad">
-    <div class="table-wrap"><table class="table">
-      <thead><tr><th>Guest</th><th class="hide-sm">Contact</th><th class="hide-sm">Stays</th><th>Last stay</th><th></th></tr></thead>
+    <div class="table-wrap"><table class="table table-guests">
+      <thead><tr><th>Guest</th><th>Contact</th><th class="num">Bookings</th><th>Last stay</th><th></th></tr></thead>
       <tbody data-tbody="guests"></tbody>
     </table></div>
     <div class="pagination" data-pagination></div>
@@ -86,6 +86,11 @@
 (function(){
   var DATA = JONE.dashboard.DATA;
   var tbody=document.querySelector("[data-tbody=guests]");
+  /* Individual guest discounts: managers and administrators may create and
+     withdraw them; receptionists can see them on the profile but not change
+     them. The backend enforces the same rule (IsStaffReadOnlyManagerWrite) —
+     this only decides whether the control is worth showing. */
+  var canManageDiscounts = JONE.dashboard.hasRole("manager");
 
   /* Verified /api/admin/guests/ row:
      { id, first_name, last_name, full_name, email, phone, city, state,
@@ -95,7 +100,38 @@
     tbody.innerHTML=list.map(function(g){
       var nm = g.full_name || [g.first_name,g.last_name].filter(Boolean).join(" ") || g.email || "—";
       var loc=[g.city,g.state,g.country].filter(Boolean).join(", ");
-      return '<tr><td><strong>'+JONE.esc(nm)+'</strong><div class="caption">'+JONE.esc(g.email||"")+'</div></td><td class="hide-sm">'+JONE.esc(g.phone||"—")+'<div class="caption">'+JONE.esc(loc||"")+'</div></td><td class="hide-sm num">'+(g.bookings_count!=null?g.bookings_count:0)+'</td><td>'+JONE.esc(g.last_booking_at?JONE.formatDate(g.last_booking_at,"mid"):"—")+'</td><td style="white-space:nowrap;"><div class="row-actions"><button class="btn btn-sm btn-outline" type="button" data-guest-open="'+g.id+'"><span data-icon="eye" data-size="13"></span> Profile</button> <button class="btn btn-sm btn-ghost" type="button" data-guest-edit="'+g.id+'" title="Edit"><span data-icon="edit" data-size="13"></span></button> <a class="btn btn-sm btn-ghost" href="bookings.html?search='+encodeURIComponent(nm)+'" title="Booking history"><span data-icon="search" data-size="13"></span></a></div></td></tr>';
+      /* bookings_count comes from the backend and already excludes cancelled
+         and expired bookings, so it is a count of REAL stays. It is appended
+         to the email — "ada@mail.com (7)" — which is what the hotel reads at
+         a glance, and it is no longer hidden on small screens. */
+      var count = g.bookings_count != null ? Number(g.bookings_count) : 0;
+      var emailCell = g.email
+        ? JONE.esc(g.email) + ' <span class="guest-count" title="' + count + ' booking(s) excluding cancelled and expired">(' + count + ')</span>'
+        : '<span class="guest-count">(' + count + ')</span>';
+      return '<tr>' +
+        '<td data-label="Guest" class="cell-guest">' +
+          '<strong class="cell-guest-name">' + JONE.esc(nm) + '</strong>' +
+          '<div class="caption cell-guest-contact">' + emailCell + '</div>' +
+        '</td>' +
+        '<td data-label="Contact">' + JONE.esc(g.phone || "—") +
+          (loc ? '<div class="caption">' + JONE.esc(loc) + '</div>' : '') +
+        '</td>' +
+        '<td data-label="Bookings" class="num">' + count + '</td>' +
+        '<td data-label="Last stay">' + JONE.esc(g.last_booking_at ? JONE.formatDate(g.last_booking_at,"mid") : "—") + '</td>' +
+        '<td data-label="Actions" class="cell-nowrap">' +
+          '<div class="row-actions row-actions-end">' +
+            '<button class="btn btn-sm btn-outline" type="button" data-guest-open="' + g.id + '">' +
+              '<span data-icon="eye" data-size="13"></span> <span class="btn-label">Profile</span></button>' +
+            '<button class="btn btn-sm btn-ghost" type="button" data-guest-edit="' + g.id + '" title="Edit">' +
+              '<span data-icon="edit" data-size="13"></span> <span class="btn-label">Edit</span></button>' +
+            '<a class="btn btn-sm btn-ghost" href="bookings.html?search=' + encodeURIComponent(nm) + '" title="Booking history">' +
+              '<span data-icon="search" data-size="13"></span> <span class="btn-label">Bookings</span></a>' +
+            (canManageDiscounts
+              ? '<button class="btn btn-sm btn-ghost" type="button" data-guest-discount="' + g.id + '" title="Discounts">' +
+                '<span data-icon="tag" data-size="13"></span> <span class="btn-label">Discount</span></button>'
+              : "") +
+          '</div>' +
+        '</td></tr>';
     }).join("");
     bindGuestRows();
     JONE.icons.inject(tbody);
@@ -111,7 +147,7 @@
     if (page != null) state.page = Math.max(1, page);
     DATA.loading(tbody);
     try{
-      var params = { page: state.page, page_size: 20 };
+      var params = { page: state.page, page_size: JONE.dashboard.pageSize() };
       var q = document.getElementById("g-q");
       if (q && q.value.trim()) params.search = q.value.trim();
       var res = await window.API.list("guests", params);
@@ -150,6 +186,126 @@
     });
     tbody.querySelectorAll("[data-guest-edit]").forEach(function(b){
       b.addEventListener("click", function(){ editGuest(b.getAttribute("data-guest-edit")); });
+    });
+    tbody.querySelectorAll("[data-guest-discount]").forEach(function(b){
+      b.addEventListener("click", function(){ manageDiscounts(b.getAttribute("data-guest-discount")); });
+    });
+  }
+
+  /* -------- Individual guest discounts -----------------------------------
+     Verified /api/admin/guest-discounts/ row: { id, guest, guest_name,
+     guest_email, discount_type: PERCENTAGE|FIXED_AMOUNT, discount_value,
+     start_date, end_date, is_active, reason, notes, created_by_email,
+     is_currently_valid, times_used, created_at, updated_at }.
+
+     The DISCOUNT AMOUNT is never calculated here. The backend decides which
+     discount applies to a stay (the larger of the public offer and the
+     guest's personal discount — never both) and snapshots what was applied to
+     each booking, so amounts on past bookings never move. DELETE deactivates
+     a discount instead of erasing it, keeping the history intact. */
+  async function manageDiscounts(guestId){
+    var guest = null, discounts = [];
+    try {
+      var gRes = await window.API.getOne("guests", guestId);
+      guest = (gRes && gRes.data) || {};
+      var dRes = await window.API.listGuestDiscounts({ guest: guestId, page_size: 50 });
+      discounts = window.API.normalizeList(dRes.data, dRes.pagination).items || [];
+    } catch (err) {
+      JONE.ui.toast((err && err.message) || "Discounts couldn't be loaded.", "error");
+      return;
+    }
+    var name = guest.full_name || guest.email || "Guest";
+
+    function amountLabel(d){
+      return d.discount_type === "PERCENTAGE"
+        ? Number(d.discount_value) + "%"
+        : JONE.formatNaira(d.discount_value);
+    }
+
+    var rows = discounts.map(function(d){
+      return "<tr>" +
+        "<td><strong>" + JONE.esc(amountLabel(d)) + "</strong>" +
+          (d.reason ? '<div class="caption">' + JONE.esc(d.reason) + "</div>" : "") + "</td>" +
+        '<td class="cell-nowrap">' + JONE.esc(JONE.offerPeriod(d, "mid") || "—") + "</td>" +
+        '<td class="num">' + JONE.esc(d.times_used != null ? d.times_used : 0) + "</td>" +
+        "<td>" + JONE.dashboard.statusPill(
+          d.is_active === false ? "inactive" : (d.is_currently_valid ? "active" : "pending"),
+          d.is_active === false ? "WITHDRAWN" : (d.is_currently_valid ? "IN EFFECT" : "SCHEDULED")
+        ) + "</td>" +
+        '<td class="cell-nowrap">' +
+          (canManageDiscounts && d.is_active !== false
+            ? '<button class="btn btn-sm btn-ghost" type="button" data-gd-off="' + d.id + '">Withdraw</button>'
+            : "") + "</td>" +
+      "</tr>";
+    }).join("");
+
+    var body =
+      "<p>A personal discount applies to this guest's own bookings. It is compared with any " +
+      "public offer and the <strong>larger</strong> of the two is applied — the two are never " +
+      "added together. Bookings already made keep the amount that was applied at the time.</p>" +
+      (discounts.length
+        ? '<div class="table-wrap"><table class="table"><thead><tr>' +
+          "<th>Discount</th><th>Valid</th><th>Used</th><th>Status</th><th></th>" +
+          "</tr></thead><tbody>" + rows + "</tbody></table></div>"
+        : '<div class="empty-state"><span data-icon="tag"></span><h3>No personal discount</h3>' +
+          "<p>This guest pays the public rate, or the best public offer.</p></div>");
+
+    JONE.dashboard.openPanel("Discounts — " + name, body,
+      '<button class="btn btn-sm btn-ghost" data-gd-close>Close</button>' +
+      (canManageDiscounts ? ' <button class="btn btn-sm btn-accent" data-gd-add>Add discount</button>' : ""),
+      "modal-lg");
+
+    var closeBtn = document.querySelector("[data-gd-close]");
+    if (closeBtn) closeBtn.addEventListener("click", JONE.dashboard.closePanel);
+
+    var addBtn = document.querySelector("[data-gd-add]");
+    if (addBtn) addBtn.addEventListener("click", function(){
+      JONE.dashboard.closePanel();
+      JONE.dashboard.formModal({
+        title: "New discount — " + name,
+        submitText: "Save discount",
+        fields: [
+          { name:"discount_type", label:"Discount type", type:"select", required:true,
+            value:"PERCENTAGE", options:[
+              { value:"PERCENTAGE", label:"Percentage" },
+              { value:"FIXED_AMOUNT", label:"Fixed amount (NGN)" },
+            ] },
+          { name:"discount_value", label:"Value", type:"number", required:true,
+            step:"0.01", min:"0.01",
+            help:"A percentage (max 100) or a naira amount, depending on the type above." },
+          { name:"start_date", label:"Start date", type:"date", required:true,
+            value: JONE.hotelTodayISO(0) },
+          { name:"end_date", label:"End date (optional)", type:"date",
+            help:"Leave empty for a discount with no end date." },
+          { name:"reason", label:"Reason", required:true,
+            placeholder:"e.g. corporate rate, long-stay guest" },
+          { name:"notes", label:"Internal notes", type:"textarea", rows:2 },
+        ],
+        onSubmit: async function(values){
+          var payload = { guest: Number(guestId) };
+          Object.keys(values).forEach(function(k){
+            if (values[k] !== "" && values[k] != null) payload[k] = values[k];
+          });
+          await window.API.createGuestDiscount(payload);
+          JONE.ui.toast("Discount saved.", "success");
+        },
+      }).then(function(saved){ if (saved) manageDiscounts(guestId); });
+    });
+
+    document.querySelectorAll("[data-gd-off]").forEach(function(btn){
+      btn.addEventListener("click", async function(){
+        if (!window.confirm("Withdraw this discount? Bookings already made keep the amount they were given.")) return;
+        try {
+          btn.disabled = true;
+          await window.API.deactivateGuestDiscount(btn.getAttribute("data-gd-off"));
+          JONE.ui.toast("Discount withdrawn.", "success");
+          JONE.dashboard.closePanel();
+          manageDiscounts(guestId);
+        } catch (err) {
+          btn.disabled = false;
+          JONE.ui.toast((err && err.message) || "The discount couldn't be withdrawn.", "error");
+        }
+      });
     });
   }
 

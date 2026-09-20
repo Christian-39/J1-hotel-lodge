@@ -108,6 +108,12 @@ class QuoteView(APIView):
         data = serializer.validated_data
         room_type = booking_service.resolve_room_type(data["room_type"])
         settings_obj = HotelSettings.get_settings()
+        # A signed-in guest sees their personal discount in the quote exactly as
+        # the booking will apply it. Anonymous quotes simply have no guest row,
+        # and the discount is still applied authoritatively at creation time.
+        quote_guest = None
+        if request.user.is_authenticated:
+            quote_guest = getattr(request.user, "guest_profile", None)
         quote = pricing.calculate_quote(
             room_type=room_type,
             check_in=data["check_in"],
@@ -117,6 +123,7 @@ class QuoteView(APIView):
             children=data["children"],
             offer_code=data.get("offer_code") or None,
             settings_obj=settings_obj,
+            guest=quote_guest,
         )
         payload = {
             "room_type": {"id": room_type.pk, "name": room_type.name, "slug": room_type.slug},

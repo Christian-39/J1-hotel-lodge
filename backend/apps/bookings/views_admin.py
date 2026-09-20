@@ -10,7 +10,7 @@ from rest_framework.exceptions import NotFound
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.core.permissions import IsStaffRole
+from apps.core.permissions import IsManagerOrAdmin, IsStaffRole
 from apps.core.responses import success_response
 from apps.core.serializers import EmptySerializer
 from apps.core.emails import send_email_safe
@@ -26,7 +26,9 @@ from .serializers_admin import (
     AdminGuestListSerializer,
     AdminGuestUpdateSerializer,
     AssignRoomSerializer,
+    MissedBookingSerializer,
     RecordActionSerializer,
+    RescheduleBookingSerializer,
 )
 from .serializers import ReceiptSerializer
 from .services import booking_service
@@ -302,8 +304,15 @@ class AdminGuestListView(generics.ListAPIView):
     serializer_class = AdminGuestListSerializer
 
     def get_queryset(self):
+        # Booking count excludes cancelled and expired bookings: those never
+        # became a stay, so counting them would overstate a guest's history.
+        # Annotated in ONE query — no per-row counting in the serializer.
         qs = Guest.objects.annotate(
-            bookings_count=Count("bookings", distinct=True),
+            bookings_count=Count(
+                "bookings",
+                filter=~Q(bookings__status__in=booking_service.UNCOUNTED_BOOKING_STATUSES),
+                distinct=True,
+            ),
             last_booking_at=Max("bookings__created_at"),
         ).order_by("-last_booking_at", "-created_at")
         params = self.request.query_params
@@ -503,3 +512,93 @@ class AdminBookingSendReceiptView(APIView):
              "message": payload["error"], "data": payload},
             status=status.HTTP_502_BAD_GATEWAY,
         )
+
+
+@extend_schema(tags=["Admin · Bookings"], summary="Reschedule a booking to new dates")
+class AdminBookingRescheduleView(_BookingActionView):
+    """Move an existing booking (typically a no-show) to new dates.
+
+    Managers/administrators only: rescheduling re-prices the stay and can move
+    money into a balance-due position, so it is not a receptionist action.
+    """
+
+    permission_classes = [IsManagerOrAdmin]
+    serializer_class = RescheduleBookingSerializer
+
+    def perform(self, booking, request, data):
+        serializer = RescheduleBookingSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        payload = serializer.validated_data
+        booking = booking_service.reschedule_booking(
+            booking,
+            check_in=payload["check_in"],
+            check_out=payload["check_out"],
+            staff_user=request.user,
+            request=request,
+        )
+        result = getattr(booking, "reschedule_result", {})
+        return success_response(
+            {
+                "booking": AdminBookingDetailSerializer(booking, context={"request": request}).data,
+                "reschedule": result,
+            },
+            message=(
+                "Booking rescheduled. A balance is now due."
+                if result.get("balance_due") not in (None, "", "0.00")
+                else "Booking rescheduled."
+            ),
+        )
+
+
+@extend_schema(tags=["Admin · Bookings"], summary="Missed / no-show bookings")
+class AdminMissedBookingListView(generics.ListAPIView):
+    """Guests who booked but never checked in.
+
+    The state is derived by the backend from booking status + arrival deadline
+    (see booking_service.missed_bookings_queryset) — never from a stored flag a
+    client could set.
+    """
+
+    permission_classes = [IsStaffRole]
+    serializer_class = MissedBookingSerializer
+
+    def get_queryset(self):
+        booking_service.maybe_expire_stale_pending_bookings()
+        qs = booking_service.missed_bookings_queryset()
+        params = self.request.query_params
+        if status_param := params.get("status"):
+            qs = qs.filter(status=status_param.upper())
+        if date_from := params.get("date_from"):
+            qs = qs.filter(check_in__gte=date_from)
+        if date_to := params.get("date_to"):
+            qs = qs.filter(check_in__lte=date_to)
+        return apply_booking_search(qs, params.get("search"))
+
+
+@extend_schema(tags=["Admin · Bookings"], summary="Monthly occupancy calendar")
+class AdminOccupancyCalendarView(APIView):
+    """Room-by-date occupancy for one month, built from real room assignments.
+
+    Query: ?year=2026&month=9 (defaults to the current hotel month).
+    """
+
+    permission_classes = [IsStaffRole]
+    serializer_class = EmptySerializer
+
+    def get(self, request):
+        from apps.core.utils import hotel_today
+        from rest_framework.exceptions import ValidationError
+
+        today = hotel_today()
+        try:
+            year = int(request.query_params.get("year") or today.year)
+            month = int(request.query_params.get("month") or today.month)
+        except (TypeError, ValueError):
+            raise ValidationError({"month": ["Provide a numeric year and month."]})
+        if not 1 <= month <= 12:
+            raise ValidationError({"month": ["Month must be between 1 and 12."]})
+        if not 2000 <= year <= 2100:
+            raise ValidationError({"year": ["Year is out of range."]})
+
+        data = booking_service.occupancy_calendar(year=year, month=month)
+        return success_response(data, message="Occupancy calendar retrieved.")

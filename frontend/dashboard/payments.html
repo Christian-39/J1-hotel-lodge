@@ -74,8 +74,8 @@
     </div>
   </details>
   <div class="panel-body no-pad">
-    <div class="table-wrap"><table class="table">
-      <thead><tr><th>Payment ref</th><th>Booking</th><th class="hide-sm">Guest</th><th>Method</th><th class="hide-sm">Date</th><th>Amount</th><th>Status</th><th class="hide-sm">By</th></tr></thead>
+    <div class="table-wrap table-scroll-x" tabindex="0" role="region" aria-label="Payments table, scroll sideways to see every column"><table class="table table-payments">
+      <thead><tr><th>Payment ref</th><th>Booking</th><th class="hide-sm">Guest</th><th>Method</th><th class="hide-sm">Date</th><th>Amount</th><th>Status</th><th class="hide-sm">By</th><th></th></tr></thead>
       <tbody data-tbody="payments"></tbody>
     </table></div>
     <div class="pagination" data-pay-pagination></div>
@@ -119,10 +119,28 @@
        paid_at, notes, created_at } — filters: status, provider, date_from,
        date_to, paid_on, search. */
   function render(list){
-    if(!list.length){ tbody.innerHTML='<tr><td colspan="8"><div class="empty-state"><span data-icon="creditCard"></span><h3>No payments found</h3><p>No payments match the current filters.</p></div></td></tr>'; JONE.icons.inject(tbody); return; }
+    if(!list.length){ tbody.innerHTML='<tr><td colspan="9"><div class="empty-state"><span data-icon="creditCard"></span><h3>No payments found</h3><p>No payments match the current filters.</p></div></td></tr>'; JONE.icons.inject(tbody); return; }
     tbody.innerHTML=list.map(function(p){
       var b=p.booking_reference;
-      return '<tr><td class="cell-nowrap">'+JONE.esc(p.reference||"—")+'</td><td class="cell-nowrap">'+(b?'<a href="booking-details.html?ref='+encodeURIComponent(b)+'">'+JONE.esc(b)+'</a>':"—")+'</td><td class="hide-sm">'+JONE.esc(p.guest_name||"—")+'</td><td class="cell-nowrap">'+JONE.esc(String(p.provider||"—").toLowerCase().replace(/_/g," "))+'</td><td class="hide-sm cell-nowrap">'+JONE.esc(p.paid_at?JONE.formatDate(p.paid_at,"mid"):"—")+'</td><td class="num cell-nowrap">'+JONE.esc(JONE.formatNaira(p.amount))+'</td><td class="cell-nowrap">'+JONE.dashboard.statusPill(p.status)+'</td><td class="hide-sm">'+JONE.esc(p.staff_email||"—")+'</td></tr>';
+      /* The guest name column is hidden on phones, so the name is repeated
+         under the payment reference (.pay-mobile-guest, mobile-only) — a
+         payment row is meaningless without knowing WHO paid. */
+      var guest = p.guest_name || "";
+      return '<tr>' +
+        '<td class="cell-nowrap">' + JONE.esc(p.reference || "—") +
+          (guest ? '<span class="pay-mobile-guest hide-md">' + JONE.esc(guest) + '</span>' : '') +
+        '</td>' +
+        '<td class="cell-nowrap">' + (b ? '<a href="booking-details.html?ref=' + encodeURIComponent(b) + '">' + JONE.esc(b) + '</a>' : "—") + '</td>' +
+        '<td class="hide-sm">' + JONE.esc(guest || "—") + '</td>' +
+        '<td class="cell-nowrap">' + JONE.esc(String(p.provider || "—").toLowerCase().replace(/_/g, " ")) + '</td>' +
+        '<td class="hide-sm cell-nowrap">' + JONE.esc(p.paid_at ? JONE.formatDate(p.paid_at, "mid") : "—") + '</td>' +
+        '<td class="num cell-nowrap">' + JONE.esc(JONE.formatNaira(p.amount)) + '</td>' +
+        '<td class="cell-nowrap">' + JONE.dashboard.statusPill(p.status) + '</td>' +
+        '<td class="hide-sm">' + JONE.esc(p.staff_email || "—") + '</td>' +
+        '<td class="cell-nowrap">' +
+          '<button class="btn btn-sm btn-outline" type="button" data-pay-view="' + JONE.esc(p.id) + '">' +
+            '<span data-icon="eye" data-size="13"></span> View</button>' +
+        '</td></tr>';
     }).join("");
     JONE.icons.inject(tbody);
   }
@@ -131,11 +149,12 @@
      from the inputs on every request, so paging preserves them and any filter
      change restarts at page 1. */
   var state={ page:1 };
+  var rowsById = {};
   var pager=document.querySelector("[data-pay-pagination]");
   function renderPager(meta){ JONE.dashboard.renderPagination(pager, meta, { onPage: load }); }
 
   function filters(){
-    var f={ page: state.page, page_size:20 };
+    var f={ page: state.page, page_size: JONE.dashboard.pageSize() };
     var q=document.getElementById("p-q"); if(q&&q.value.trim()) f.search=q.value.trim();
     var m=document.getElementById("p-method"); if(m&&m.value) f.provider=m.value;
     var s=document.getElementById("p-status"); if(s&&s.value) f.status=s.value;
@@ -149,11 +168,24 @@
       var res=await window.API.list("payments",filters());
       var norm=window.API.normalizeList(res.data,res.pagination);
       var list=norm.items||((res.data&&res.data.results)||[]);
+      rowsById = {};
+      (list || []).forEach(function (row) { rowsById[String(row.id)] = row; });
       render(list||[]);
       renderPager(list.length?res.pagination:null);
-    }catch(err){ DATA.error(tbody,"Payments couldn't be loaded",(err&&err.message)||"Please try again in a moment.",8); }
+    }catch(err){ DATA.error(tbody,"Payments couldn't be loaded",(err&&err.message)||"Please try again in a moment.",9); }
   }
   load(1);
+
+  /* View opens the full payment record in the shared side panel. Everything
+     shown comes from the row the backend already returned plus a detail fetch
+     for anything the list omits — no card data is stored or displayed. */
+  tbody.addEventListener("click", async function (e) {
+    var btn = e.target.closest && e.target.closest("[data-pay-view]");
+    if (!btn) return;
+    var id = btn.getAttribute("data-pay-view");
+    var row = rowsById[String(id)] || null;
+    JONE.dashboard.paymentDetailPanel(id, row);
+  });
 
   var refundBody=document.querySelector("[data-tbody=refunds]");
   function renderRefunds(list){
@@ -172,7 +204,7 @@
     if(page!=null) refundState.page=Math.max(1,page);
     DATA.loading(refundBody);
     try{
-      var params={ page: refundState.page, page_size:20 };
+      var params={ page: refundState.page, page_size: JONE.dashboard.pageSize() };
       var rs=document.getElementById("r-status"); if(rs&&rs.value) params.status=rs.value;
       var res=await window.API.listRefunds(params);
       var list=window.API.normalizeList?window.API.normalizeList(res.data,res.pagination).items:((res.data&&res.data.results)||res.data||[]);

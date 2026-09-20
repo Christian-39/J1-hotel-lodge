@@ -58,7 +58,7 @@
         <h2 data-bd-ref>Booking</h2>
         <div class="panel-actions">
           <button class="btn btn-sm btn-outline" data-bd-checkin>Check-in</button>
-          <button class="btn btn-sm btn-outline" data-bd-record><span data-icon="wallet" data-size="16"></span> Record payment</button>
+          <button class="btn btn-sm btn-outline" data-bd-record hidden><span data-icon="wallet" data-size="16"></span> Record payment</button>
           <button class="btn btn-sm btn-danger" data-bd-cancel>Cancel</button>
         </div>
       </div>
@@ -145,6 +145,16 @@
     set("balance",JONE.formatNaira(book.amount_due!=null?book.amount_due:0));
     set("status", String(book.status||"").toUpperCase()+" · "+String(book.payment_status||"").toLowerCase().replace(/_/g," "));
 
+    /* "Record payment" is only offered while money is actually outstanding on
+       a booking that can still accept it — a confirmed/settled payment has
+       nothing to record and the backend would refuse the request. */
+    var recordBtn=document.querySelector("[data-bd-record]");
+    if(recordBtn){
+      var payable=JONE.dashboard.canRecordPayment(book);
+      recordBtn.hidden=!payable;
+      recordBtn.disabled=!payable;
+    }
+
     // Lifecycle timeline — the booking's OWN backend timestamps (never invented).
     var act=document.querySelector("[data-bd-activity]");
     if(act){
@@ -225,6 +235,10 @@
   var record=document.querySelector("[data-bd-record]");
   if(record) record.addEventListener("click", function(){
     if(!book){ JONE.ui.toast("This booking hasn't loaded yet.","warning"); return; }
+    if(!JONE.dashboard.canRecordPayment(book)){
+      JONE.ui.toast("This booking has no outstanding balance to record.","info");
+      return;
+    }
     JONE.dashboard.paymentModal(book, {
       onRecorded: function(fresh){
         if(fresh) book=Object.assign({}, book, fresh);

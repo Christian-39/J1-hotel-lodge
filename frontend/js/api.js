@@ -314,7 +314,13 @@ const API = (() => {
   /* Normalize a list response to { items, count, next, previous, page, pageSize, totalPages }.
      Accepts the verified contract envelope (data array + pagination object),
      a bare array, or a legacy {results} shape — all without ever inventing rows. */
-  function normalizeList(payload, pagination, defaultPageSize = 20) {
+  // The fallback page size mirrors APP_CONFIG.PAGE_SIZE (and the backend's
+  // StandardPagination.page_size) so a response without a pagination block is
+  // still paged consistently with every other list in the app.
+  const DEFAULT_PAGE_SIZE =
+    (window.APP_CONFIG && window.APP_CONFIG.PAGE_SIZE) || 10;
+
+  function normalizeList(payload, pagination, defaultPageSize = DEFAULT_PAGE_SIZE) {
     // Contract shape: API layer passes (res.data, res.pagination).
     if (Array.isArray(payload)) {
       const pg = pagination || {};
@@ -551,6 +557,32 @@ const API = (() => {
   const checkOutBooking  = (lookup, payload, opts = {}) => bookingAction("check-out", lookup, payload || {}, opts);
   const noShowBooking    = (lookup, opts = {}) => bookingAction("no-show", lookup, {}, opts);
   const assignRoom       = (lookup, roomId, opts = {}) => bookingAction("assign-room", lookup, { room: roomId }, opts);
+  /* Move an existing booking to new dates. The backend re-checks availability
+     and re-prices the stay; the response carries the authoritative booking. */
+  const rescheduleBooking = (lookup, payload, opts = {}) =>
+    bookingAction("reschedule", lookup, payload || {}, opts);
+
+  /* Month occupancy grid: { year, month, start_date, end_date,
+     days: { "YYYY-MM-DD": [ { booking_id, booking_reference, room_number,
+     room_type_name, guest_name, status, check_in, check_out } ] } }. */
+  function getOccupancyCalendar(params, opts = {}) {
+    const base = resourceEp("occupancy");
+    if (!base) throw notConfigured("occupancy");
+    return get(base, { params, ...opts });
+  }
+
+  /* Bookings whose guest never arrived (derived server-side). */
+  function listMissedBookings(params, opts = {}) {
+    const base = resourceEp("missedBookings");
+    if (!base) throw notConfigured("missedBookings");
+    return get(base, { params, ...opts });
+  }
+
+  /* Individual guest discounts (manager/admin write, all staff read). */
+  function listGuestDiscounts(params, opts = {}) { return list("guestDiscounts", params, opts); }
+  function createGuestDiscount(payload, opts = {}) { return create("guestDiscounts", payload, opts); }
+  function updateGuestDiscount(id, payload, opts = {}) { return update("guestDiscounts", id, payload, opts); }
+  function deactivateGuestDiscount(id, opts = {}) { return remove("guestDiscounts", id, opts); }
 
   /* Record an offline payment (CASH / POS / BANK_TRANSFER).
      The response carries the payment plus the authoritative booking snapshot
@@ -643,6 +675,8 @@ const API = (() => {
     getNotifications, getUnreadCount, markNotificationRead, markAllNotificationsRead, getNotification,
     // Staff resources + actions
     list, getOne, create, update, remove,
+    rescheduleBooking, getOccupancyCalendar, listMissedBookings,
+    listGuestDiscounts, createGuestDiscount, updateGuestDiscount, deactivateGuestDiscount,
     confirmBooking, staffCancelBooking, checkInBooking, checkOutBooking,
     noShowBooking, assignRoom, recordPayment, searchBookings, searchCheckout,
     reviewCancellationRequest, approveCancellationRequest, rejectCancellationRequest, processCancellationRefund, closeCancellationRequest, listRefunds,

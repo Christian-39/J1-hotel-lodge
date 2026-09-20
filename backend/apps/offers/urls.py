@@ -12,3 +12,9 @@ urlpatterns = [
 _router = DefaultRouter()
 _router.register("", views.OfferAdminViewSet, basename="admin-offer")
 admin_urlpatterns = _router.urls
+
+# Individual guest discounts live on their own admin route so the offers
+# contract is untouched.
+_discount_router = DefaultRouter()
+_discount_router.register("", views.GuestDiscountAdminViewSet, basename="admin-guest-discount")
+admin_guest_discount_urlpatterns = _discount_router.urls

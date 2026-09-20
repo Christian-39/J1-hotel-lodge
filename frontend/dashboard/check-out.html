@@ -176,8 +176,10 @@
       "</div>" +
       '<footer class="co-card-actions">' +
         actions +
-        (due > 0 ? '<button class="btn btn-block btn-outline" data-pay-btn="' + JONE.esc(b.id) + '">' +
-          '<span data-icon="wallet" data-size="16"></span> Record payment</button>' : "") +
+        /* Shared rule: no outstanding balance -> no Record payment button. */
+        (JONE.dashboard.canRecordPayment(b)
+          ? '<button class="btn btn-block btn-outline" data-pay-btn="' + JONE.esc(b.id) + '">' +
+            '<span data-icon="wallet" data-size="16"></span> Record payment</button>' : "") +
         '<a class="btn btn-block btn-ghost" href="booking-details.html?ref=' + encodeURIComponent(ref) + '">' +
           '<span data-icon="fileText" data-size="16"></span> Full booking</a>' +
       "</footer>" +

@@ -17,7 +17,15 @@ from apps.notifications.models import Notification
 from apps.payments.models import Payment, Refund
 
 from .base import BaseAPITestCase
-from .factories import make_room, make_room_type, make_staff, make_user
+from .factories import (
+    hotel_settings,
+    make_booking,
+    make_guest,
+    make_room,
+    make_room_type,
+    make_staff,
+    make_user,
+)
 from apps.accounts.models import User
 
 
@@ -582,3 +590,80 @@ class PaystackWrapperContractTests(BaseAPITestCase):
                 email="payer@example.test", amount_kobo=100,
                 reference="J1P-BAD", callback_url="https://example.test/verify",
             )
+
+
+class OfflinePaymentStateGuardTests(BaseAPITestCase):
+    """Task 17 (server side): the dashboard hides "Record payment" once a
+    booking is settled, but the endpoint — not the UI — is the authority.
+
+    A stale tab, a double submit or a direct API call must never be able to
+    add another offline payment to a booking whose payment record is already
+    PAID, REFUNDED or PARTIALLY_REFUNDED.
+    """
+
+    def setUp(self):
+        super().setUp()
+        hotel_settings()
+        self.room_type = make_room_type("Guarded", price="20000.00")
+        self.room = make_room(self.room_type, "G01")
+        self.guest = make_guest("guarded@example.com")
+        self.staff = make_staff("guard.desk@staff.dev", role=User.Role.RECEPTIONIST)
+        self.auth(self.staff)
+
+    def _booking(self, **kwargs):
+        return make_booking(self.guest, self.room_type, [self.room], total="20000.00", **kwargs)
+
+    def _record(self, booking, amount="1000.00"):
+        return self.client.post("/api/admin/payments/record/", {
+            "booking_reference": booking.booking_reference,
+            "amount": amount,
+            "provider": "CASH",
+        })
+
+    def test_fully_paid_booking_rejects_further_offline_payment(self):
+        booking = self._booking(amount_paid="20000.00")
+        booking.payment_status = Booking.PaymentStatus.PAID
+        booking.save(update_fields=["payment_status"])
+
+        response = self._record(booking)
+
+        self.assertEqual(response.status_code, 409, response.json())
+        self.assertEqual(response.json()["code"], "PAYMENT_ALREADY_COMPLETED")
+        self.assertEqual(booking.payments.count(), 0)
+
+    def test_refunded_booking_rejects_offline_payment_even_with_balance_due(self):
+        """A refund leaves amount_due > 0 again; the payment state must still
+        block a new front-desk payment rather than silently re-opening it."""
+        booking = self._booking(amount_paid="0.00")
+        booking.payment_status = Booking.PaymentStatus.REFUNDED
+        booking.save(update_fields=["payment_status"])
+        self.assertGreater(booking.amount_due, 0)
+
+        response = self._record(booking)
+
+        self.assertEqual(response.status_code, 409, response.json())
+        self.assertEqual(response.json()["code"], "PAYMENT_ALREADY_COMPLETED")
+        self.assertEqual(booking.payments.count(), 0)
+
+    def test_partially_refunded_booking_rejects_offline_payment(self):
+        booking = self._booking(amount_paid="5000.00")
+        booking.payment_status = Booking.PaymentStatus.PARTIALLY_REFUNDED
+        booking.save(update_fields=["payment_status"])
+
+        response = self._record(booking)
+
+        self.assertEqual(response.status_code, 409, response.json())
+        self.assertEqual(response.json()["code"], "PAYMENT_ALREADY_COMPLETED")
+
+    def test_unpaid_and_partially_paid_bookings_still_accept_payment(self):
+        """The guard must not block the normal front-desk flow."""
+        unpaid = self._booking(amount_paid="0.00")
+        self.assertEqual(self._record(unpaid, "20000.00").status_code, 201)
+
+        partial = self._booking(amount_paid="5000.00")
+        partial.payment_status = Booking.PaymentStatus.PARTIALLY_PAID
+        partial.save(update_fields=["payment_status"])
+        response = self._record(partial, "15000.00")
+        self.assertEqual(response.status_code, 201, response.json())
+        partial.refresh_from_db()
+        self.assertEqual(partial.payment_status, "PAID")

@@ -6,6 +6,9 @@ app_name = "bookings_admin"
 
 bookings_urlpatterns = [
     path("", views_admin.AdminBookingListCreateView.as_view(), name="booking-list"),
+    # Static routes MUST precede <str:lookup>/ or they would be captured by it.
+    path("calendar/", views_admin.AdminOccupancyCalendarView.as_view(), name="booking-calendar"),
+    path("missed/", views_admin.AdminMissedBookingListView.as_view(), name="booking-missed"),
     path("<str:lookup>/", views_admin.AdminBookingDetailView.as_view(), name="booking-detail"),
     path("<str:lookup>/confirm/", views_admin.AdminBookingConfirmView.as_view(), name="booking-confirm"),
     path("<str:lookup>/cancel/", views_admin.AdminBookingCancelView.as_view(), name="booking-cancel"),
@@ -13,6 +16,7 @@ bookings_urlpatterns = [
     path("<str:lookup>/check-out/", views_admin.AdminBookingCheckOutView.as_view(), name="booking-check-out"),
     path("<str:lookup>/no-show/", views_admin.AdminBookingNoShowView.as_view(), name="booking-no-show"),
     path("<str:lookup>/assign-room/", views_admin.AdminBookingAssignRoomView.as_view(), name="booking-assign-room"),
+    path("<str:lookup>/reschedule/", views_admin.AdminBookingRescheduleView.as_view(), name="booking-reschedule"),
     path("<str:lookup>/send-receipt/", views_admin.AdminBookingSendReceiptView.as_view(), name="booking-send-receipt"),
 ]
 

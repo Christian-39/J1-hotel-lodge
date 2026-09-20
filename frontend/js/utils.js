@@ -34,6 +34,41 @@ const JONE = (() => {
     return new Intl.DateTimeFormat("en-GB", opts).format(d);
   }
 
+
+  /* Offer validity window, rendered the same way everywhere (public pages and
+     the staff console) so an offer's START date is never hidden from a guest
+     deciding whether a deal applies to their stay. */
+  function offerPeriod(offer, mode = "mid") {
+    if (!offer) return "";
+    const start = offer.start_date ? formatDate(offer.start_date, mode) : "";
+    const end = offer.end_date ? formatDate(offer.end_date, mode) : "";
+    if (start && end) return start + " \u2013 " + end;
+    if (start) return "From " + start;
+    if (end) return "Until " + end;
+    return "";
+  }
+
+  /* "Starts in 3 days" / "Ends today" style status for an offer, derived from
+     the offer's own dates. Returns "" when there is nothing useful to say. */
+  function offerStatusNote(offer, today = null) {
+    if (!offer || !offer.start_date) return "";
+    const ref = parseISO(today || hotelTodayISO());
+    const start = parseISO(offer.start_date);
+    const end = offer.end_date ? parseISO(offer.end_date) : null;
+    if (!ref || !start) return "";
+    const day = 86400000;
+    const toStart = Math.round((start - ref) / day);
+    if (toStart > 0) return toStart === 1 ? "Starts tomorrow" : "Starts in " + toStart + " days";
+    if (end) {
+      const toEnd = Math.round((end - ref) / day);
+      if (toEnd < 0) return "Ended";
+      if (toEnd === 0) return "Ends today";
+      if (toEnd === 1) return "Ends tomorrow";
+      if (toEnd <= 7) return "Ends in " + toEnd + " days";
+    }
+    return toStart === 0 ? "Starts today" : "";
+  }
+
   function formatDateTime(str) {
     if (!str) return "--";
     // Full ISO datetimes must keep their time component (parseISO reads the
@@ -263,7 +298,7 @@ const JONE = (() => {
   }
 
   return {
-    formatNaira, formatDate, formatDateTime, parseISO, hotelTodayISO, todayISO, nightsBetween, setupDateConstraints,
+    formatNaira, formatDate, formatDateTime, offerPeriod, offerStatusNote, parseISO, hotelTodayISO, todayISO, nightsBetween, setupDateConstraints,
     $, $$, el, esc, debounce, throttle, storage, bindData, paginate, initials,
     scrollTop, guardSubmit, releaseGuard, appUrl
   };

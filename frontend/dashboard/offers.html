@@ -89,7 +89,12 @@
       var disc = o.discount_type === "PERCENTAGE" ? (Number(o.discount_value||0)+"% off") : (o.discount_value ? JONE.formatNaira(o.discount_value)+" off" : "");
       if (!disc && o.code) disc = o.code;
       var desc = o.short_description || o.description || "";
-      return '<article class="card card-hover"><div class="card-pad"><div class="flex-between" style="margin-bottom:1rem;"><span class="offer-tag">'+JONE.esc(disc)+'</span>'+JONE.dashboard.statusPill(o.is_active===false?"inactive":"active")+'</div><h3 style="font-size:var(--fs-lg);">'+JONE.esc(o.title||"—")+'</h3><p class="caption">'+JONE.esc(desc)+'</p>'+(o.end_date?'<p class="caption">Ends '+JONE.formatDate(o.end_date,"mid")+'</p>':'')+(o.is_featured?'<span class="badge">Featured</span>':'')+'<div style="display:flex;gap:0.5rem;margin-top:1rem;"><button class="btn btn-sm btn-outline" data-of-edit="'+encodeURIComponent(id)+'">Edit</button><button class="btn btn-sm btn-danger" data-of-del="'+encodeURIComponent(id)+'">Delete</button></div></div></article>';
+      var period = JONE.offerPeriod(o, "mid");
+      var note = JONE.offerStatusNote(o);
+      return '<article class="card card-hover"><div class="card-pad"><div class="flex-between" style="margin-bottom:1rem;"><span class="offer-tag">'+JONE.esc(disc)+'</span>'+JONE.dashboard.statusPill(o.is_active===false?"inactive":"active")+'</div><h3 style="font-size:var(--fs-lg);">'+JONE.esc(o.title||"—")+'</h3><p class="caption">'+JONE.esc(desc)+'</p>'+/* Staff need the START date as well as the end date: without it they
+              cannot tell a scheduled offer from a live one. */
+           (period?'<p class="caption offer-period"><span data-icon="calendar" data-size="14"></span> '+JONE.esc(period)+'</p>':'')+
+           (note?'<p class="caption offer-note">'+JONE.esc(note)+'</p>':'')+(o.is_featured?'<span class="badge">Featured</span>':'')+'<div style="display:flex;gap:0.5rem;margin-top:1rem;"><button class="btn btn-sm btn-outline" data-of-edit="'+encodeURIComponent(id)+'">Edit</button><button class="btn btn-sm btn-danger" data-of-del="'+encodeURIComponent(id)+'">Delete</button></div></div></article>';
     }).join("") || '<div class="empty-state" style="grid-column:1/-1;border:0;"><h3>No offers yet</h3></div>';
     JONE.icons.inject(grid);
   }

@@ -8,6 +8,7 @@ from rest_framework.response import Response
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 
 from apps.audit.services import log_action
+from apps.bookings.services.booking_service import UNCOUNTED_BOOKING_STATUSES
 from apps.core.permissions import CanViewStaffProfile, IsAdminRole
 from apps.core.responses import success_response
 
@@ -28,7 +29,13 @@ class AdminUserQuerysetMixin:
     parser_classes = [MultiPartParser, FormParser, JSONParser]
 
     def get_queryset(self):
-        qs = User.objects.all().annotate(bookings_count=Count("guest_profile__bookings", distinct=True))
+        qs = User.objects.all().annotate(
+            bookings_count=Count(
+                "guest_profile__bookings",
+                filter=~Q(guest_profile__bookings__status__in=UNCOUNTED_BOOKING_STATUSES),
+                distinct=True,
+            )
+        )
         params = self.request.query_params
         role = params.get("role")
         if role:
@@ -151,7 +158,12 @@ class AdminStaffProfileView(generics.RetrieveAPIView):
         data = self.get_serializer(instance, context={"request": request}).data
         # Cheap, honest operational context: how many bookings this account has
         # as a hotel guest (staff accounts are usually 0).
+        # Cancelled/expired bookings are excluded, matching the guests console.
         data["guest_bookings_count"] = (
-            instance.guest_profile.bookings.count() if hasattr(instance, "guest_profile") else 0
+            instance.guest_profile.bookings.exclude(
+                status__in=UNCOUNTED_BOOKING_STATUSES
+            ).count()
+            if hasattr(instance, "guest_profile")
+            else 0
         )
         return success_response(data)

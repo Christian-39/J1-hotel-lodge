@@ -154,7 +154,7 @@
 
   /* -------------------------------- List ---------------------------------- */
   function params(){
-    var p = { page: page, page_size: 20 };
+    var p = { page: page, page_size: JONE.dashboard.pageSize() };
     var s = document.getElementById("rv-search").value.trim();
     var r = document.getElementById("rv-rating").value;
     var st = document.getElementById("rv-status").value;
