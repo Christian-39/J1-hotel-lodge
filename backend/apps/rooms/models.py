@@ -1,3 +1,4 @@
+# apps/rooms/models.py
 """Room types (bookable products) and physical rooms (inventory).
 
 IMPORTANT DISTINCTION (see spec §12): a Room's operational `status`

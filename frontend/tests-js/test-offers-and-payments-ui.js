@@ -1,3 +1,4 @@
+/* tests-js/test-offers-and-payments-ui.js */
 /* Frontend contract tests for the changes to offers, pagination size, the
    record-payment rule and guest booking counts.
 

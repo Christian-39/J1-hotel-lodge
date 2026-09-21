@@ -484,20 +484,27 @@
         const img = o.image_url
           ? '<div class="offer-banner-media"><img src="' + JONE.esc(o.image_url) + '" alt="' + JONE.esc(o.title) + '" loading="lazy"></div>'
           : '';
-        const tag = o.discount_type === "PERCENTAGE"
-          ? JONE.esc(String(o.discount_value)) + "% off"
-          : (o.discount_type === "FIXED_AMOUNT" ? JONE.formatNaira(o.discount_value) + " off" : "");
+        const tag = JONE.offerDiscountLabel(o);
         const period = JONE.offerPeriod(o, "mid");
         const note = JONE.offerStatusNote(o);
+        const criteria = JONE.offerCriteria(o).map(function (line) {
+          return '<li>' + JONE.esc(line) + '</li>';
+        }).join("");
+        const bookUrl = "booking.html" + (o.code ? "?offer=" + encodeURIComponent(o.code) : "");
         banner.innerHTML = img +
           '<div class="offer-banner-body">' +
-            (tag ? '<span class="offer-tag">' + tag + '</span>' : '') +
-            (period ? '<p class="meta offer-period">Valid ' + JONE.esc(period) + (note ? ' \u00b7 ' + JONE.esc(note) : '') + '</p>' : '') +
+            (tag ? '<span class="offer-tag">' + JONE.esc(tag) + '</span>' : '') +
             '<h3>' + JONE.esc(o.title) + '</h3>' +
-            '<p>' + JONE.esc(o.short_description || o.description || "") + '</p>' +
-            '<a class="btn btn-accent" href="offers.html">View offers</a> ' +
-            '<a class="btn btn-outline" href="booking.html">Book your stay</a>' +
+            (period ? '<p class="meta offer-period"><span data-icon="calendar" data-size="16"></span>' +
+              '<span>Valid ' + JONE.esc(period) + (note ? ' \u00b7 ' + JONE.esc(note) : '') + '</span></p>' : '') +
+            '<p class="offer-banner-desc">' + JONE.esc(o.short_description || o.description || "") + '</p>' +
+            (criteria ? '<ul class="offer-criteria">' + criteria + '</ul>' : '') +
+            '<div class="offer-banner-actions">' +
+              '<a class="btn btn-accent" href="' + JONE.esc(bookUrl) + '">Book this offer</a>' +
+              '<a class="btn btn-outline" href="offers.html">All offers</a>' +
+            '</div>' +
           '</div>';
+        if (JONE.icons && JONE.icons.inject) JONE.icons.inject(banner);
       } else {
         section.style.display = "none";
       }

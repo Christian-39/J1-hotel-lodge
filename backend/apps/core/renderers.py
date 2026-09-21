@@ -1,3 +1,4 @@
+# apps/core/renderers.py
 """Project-wide JSON envelope.
 
 Every API response uses a predictable shape:

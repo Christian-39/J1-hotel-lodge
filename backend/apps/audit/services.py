@@ -1,3 +1,4 @@
+# apps/audit/services.py
 """Write-side helper for the audit trail. Call from service layers/views."""
 import logging
 

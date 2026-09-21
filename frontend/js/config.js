@@ -1,3 +1,4 @@
+/* js/config.js */
 /* ==========================================================================
    J-ONE HOTEL & LODGE — global app configuration.
    Centralized so API endpoints are never scattered across files.
@@ -54,6 +55,7 @@
     guestDiscounts:"/api/admin/guest-discounts/", // individual guest discounts (manager write, staff read)
     occupancy:     "/api/admin/bookings/calendar/", // month occupancy grid (per room, per date)
     missedBookings:"/api/admin/bookings/missed/",   // guests who never arrived
+    lateArrivals:"/api/admin/bookings/late-arrivals/", // missed night 1, can still check in
     rooms:         "/api/admin/rooms/",           // physical rooms (status/housekeeping)
     roomTypes:     "/api/admin/room-types/",      // catalog CRUD + images upload
     roomImages:    "/api/admin/room-images/",      // room-type image detail (PATCH/DELETE)

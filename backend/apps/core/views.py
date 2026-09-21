@@ -1,3 +1,4 @@
+# apps/core/views.py
 """Health check + API index."""
 from django.db import connection
 from drf_spectacular.utils import extend_schema

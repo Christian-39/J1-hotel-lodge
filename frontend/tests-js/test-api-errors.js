@@ -1,3 +1,4 @@
+/* tests-js/test-api-errors.js */
 /* Tests for js/api.js request error classification — the fix for the false
    "booking service unavailable" (status 0) errors.
    Run: node --test tests-js/test_api_errors.js   (from frontend/) */

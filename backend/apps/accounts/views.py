@@ -1,3 +1,4 @@
+# apps/accounts/views.py
 """Authentication endpoints (public/guest area of the API)."""
 import logging
 

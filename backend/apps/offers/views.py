@@ -1,3 +1,4 @@
+# apps/offers/views.py
 from django.db.models import Count, Q
 from django.utils import timezone
 from drf_spectacular.utils import extend_schema
@@ -17,9 +18,12 @@ class OfferPublicListView(generics.ListAPIView):
     pagination_class = None
 
     def get_queryset(self):
+        # Upcoming offers are listed too: the page shows each offer's validity
+        # window and criteria, so a guest can plan a stay around one that has
+        # not started. Only ended or deactivated offers are hidden.
         today = timezone.localdate()
         return (
-            Offer.objects.filter(is_active=True, start_date__lte=today, end_date__gte=today)
+            Offer.objects.filter(is_active=True, end_date__gte=today)
             .prefetch_related("room_types")
             .order_by("-is_featured", "-start_date", "title")
         )

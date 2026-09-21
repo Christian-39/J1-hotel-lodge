@@ -1,3 +1,4 @@
+# tests/test_manual_receipts.py
 """Receipts must be truthful for EVERY payment type.
 
 Online (Paystack) and manual/walk-in (CASH / POS / BANK TRANSFER) payments all

@@ -1,3 +1,4 @@
+# apps/bookings/models.py
 """Guests, reservations and per-room assignments.
 
 Design notes

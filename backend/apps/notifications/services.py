@@ -1,3 +1,4 @@
+# apps/notifications/services.py
 """Notification fan-out helpers used by other apps' service layers."""
 import logging
 

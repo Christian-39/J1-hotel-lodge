@@ -1,3 +1,4 @@
+# apps/bookings/views.py
 """Guest-facing booking endpoints: availability, quotes, booking lifecycle."""
 import logging
 from datetime import datetime

@@ -1,3 +1,4 @@
+# apps/payments/views.py
 """Guest payment endpoints + Paystack webhook receiver."""
 import json
 import logging

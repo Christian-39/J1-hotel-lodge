@@ -1,3 +1,4 @@
+# tests-pwa/test_regression.py
 """Regression + security checks: existing behaviour must be untouched."""
 import json, sys
 from playwright.sync_api import sync_playwright

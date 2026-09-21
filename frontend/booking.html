@@ -14,7 +14,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="J-ONE Hotel">
-<link rel="stylesheet" href="css/main.css?v=1.1.0">
+<link rel="stylesheet" href="css/main.css?v=1.1.1">
 <script>(function(){var t;try{t=JSON.parse(localStorage.getItem("jone.theme"))}catch(e){}if(t!=="dark"&&t!=="light"){t=(window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches)?"dark":"light"}document.documentElement.setAttribute("data-theme",t);})();</script>
 
 
@@ -242,19 +242,19 @@
   </div>
 </div>
 
-<script src="js/config.js?v=1.1.0"></script>
-<script src="js/utils.js?v=1.1.0"></script>
-<script src="js/icons.js?v=1.1.0"></script>
-<script src="js/api.js?v=1.1.0"></script>
-<script src="js/theme.js?v=1.1.0"></script>
-<script src="js/ui.js?v=1.1.0"></script>
-<script src="js/hotel-data.js?v=1.1.0"></script>
-<script src="js/contact.js?v=1.1.0"></script>
-<script src="js/navigation.js?v=1.1.0"></script>
-<script src="js/booking-calendar.js?v=1.1.0"></script>
+<script src="js/config.js?v=1.1.1"></script>
+<script src="js/utils.js?v=1.1.1"></script>
+<script src="js/icons.js?v=1.1.1"></script>
+<script src="js/api.js?v=1.1.1"></script>
+<script src="js/theme.js?v=1.1.1"></script>
+<script src="js/ui.js?v=1.1.1"></script>
+<script src="js/hotel-data.js?v=1.1.1"></script>
+<script src="js/contact.js?v=1.1.1"></script>
+<script src="js/navigation.js?v=1.1.1"></script>
+<script src="js/booking-calendar.js?v=1.1.1"></script>
 <script>JONE.ui.initChrome(); JONE.nav.init();</script>
-<script src="js/site.js?v=1.1.0"></script>
-<script src="js/booking-stepper.js?v=1.1.0"></script>
+<script src="js/site.js?v=1.1.1"></script>
+<script src="js/booking-stepper.js?v=1.1.1"></script>
 <script>
 (function () {
   "use strict";
@@ -334,7 +334,10 @@
     check_in: ci.value, check_out: co.value,
     adults: adults.value, children: children.value,
     room: selectedRoomType, room_name: selectedRoomName,
-    offer: params.get("offer") || draft.offer_code || ""
+    /* An offer code is per-visit state (URL or typed), NEVER a stored
+       preference: a code saved from an earlier stay silently re-applies to
+       dates it is not valid for, and the backend then rejects the quote. */
+    offer: params.get("offer") || ""
   };
   var stepper = JONE.stepper.mount(document.getElementById("booking-stepper"), {
     current: 1,
@@ -731,7 +734,6 @@
     // Persist draft (no payment secrets, no client-authoritative prices).
     JONE.storage.set(S, {
       check_in: ci.value, check_out: co.value, adults: adultsN, children: childrenN,
-      offer_code: criteria.offer || "",
       room_type: selectedRoomType || "", room_name: selectedRoomName || "",
       room_id: exactRoomId || "", room_number: exactRoomNumber || "",
       rooms: qtyBySlug[selectedRoomType] || 1
@@ -1004,7 +1006,7 @@
     if (!slug) return;
     var my = ++quoteSeq;
     var isSelected = !!(selRoom && String(selRoom.slug) === String(slug));
-    var offer = new URLSearchParams(location.search).get("offer") || criteria.offer || "";
+    var offer = criteria.offer || "";
     window.API.quoteBooking({
       room_type: slug,
       check_in: ci.value, check_out: co.value,
@@ -1026,6 +1028,14 @@
       if (isSelected && selRoom.rooms === qty) setTotals(JONE.formatNaira(total) + " (estimate)");
     }).catch(function (err) {
       if (my !== quoteSeq) return;
+      if (err && String(err.code || "").indexOf("OFFER_") === 0) {
+        /* The offer is OPTIONAL. Drop the code, tell the guest exactly why,
+           and re-quote at the standard rate so the total is never blanked. */
+        criteria.offer = "";
+        JONE.ui.toast(err.message || "That offer does not apply to this stay; showing the standard rate.", "warning");
+        refreshEstimate(opt, qty);
+        return;
+      }
       if (err && err.code === "ROOM_UNAVAILABLE") {
         // The live stock shrank under the guest — say so, honestly.
         setCardTotal(opt, "Not available for these dates");
@@ -1179,8 +1189,8 @@
   }
 })();
 </script>
-<script src="js/pwa.js?v=1.1.0"></script>
-<script src="js/version.js?v=1.1.0"></script>
-<script src="js/update-checker.js?v=1.1.0"></script>
+<script src="js/pwa.js?v=1.1.1"></script>
+<script src="js/version.js?v=1.1.1"></script>
+<script src="js/update-checker.js?v=1.1.1"></script>
 </body>
 </html>

@@ -1,3 +1,4 @@
+# tests/test_receipt_email_content.py
 """Content/presentation tests for the HTML receipt email builder.
 
 These lock in the guest-facing formatting rules the redesign introduced:
@@ -9,12 +10,14 @@ demo data.
 from datetime import date, timedelta
 from decimal import Decimal
 
+from django.test import SimpleTestCase
 from django.utils import timezone
 
 from apps.accounts.models import User
 from apps.bookings.models import Booking
 from apps.bookings.serializers import ReceiptSerializer
-from apps.bookings.services.receipt_email import render_receipt_email
+from apps.bookings.services.receipt_email import (_DEFAULT_STATUS, _STATUS_PRESENTATION,
+                                                   _status_presentation, render_receipt_email)
 from apps.core.formatting import format_date, format_datetime, format_money
 from apps.payments.models import Payment
 
@@ -204,3 +207,48 @@ class ReceiptEmailBuilderTests(BaseAPITestCase):
         _, _, html = render_receipt_email(self._receipt(booking))
         self.assertIn("J1P-VERYLONGREFERENCE-0123456789ABCDEF0123456789", html)
         self.assertIn("word-break:break-all", html)
+
+
+class StatusPresentationTests(SimpleTestCase):
+    """Every real status maps to a badge; unknown keys degrade safely.
+
+    The map is keyed on Booking.PaymentStatus / Booking.Status values. If one
+    is ever renamed without updating the map the receipt silently prints a
+    meaningless "STATUS" chip, so both directions are pinned here.
+    """
+
+    def test_every_payment_status_has_its_own_presentation(self):
+        from apps.bookings.models import Booking
+
+        for value, _label in Booking.PaymentStatus.choices:
+            with self.subTest(payment_status=value):
+                status = _status_presentation({"payment_status": value})
+                self.assertNotEqual(status["badge"], _DEFAULT_STATUS[1])
+                self.assertTrue(status["label"])
+                self.assertTrue(status["glyph"])
+
+    def test_cancelled_booking_overrides_a_lingering_payment_status(self):
+        status = _status_presentation(
+            {"booking_status": "CANCELLED", "payment_status": "PAID"}
+        )
+        self.assertEqual(status["badge"], "CANCELLED")
+        self.assertEqual(status["tone"], "cancelled")
+
+    def test_unknown_status_falls_back_without_raising(self):
+        status = _status_presentation({"payment_status": "SOMETHING_NEW"})
+        self.assertEqual(status["badge"], _DEFAULT_STATUS[1])
+
+    def test_missing_status_falls_back_without_raising(self):
+        self.assertEqual(_status_presentation({})["badge"], _DEFAULT_STATUS[1])
+
+    def test_status_glyphs_are_email_safe(self):
+        """Glyphs must come from the widely-supported WGL-4 repertoire.
+
+        Symbols outside it (U+25D1 circle-half, U+21BA arrow-loop) render as
+        tofu boxes in Outlook and several Android clients. Status is also
+        carried by the text badge, so a glyph is never the only signal.
+        """
+        allowed = {"\u2713", "\u2715", "\u2717", "\u2190", "\u00bd", "\u2022", "\u2014"}
+        for key, (_label, _badge, glyph, _tone) in _STATUS_PRESENTATION.items():
+            with self.subTest(status=key):
+                self.assertIn(glyph, allowed, f"{key}: {glyph!r} is not email-safe")

@@ -1,3 +1,4 @@
+# apps/core/email_design.py
 """Shared J-ONE HOTEL & LODGE branded email builder (presentation only).
 
 Every guest-facing transactional email that is not a full receipt or review
@@ -47,7 +48,7 @@ def render_notice_email(
     ``preheader``   optional inbox preview text (defaults to the title).
     """
     # Lazy imports: presentation helper must not force app loading order.
-    from apps.bookings.services.receipt_email import LOGO_CID
+    from apps.core.email_assets import logo_context
     from apps.hotel.models import HotelSettings
 
     hotel = HotelSettings.get_settings()
@@ -66,7 +67,7 @@ def render_notice_email(
         "hotel_location": hotel_location,
         "hotel_phone": hotel.phone,
         "hotel_email": hotel.email,
-        "logo_cid": LOGO_CID,
+        **logo_context(),
         "category": category,
         "title": title,
         "greeting": greeting,

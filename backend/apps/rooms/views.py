@@ -1,3 +1,4 @@
+# apps/rooms/views.py
 """Public room catalog endpoints.
 
 "Rooms" on the public site are bookable ROOM TYPES. A room type is also the

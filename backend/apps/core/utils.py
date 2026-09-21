@@ -1,3 +1,4 @@
+# apps/core/utils.py
 """Small shared helpers."""
 import secrets
 from datetime import date, datetime, time

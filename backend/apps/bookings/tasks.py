@@ -1,3 +1,4 @@
+# apps/bookings/tasks.py
 """Celery tasks for the bookings app."""
 import logging
 

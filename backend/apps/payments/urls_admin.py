@@ -1,3 +1,4 @@
+# apps/payments/urls_admin.py
 from django.urls import path
 
 from . import views_admin

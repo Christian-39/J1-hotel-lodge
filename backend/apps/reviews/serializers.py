@@ -1,3 +1,4 @@
+# apps/reviews/serializers.py
 """Review serializers.
 
 Public serializers expose the absolute minimum needed for the guest flow;

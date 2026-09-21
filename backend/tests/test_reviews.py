@@ -1,3 +1,4 @@
+# tests/test_reviews.py
 """Guest review system — eligibility, validation, security, statistics.
 
 Covers the strict rules:

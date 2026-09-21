@@ -1,3 +1,4 @@
+# apps/core/models.py
 """Shared abstract model mixins. Core owns no tables itself."""
 from django.db import models
 

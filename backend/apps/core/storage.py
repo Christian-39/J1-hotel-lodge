@@ -1,3 +1,4 @@
+# apps/core/storage.py
 """Media storage helpers shared by every app that serves uploaded files.
 
 Two responsibilities live here so no app has to reimplement them:

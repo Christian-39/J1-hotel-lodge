@@ -1,3 +1,4 @@
+# apps/gallery/views.py
 from drf_spectacular.utils import extend_schema
 from rest_framework import generics, viewsets
 from rest_framework.permissions import AllowAny

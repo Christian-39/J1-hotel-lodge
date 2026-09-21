@@ -1,3 +1,4 @@
+# tests-pwa/test_paystack.py
 """The SW must never intercept cross-origin payment traffic or payment endpoints."""
 import sys
 from playwright.sync_api import sync_playwright

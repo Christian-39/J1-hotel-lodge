@@ -1,3 +1,4 @@
+/* css/dashboard.css */
 /* ==========================================================================
    Staff dashboard — operational, dense, fast.
    ========================================================================== */
@@ -1483,8 +1484,12 @@ body.receipt-view-page .receipt-utility-actions .btn-outline:hover {
   .table-payments { min-width: 680px; }
   .table-scroll-x {
     /* Full-bleed inside the panel so the scrollable area uses the whole
-       screen width and the first column is not clipped. */
+       screen width and the first column is not clipped. `min-width:0` is
+       required: a grid/flex child defaults to min-content, so the 680px
+       table would widen the PAGE instead of scrolling inside this box. */
     overflow-x: auto;
+    min-width: 0;
+    max-width: 100%;
     -webkit-overflow-scrolling: touch;
     overscroll-behavior-x: contain;
   }
@@ -1601,36 +1606,51 @@ body.receipt-view-page .receipt-utility-actions .btn-outline:hover {
   .cal-month-input { flex: 1 1 8rem; min-width: 0; }
 }
 
-/* ------------------------- Missed bookings table -------------------------
-   Same restack-as-cards technique as the staff and guests tables: an
-   eight-column operational table is unusable on a phone, and the actions
-   (no-show, reschedule, refund) need full-width tap targets there. */
-.table-missed td, .table-missed th { vertical-align: middle; }
-/* The three actions stay on ONE line; the column is sized to fit them. */
-.table-missed td[data-label="Actions"] { width: 1%; min-width: 9rem; }
-.table-missed td[data-label="Actions"] .row-actions { flex-wrap: nowrap; justify-content: flex-end; }
-.table-missed td[data-label="Actions"] .btn { flex: 0 0 auto; }
-.table-missed td[data-label="Guest"] { min-width: 9rem; }
-.table-missed td[data-label="Guest"] .caption { white-space: nowrap; }
+/* ------------------- Missed bookings + late arrivals tables ---------------
+   Same restack-as-cards technique as the staff and guests tables: a
+   nine-column operational table is unusable on a phone, and the actions
+   (check in, no-show, reschedule, refund) need full-width tap targets there.
+   Both desk tables share these rules. */
+.table-missed td, .table-missed th,
+.table-late td, .table-late th { vertical-align: middle; }
+/* The actions stay on ONE line; the column is sized to fit them. */
+.table-missed td[data-label="Actions"],
+.table-late td[data-label="Actions"] { width: 1%; min-width: 9rem; }
+.table-missed td[data-label="Actions"] .row-actions,
+.table-late td[data-label="Actions"] .row-actions { flex-wrap: nowrap; justify-content: flex-end; }
+.table-missed td[data-label="Actions"] .btn,
+.table-late td[data-label="Actions"] .btn { flex: 0 0 auto; }
+.table-missed td[data-label="Guest"],
+.table-late td[data-label="Guest"] { min-width: 9rem; }
+.table-missed td[data-label="Guest"] .caption,
+.table-late td[data-label="Guest"] .caption { white-space: nowrap; }
 
 @media (max-width: 1300px) {
-  /* Below this width the eight columns no longer fit comfortably: the stay
-     dates stack onto two lines rather than forcing the whole table to scroll. */
-  .table-missed td[data-label="Stay"].cell-nowrap { white-space: normal; }
-  .table-missed td[data-label="Stay"] { min-width: 7.5rem; }
+  /* Below this width the columns no longer fit comfortably: the stay dates
+     stack onto two lines rather than forcing the whole table to scroll. */
+  .table-missed td[data-label="Stay"].cell-nowrap,
+  .table-late td[data-label="Stay"].cell-nowrap { white-space: normal; }
+  .table-missed td[data-label="Stay"],
+  .table-late td[data-label="Stay"] { min-width: 7.5rem; }
 }
-.table-missed td[data-label="Status"] { white-space: nowrap; }
-.table-missed .status-pill { white-space: nowrap; }
+.table-missed td[data-label="Status"],
+.table-late td[data-label="Status"] { white-space: nowrap; }
+.table-missed .status-pill,
+.table-late .status-pill { white-space: nowrap; }
 /* Action labels only appear when the row has room for them; below that the
    icons carry the meaning (each button keeps a title and aria-label). */
-@media (max-width: 1399px) { .table-missed .btn-label { display: none; } }
+@media (max-width: 1399px) {
+  .table-missed .btn-label,
+  .table-late .btn-label { display: none; }
+}
 
 @media (max-width: 720px) {
-  .table-wrap .table-missed,
-  .table-missed { table-layout: auto; min-width: 0; }
-  .table-missed thead { display: none; }
-  .table-missed, .table-missed tbody, .table-missed tr, .table-missed td { display: block; width: 100%; }
-  .table-missed tr {
+  .table-wrap .table-missed, .table-missed,
+  .table-wrap .table-late, .table-late { table-layout: auto; min-width: 0; }
+  .table-missed thead, .table-late thead { display: none; }
+  .table-missed, .table-missed tbody, .table-missed tr, .table-missed td,
+  .table-late, .table-late tbody, .table-late tr, .table-late td { display: block; width: 100%; }
+  .table-missed tr, .table-late tr {
     width: auto;
     border: 1px solid var(--color-border);
     border-radius: var(--radius);
@@ -1638,12 +1658,17 @@ body.receipt-view-page .receipt-utility-actions .btn-outline:hover {
     padding: 0.85rem 0.9rem;
     margin: 0 0.9rem 0.75rem;
   }
-  .table-missed tbody tr:last-child { margin-bottom: 0.9rem; }
-  .table-missed td {
+  .table-missed tbody tr:last-child,
+  .table-late tbody tr:last-child { margin-bottom: 0.9rem; }
+  /* `tbody td` matches the specificity of the base `.table tbody td` rule —
+     a bare `.table-missed td` loses to it and leaves stray cell dividers
+     across every stacked card. */
+  .table-missed tbody td, .table-late tbody td {
     border: 0; padding: 0.2rem 0; min-width: 0;
     overflow: visible; white-space: normal; text-align: left;
   }
-  .table-missed td[data-label]::before {
+  .table-missed td[data-label]::before,
+  .table-late td[data-label]::before {
     content: attr(data-label);
     display: block;
     font-size: 0.66rem;
@@ -1651,23 +1676,38 @@ body.receipt-view-page .receipt-utility-actions .btn-outline:hover {
     text-transform: uppercase;
     color: var(--color-text-faint);
   }
-  .table-missed td[data-label="Booking"]::before { display: none; }
-  .table-missed td[data-label="Booking"] { padding-bottom: 0.35rem; font-size: var(--fs-md); }
+  .table-missed td[data-label="Booking"]::before,
+  .table-late td[data-label="Booking"]::before { display: none; }
+  .table-missed td[data-label="Booking"],
+  .table-late td[data-label="Booking"] { padding-bottom: 0.35rem; font-size: var(--fs-md); }
+  /* Short values sit inline as labelled chips instead of one tall column. */
   .table-missed td[data-label="Stay"],
   .table-missed td[data-label="Refundable"],
-  .table-missed td[data-label="Status"] {
+  .table-missed td[data-label="Status"],
+  .table-late td[data-label="Stay"],
+  .table-late td[data-label="Nights"],
+  .table-late td[data-label="Outstanding"],
+  .table-late td[data-label="Status"] {
     display: inline-block; width: auto; margin-right: 0.9rem;
   }
   .table-missed td[data-label="Stay"]::before,
   .table-missed td[data-label="Refundable"]::before,
-  .table-missed td[data-label="Status"]::before {
+  .table-missed td[data-label="Status"]::before,
+  .table-late td[data-label="Stay"]::before,
+  .table-late td[data-label="Nights"]::before,
+  .table-late td[data-label="Outstanding"]::before,
+  .table-late td[data-label="Status"]::before {
     display: inline-block; margin-right: 0.35rem;
   }
-  .table-missed td[data-label="Actions"] { padding-top: 0.6rem; }
-  .table-missed td[data-label="Actions"].cell-nowrap { white-space: normal; }
-  .table-missed td[data-label="Actions"] .row-actions { justify-content: stretch; gap: 0.4rem; }
-  .table-missed td[data-label="Actions"] .btn { flex: 1 1 0; min-width: 0; justify-content: center; }
-  .table-missed .btn-label { display: inline; }
+  .table-missed td[data-label="Actions"],
+  .table-late td[data-label="Actions"] { padding-top: 0.6rem; }
+  .table-missed td[data-label="Actions"].cell-nowrap,
+  .table-late td[data-label="Actions"].cell-nowrap { white-space: normal; }
+  .table-missed td[data-label="Actions"] .row-actions,
+  .table-late td[data-label="Actions"] .row-actions { justify-content: stretch; gap: 0.4rem; }
+  .table-missed td[data-label="Actions"] .btn,
+  .table-late td[data-label="Actions"] .btn { flex: 1 1 0; min-width: 0; justify-content: center; }
+  .table-missed .btn-label, .table-late .btn-label { display: inline; }
 }
 
 /* Occupancy date modal: the five-column room list restacks into labelled

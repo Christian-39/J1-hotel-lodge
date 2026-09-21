@@ -1,3 +1,4 @@
+# apps/bookings/views_admin.py
 """Staff booking & guest management endpoints (/api/admin/...)."""
 import logging
 from datetime import datetime
@@ -26,6 +27,7 @@ from .serializers_admin import (
     AdminGuestListSerializer,
     AdminGuestUpdateSerializer,
     AssignRoomSerializer,
+    LateArrivalBookingSerializer,
     MissedBookingSerializer,
     RecordActionSerializer,
     RescheduleBookingSerializer,
@@ -568,6 +570,28 @@ class AdminMissedBookingListView(generics.ListAPIView):
         params = self.request.query_params
         if status_param := params.get("status"):
             qs = qs.filter(status=status_param.upper())
+        if date_from := params.get("date_from"):
+            qs = qs.filter(check_in__gte=date_from)
+        if date_to := params.get("date_to"):
+            qs = qs.filter(check_in__lte=date_to)
+        return apply_booking_search(qs, params.get("search"))
+
+
+class AdminLateArrivalBookingListView(generics.ListAPIView):
+    """Confirmed guests who missed their first night but may still check in.
+
+    Derived by the backend (booking_service.late_arrival_bookings_queryset):
+    the check-in date has passed, the check-out date has not, the booking was
+    never checked in and it is longer than one night.
+    """
+
+    permission_classes = [IsStaffRole]
+    serializer_class = LateArrivalBookingSerializer
+
+    def get_queryset(self):
+        booking_service.maybe_expire_stale_pending_bookings()
+        qs = booking_service.late_arrival_bookings_queryset()
+        params = self.request.query_params
         if date_from := params.get("date_from"):
             qs = qs.filter(check_in__gte=date_from)
         if date_to := params.get("date_to"):

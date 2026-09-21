@@ -1,3 +1,4 @@
+# apps/bookings/serializers.py
 """Booking serializers.
 
 Money always serializes as strings ("15000.00") so exact values travel the

@@ -1,3 +1,4 @@
+# apps/audit/views.py
 """Read-only audit log access (ADMIN only). No write/delete endpoints exist."""
 from drf_spectacular.utils import extend_schema
 from rest_framework import generics

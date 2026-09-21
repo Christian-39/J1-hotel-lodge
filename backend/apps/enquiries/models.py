@@ -1,3 +1,4 @@
+# apps/enquiries/models.py
 import hashlib
 import secrets
 from datetime import timedelta

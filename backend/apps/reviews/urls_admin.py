@@ -1,3 +1,4 @@
+# apps/reviews/urls_admin.py
 from django.urls import path
 
 from . import views

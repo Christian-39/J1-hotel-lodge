@@ -1,3 +1,4 @@
+# config/__init__.py
 # Expose the Celery app when Django starts so shared_task decorators bind
 # to it. Guarded so management commands still work if celery is unavailable
 # (it is only required for background processing).

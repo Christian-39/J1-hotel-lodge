@@ -13,7 +13,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="J-ONE Hotel">
-<link rel="stylesheet" href="../css/main.css?v=1.1.0">
+<link rel="stylesheet" href="../css/main.css?v=1.1.1">
 
 </head>
 <body>
@@ -104,6 +104,14 @@
         <div class="field"><label class="field-label" for="st-cancelh">Cancellation deadline (h)</label><input class="input" id="st-cancelh" name="cancellation_deadline_hours" type="number" min="0"></div>
         <div class="field"><label class="field-label" for="st-cancelf">Cancellation fee %</label><input class="input" id="st-cancelf" name="cancellation_fee_percent" type="number" step="0.01" min="0" max="100"></div>
       </div>
+      <div class="field">
+        <label class="check">
+          <input type="checkbox" id="st-restrict-checkin" name="restrict_check_in_to_booked_date">
+          <span>Restrict check-in to the booked check-in date</span>
+        </label>
+        <div class="hint">Blocks <strong>early</strong> arrivals only. A guest who misses the first
+          night can always still be checked in on a later day of their stay.</div>
+      </div>
 
       <h3 style="font-size:var(--fs-md);margin:1.4rem 0 0.9rem;">Hotel policy</h3>
       <div class="field">
@@ -138,16 +146,16 @@
     </div>
   </div>
 </div>
-<script src="../js/config.js?v=1.1.0"></script>
-<script src="../js/utils.js?v=1.1.0"></script>
-<script src="../js/icons.js?v=1.1.0"></script>
-<script src="../js/api.js?v=1.1.0"></script>
-<script src="../js/theme.js?v=1.1.0"></script>
-<script src="../js/ui.js?v=1.1.0"></script>
-<script src="../js/auth.js?v=1.1.0"></script>
-<script src="../js/hotel-data.js?v=1.1.0"></script>
-<script src="../js/navigation.js?v=1.1.0"></script>
-<script src="../js/dashboard.js?v=1.1.0"></script>
+<script src="../js/config.js?v=1.1.1"></script>
+<script src="../js/utils.js?v=1.1.1"></script>
+<script src="../js/icons.js?v=1.1.1"></script>
+<script src="../js/api.js?v=1.1.1"></script>
+<script src="../js/theme.js?v=1.1.1"></script>
+<script src="../js/ui.js?v=1.1.1"></script>
+<script src="../js/auth.js?v=1.1.1"></script>
+<script src="../js/hotel-data.js?v=1.1.1"></script>
+<script src="../js/navigation.js?v=1.1.1"></script>
+<script src="../js/dashboard.js?v=1.1.1"></script>
 <script>
   JONE.ui.initChrome();
   JONE.dashboard.boot("admin");
@@ -170,7 +178,7 @@
     "phone","email","google_maps_url","google_review_url","social_links","check_in_time","check_out_time",
     "min_stay_nights","max_stay_nights","currency","tax_rate_percent","service_fee",
     "deposit_percent","pending_booking_minutes","cancellation_deadline_hours",
-    "cancellation_fee_percent","policy_text"];
+    "cancellation_fee_percent","restrict_check_in_to_booked_date","policy_text"];
 
   function role(){
     // Single source of truth for the signed-in profile: auth.js state.
@@ -184,6 +192,7 @@
       if(!el) return;
       var v = current[k];
       if(k === "social_links") el.value = (v && v.length) ? JSON.stringify(v, null, 0) : "";
+      else if(el.type === "checkbox") el.checked = !!v;
       else if(v != null) el.value = v;
     });
     var updatedEl = document.querySelector("[data-updated-at]");
@@ -243,6 +252,10 @@
             JONE.releaseGuard(btn); return;
           }
         }
+        return;
+      }
+      if(el.type === "checkbox"){
+        if(el.checked !== !!current[k]) payload[k] = el.checked;
         return;
       }
       if(String(v) !== String(current[k] == null ? "" : current[k])) payload[k] = v;
@@ -391,8 +404,8 @@
   load();
 })();
 </script>
-<script src="../js/pwa.js?v=1.1.0"></script>
-<script src="../js/version.js?v=1.1.0"></script>
-<script src="../js/update-checker.js?v=1.1.0"></script>
+<script src="../js/pwa.js?v=1.1.1"></script>
+<script src="../js/version.js?v=1.1.1"></script>
+<script src="../js/update-checker.js?v=1.1.1"></script>
 </body>
 </html>

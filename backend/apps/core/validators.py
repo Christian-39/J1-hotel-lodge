@@ -1,3 +1,4 @@
+# apps/core/validators.py
 """Upload validation — never trust the client's file claims."""
 from pathlib import Path
 

@@ -3,10 +3,11 @@
 # external one) and a Render Redis instance, then fill env vars in the
 # dashboard (see .env.example).
 #
-# EMAIL: transactional email is delivered SYNCHRONOUSLY by the WEB service
-# over Brevo's HTTPS API (BREVO_API_KEY). No worker, queue or Redis is
-# involved in email delivery — Render Free blocks SMTP ports, so HTTPS is the
-# only transport that works there.
+# EMAIL: transactional email is delivered SYNCHRONOUSLY by the WEB service.
+# No worker, queue or Redis is involved. EMAIL_PROVIDER picks the transport;
+# an HTTPS API provider is pinned below because Render Free blocks outbound
+# SMTP ports, so an API is the only transport that works there. Any supported
+# vendor can be swapped in by changing EMAIL_PROVIDER + EMAIL_API_KEY alone.
 #
 # The Celery worker + beat services below exist ONLY for the scheduled
 # booking tasks (pending-booking expiry, automatic checkout, checkout
@@ -56,16 +57,23 @@ envVarGroups:
         sync: false          # optional; parsed from the endpoint when omitted
       - key: MEDIA_CUSTOM_DOMAIN
         sync: false          # optional B2 friendly-URL / CDN host
-      # --- Email (Brevo HTTPS API — synchronous, no worker involved) -------
-      # BREVO_API_KEY: Brevo dashboard → SMTP & API → API keys ("xkeysib-…").
-      # DEFAULT_FROM_EMAIL: MUST be a sender VERIFIED in Brevo, without
-      # surrounding quotes, e.g.  J-one hotel & lodge <agbo33010@gmail.com>
-      # Verify anytime: python manage.py brevo_check --send you@example.com
+      # --- Email (HTTPS API provider — synchronous, no worker involved) ----
+      # EMAIL_PROVIDER: brevo | sendgrid | mailgun | postmark | resend.
+      # EMAIL_API_KEY: created in that vendor's dashboard.
+      # DEFAULT_FROM_EMAIL: MUST be a sender VERIFIED with that vendor, with
+      # no surrounding quotes, e.g.  J-one hotel & lodge <agbo33010@gmail.com>
+      # EMAIL_LOGO_URL: absolute HTTPS logo; required for Brevo and Resend,
+      # whose APIs cannot deliver inline cid: images.
+      # Verify anytime: python manage.py email_check --send you@example.com
       - key: EMAIL_PROVIDER
         value: brevo
-      - key: BREVO_API_KEY
+      - key: EMAIL_API_KEY
         sync: false
+      - key: EMAIL_API_DOMAIN
+        sync: false          # Mailgun only: verified sending domain
       - key: DEFAULT_FROM_EMAIL
+        sync: false
+      - key: EMAIL_LOGO_URL
         sync: false
       - key: HOTEL_NOTIFICATION_EMAILS
         sync: false          # optional; staff inbox(es) for enquiry/cancellation alerts

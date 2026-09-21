@@ -1,3 +1,4 @@
+# tests/test_guest_checkout.py
 from datetime import timedelta
 
 from apps.bookings.models import Booking, Guest

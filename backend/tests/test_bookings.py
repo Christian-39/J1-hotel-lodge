@@ -1,3 +1,4 @@
+# tests/test_bookings.py
 """BOOKING ENGINE tests: creation, double-booking protection, validation,
 cancellation, expiration, guest record isolation (IDOR)."""
 from datetime import timedelta

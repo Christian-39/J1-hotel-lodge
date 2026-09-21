@@ -1,3 +1,4 @@
+# tests-pwa/test_sticky.py
 """Sticky, blurred topbar — dashboard (scrolls in .dash-main) + public header."""
 import sys
 from playwright.sync_api import sync_playwright

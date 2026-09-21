@@ -1,3 +1,4 @@
+# apps/gallery/models.py
 from django.db import models
 
 from apps.core.validators import validate_image_upload

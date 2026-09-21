@@ -1,3 +1,4 @@
+/* js/carousel.js */
 /* ==========================================================================
    carousel.js — homepage hero slideshow.
    Auto-advances with a slow cross-fade, pauses on hover/focus/tab-hidden,

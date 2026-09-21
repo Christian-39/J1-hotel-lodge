@@ -1,3 +1,4 @@
+# config/celery.py
 """Celery application configuration.
 
 Background tasks live in the apps that own them (e.g. apps/bookings/tasks.py,

@@ -1,3 +1,4 @@
+# tests/test_booking_idempotency.py
 """Idempotent booking creation: a lost 201 response must never produce a
 duplicate reservation when the user presses Retry.
 

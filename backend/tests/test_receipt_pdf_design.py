@@ -1,3 +1,4 @@
+# tests/test_receipt_pdf_design.py
 """Tests that the backend receipt PDF reproduces the rc-access design.
 
 The canonical receipt design lives in ``frontend/js/receipt.js`` (the

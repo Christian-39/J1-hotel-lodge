@@ -1,3 +1,4 @@
+# tests-pwa/test_pwa.py
 """Browser verification of the J-ONE PWA (Chromium, real service worker)."""
 import json, sys
 from playwright.sync_api import sync_playwright

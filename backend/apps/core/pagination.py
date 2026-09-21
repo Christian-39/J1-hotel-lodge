@@ -1,3 +1,4 @@
+# apps/core/pagination.py
 """Standard paginated list envelope — identical across every list endpoint."""
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response

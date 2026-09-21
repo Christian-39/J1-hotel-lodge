@@ -1,3 +1,4 @@
+# apps/core/permissions.py
 """Role-based permission classes.
 
 Roles live on the User model and are ALWAYS evaluated server-side; a role

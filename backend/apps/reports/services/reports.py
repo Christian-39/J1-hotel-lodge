@@ -1,3 +1,4 @@
+# apps/reports/services/reports.py
 """Report computations (revenue, occupancy, bookings).
 
 Revenue is computed purely via DB aggregation over Payment rows.

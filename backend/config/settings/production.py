@@ -1,3 +1,4 @@
+# config/settings/production.py
 """Production settings: MySQL, strict security, B2 media, Redis cache.
 
 Fails fast on missing critical configuration instead of silently falling back
@@ -85,31 +86,42 @@ CACHES = {
     }
 }
 
-# --- Email over Brevo's HTTPS transactional API ------------------------------
-# Render's free tier blocks outbound SMTP ports (25/465/587), so production
-# email MUST travel over HTTPS (port 443). Delivery is synchronous — no
-# Celery, no Redis, no worker is involved in the email path.
+# --- Transactional email ------------------------------------------------------
+# Delivery is synchronous — no Celery, no Redis, no worker in the email path.
 #
-# EMAIL_PROVIDER is pinned to "brevo" (unless explicitly overridden) so the
-# presence of Gmail/SMTP EMAIL_* variables can never silently reroute
-# production email through a blocked SMTP port.
+# The provider is pinned explicitly (default: brevo) so the mere presence of
+# Gmail/SMTP EMAIL_* variables can never silently reroute production email
+# through an SMTP port. Render's free tier blocks 25/465/587, so an HTTPS API
+# provider is the safe default there; any SMTP vendor works on hosts that
+# permit outbound SMTP.
 EMAIL_PROVIDER = config("EMAIL_PROVIDER", default="brevo").strip().lower()
-if EMAIL_PROVIDER == "brevo" and not (BREVO_API_KEY or "").strip():  # noqa: F405
+
+from apps.notifications.providers import API_PROVIDERS as _API_PROVIDERS  # noqa: E402
+
+if EMAIL_PROVIDER in _API_PROVIDERS and not (
+    (EMAIL_API_KEY or "").strip() or (BREVO_API_KEY or "").strip()  # noqa: F405
+):
     raise ImproperlyConfigured(
-        "BREVO_API_KEY is required in production: transactional email is sent "
-        "over Brevo's HTTPS API (Render Free blocks SMTP ports). Create the key "
-        "in the Brevo dashboard (SMTP & API → API keys) and set BREVO_API_KEY. "
-        "DEFAULT_FROM_EMAIL must use a sender address verified in Brevo."
+        f"EMAIL_API_KEY is required in production: EMAIL_PROVIDER is "
+        f"'{EMAIL_PROVIDER}', which delivers over an HTTPS API. Create the key "
+        "in that provider's dashboard and set EMAIL_API_KEY. "
+        "DEFAULT_FROM_EMAIL must use a sender address verified with the provider."
     )
-# DEFAULT_FROM_EMAIL must parse to a real address — Brevo rejects the send
+if EMAIL_PROVIDER == "mailgun" and not (EMAIL_API_DOMAIN or "").strip():  # noqa: F405
+    raise ImproperlyConfigured(
+        "EMAIL_API_DOMAIN is required when EMAIL_PROVIDER is 'mailgun' — set it "
+        "to the sending domain configured in Mailgun."
+    )
+
+# DEFAULT_FROM_EMAIL must parse to a real address — providers reject the send
 # otherwise. Fail at boot, not at the first guest receipt.
-from email.utils import parseaddr as _parseaddr
+from email.utils import parseaddr as _parseaddr  # noqa: E402
 _sender_name, _sender_email = _parseaddr(DEFAULT_FROM_EMAIL)  # noqa: F405
 if not _sender_email or "@" not in _sender_email:
     raise ImproperlyConfigured(
         "DEFAULT_FROM_EMAIL is not a valid sender address. Use the form "
-        "'J-one hotel & lodge <agbo33010@gmail.com>' with an address verified "
-        "as a sender in the Brevo dashboard."
+        "'J-one hotel & lodge <sender@example.com>' with an address verified "
+        "as a sender with the configured email provider."
     )
 
 # Celery still powers the NON-EMAIL scheduled hotel tasks (pending-booking

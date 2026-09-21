@@ -1,3 +1,4 @@
+# apps/rooms/serializers.py
 from django.db import transaction
 from rest_framework import serializers
 from rest_framework.relations import MANY_RELATION_KWARGS, ManyRelatedField

@@ -1,3 +1,4 @@
+# apps/reviews/services.py
 """Review business logic — verification, eligibility, creation, invitations.
 
 Security model
@@ -24,7 +25,7 @@ from rest_framework.exceptions import NotFound
 from apps.audit.services import log_action
 from apps.bookings.access import GUEST_TOKEN_HEADER
 from apps.bookings.models import Booking
-from apps.bookings.services.receipt_email import LOGO_CID
+from apps.core.email_assets import logo_context
 from apps.core.emails import queue_email
 from apps.core.exceptions import JOneAPIError
 from apps.core.formatting import format_date
@@ -172,7 +173,7 @@ def send_review_invitation(booking):
         "hotel_location": hotel_location,
         "hotel_phone": hotel.phone,
         "hotel_email": hotel.email,
-        "logo_cid": LOGO_CID,
+        **logo_context(),
         "guest_first_name": booking.guest.first_name,
         "guest_name": booking.guest.full_name,
         "booking_reference": booking.booking_reference,

@@ -1,3 +1,4 @@
+# apps/bookings/apps.py
 from django.apps import AppConfig
 
 

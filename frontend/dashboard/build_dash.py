@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# dashboard/build_dash.py
 """Disabled legacy dashboard generator.
 
 The dashboard pages are now checked-in, API-driven staff console pages. The old

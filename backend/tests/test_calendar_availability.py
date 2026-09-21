@@ -1,3 +1,4 @@
+# tests/test_calendar_availability.py
 """Calendar availability tests for GET /api/rooms/{slug}/unavailable-dates/.
 
 The endpoint powers the room-type-aware booking calendar. Every scenario maps

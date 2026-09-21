@@ -1,3 +1,4 @@
+# tests-pwa/test_multi_room_ui.py
 """Multi-room UI regression suite (spec A + B + C).
 
 Guards the three reported bugs on the REAL pages, with the backend stubbed at

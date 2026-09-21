@@ -1,3 +1,4 @@
+# tests-pwa/test_a11y.py
 """Accessibility of the PWA-specific UI (install controls, banner, offline page)."""
 import sys, urllib.request
 from playwright.sync_api import sync_playwright

@@ -1,3 +1,4 @@
+# config/settings/base.py
 """
 Base settings for the J-ONE HOTEL & LODGE backend.
 
@@ -371,12 +372,22 @@ EMAIL_HOST_PASSWORD = config("EMAIL_HOST_PASSWORD", default="")
 # comfortably below the gunicorn request timeout (60s in production): a 60s
 # email timeout would let one slow provider call get the whole web worker
 # killed mid-request, losing the API response and stranding the EmailLog in
-# SENDING. 20s is ample for Brevo's HTTPS API.
+# SENDING. 20s is ample for any provider's HTTPS API.
 EMAIL_TIMEOUT = config("EMAIL_TIMEOUT", default=20, cast=int)
 # --- Transactional email provider ------------------------------------------
 
-BREVO_API_KEY = config("BREVO_API_KEY", default="")
+# smtp/django/console | brevo | sendgrid | mailgun | postmark | resend.
+# Empty selects an API provider when a key is present, else Django's backend.
 EMAIL_PROVIDER = config("EMAIL_PROVIDER", default="").strip().lower()
+EMAIL_API_KEY = config("EMAIL_API_KEY", default="")
+# Legacy name, still honoured so existing deployments keep working.
+BREVO_API_KEY = config("BREVO_API_KEY", default="")
+# Mailgun needs the sending domain; regions override the base URL.
+EMAIL_API_DOMAIN = config("EMAIL_API_DOMAIN", default="")
+EMAIL_API_BASE_URL = config("EMAIL_API_BASE_URL", default="")
+EMAIL_API_STREAM = config("EMAIL_API_STREAM", default="outbound")
+# Absolute HTTPS logo for providers that cannot deliver inline cid: images.
+EMAIL_LOGO_URL = config("EMAIL_LOGO_URL", default="")
 DEFAULT_FROM_EMAIL = config("DEFAULT_FROM_EMAIL", default="J-one hotel & lodge <agbo33010@gmail.com>")
 
 # address and every provider rejects the sender.

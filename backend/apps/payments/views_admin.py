@@ -1,3 +1,4 @@
+# apps/payments/views_admin.py
 """Staff payment management: list / detail / record offline payments."""
 from django.db.models import Q
 from drf_spectacular.utils import extend_schema

@@ -1,3 +1,4 @@
+/* js/utils.js */
 /* ==========================================================================
    shared utilities — formatting, dates, DOM helpers, events, debounce.
    ========================================================================== */
@@ -67,6 +68,34 @@ const JONE = (() => {
       if (toEnd <= 7) return "Ends in " + toEnd + " days";
     }
     return toStart === 0 ? "Starts today" : "";
+  }
+
+  /* Discount as a short badge label: "20% OFF" / "₦5,000 OFF".
+     Trailing zeros are dropped — the API sends "20.00". */
+  function offerDiscountLabel(offer) {
+    if (!offer) return "";
+    const value = Number(offer.discount_value);
+    if (!Number.isFinite(value) || value <= 0) return "";
+    if (offer.discount_type === "FIXED_AMOUNT") return formatNaira(value) + " OFF";
+    const pct = Number.isInteger(value) ? String(value) : String(parseFloat(value.toFixed(2)));
+    return pct + "% OFF";
+  }
+
+  /* The offer's eligibility rules as short display lines, so a guest can tell
+     whether a deal applies BEFORE reaching the quote step. */
+  function offerCriteria(offer) {
+    if (!offer) return [];
+    const lines = [];
+    const min = Number(offer.min_nights) || 0;
+    const max = Number(offer.max_nights) || 0;
+    if (min > 1) lines.push("Minimum stay: " + min + " nights");
+    else if (min === 1) lines.push("Minimum stay: 1 night");
+    if (max > 0) lines.push("Maximum stay: " + max + (max === 1 ? " night" : " nights"));
+    const types = offer.applicable_room_types || [];
+    lines.push(types.length
+      ? "Applies to: " + types.map(function (t) { return t.name; }).join(", ")
+      : "Applies to all room types");
+    return lines;
   }
 
   function formatDateTime(str) {
@@ -298,7 +327,8 @@ const JONE = (() => {
   }
 
   return {
-    formatNaira, formatDate, formatDateTime, offerPeriod, offerStatusNote, parseISO, hotelTodayISO, todayISO, nightsBetween, setupDateConstraints,
+    formatNaira, formatDate, formatDateTime, offerPeriod, offerStatusNote,
+    offerCriteria, offerDiscountLabel, parseISO, hotelTodayISO, todayISO, nightsBetween, setupDateConstraints,
     $, $$, el, esc, debounce, throttle, storage, bindData, paginate, initials,
     scrollTop, guardSubmit, releaseGuard, appUrl
   };

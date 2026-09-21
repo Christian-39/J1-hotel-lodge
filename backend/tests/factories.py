@@ -1,3 +1,4 @@
+# tests/factories.py
 """Shared test helpers."""
 from datetime import timedelta
 from decimal import Decimal

@@ -1,3 +1,4 @@
+/* js/icons.js */
 /* ==========================================================================
    Icon system — consistent Lucide-style inline SVGs (24x24, stroke 1.75).
    Every icon is usable either as:

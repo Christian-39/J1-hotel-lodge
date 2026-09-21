@@ -1,3 +1,4 @@
+# apps/hotel/models.py
 """Configurable hotel content and operational settings.
 
 These models exist so hotel facts/rules are DATA (editable by an admin), not
@@ -78,6 +79,13 @@ class HotelSettings(models.Model):
     cancellation_fee_percent = models.DecimalField(
         max_digits=5, decimal_places=2, default=Decimal("0.00"),
         validators=[MinValueValidator(Decimal("0.00")), MaxValueValidator(Decimal("100.00"))],
+    )
+    restrict_check_in_to_booked_date = models.BooleanField(
+        default=True,
+        help_text=(
+            "Block check-in before the booked check-in date. Late arrivals "
+            "inside the booked date range are always allowed."
+        ),
     )
 
     created_at = models.DateTimeField(auto_now_add=True)

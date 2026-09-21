@@ -1,3 +1,4 @@
+# tests/test_email_notices.py
 """Tests for the shared branded notice emails + stale EmailLog resolution.
 
 Covers the fixes made to the synchronous email system:

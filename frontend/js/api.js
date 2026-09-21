@@ -1,3 +1,4 @@
+/* js/api.js */
 /* ==========================================================================
    Centralized API layer.
    All HTTP to the Django REST backend flows through here. Pages never build
@@ -578,6 +579,14 @@ const API = (() => {
     return get(base, { params, ...opts });
   }
 
+  /* Confirmed guests who missed the first night but are still inside their
+     booked range, so the desk can still check them in (derived server-side). */
+  function listLateArrivals(params, opts = {}) {
+    const base = resourceEp("lateArrivals");
+    if (!base) throw notConfigured("lateArrivals");
+    return get(base, { params, ...opts });
+  }
+
   /* Individual guest discounts (manager/admin write, all staff read). */
   function listGuestDiscounts(params, opts = {}) { return list("guestDiscounts", params, opts); }
   function createGuestDiscount(payload, opts = {}) { return create("guestDiscounts", payload, opts); }
@@ -675,7 +684,7 @@ const API = (() => {
     getNotifications, getUnreadCount, markNotificationRead, markAllNotificationsRead, getNotification,
     // Staff resources + actions
     list, getOne, create, update, remove,
-    rescheduleBooking, getOccupancyCalendar, listMissedBookings,
+    rescheduleBooking, getOccupancyCalendar, listMissedBookings, listLateArrivals,
     listGuestDiscounts, createGuestDiscount, updateGuestDiscount, deactivateGuestDiscount,
     confirmBooking, staffCancelBooking, checkInBooking, checkOutBooking,
     noShowBooking, assignRoom, recordPayment, searchBookings, searchCheckout,

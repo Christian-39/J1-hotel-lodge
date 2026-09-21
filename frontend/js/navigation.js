@@ -1,3 +1,4 @@
+/* js/navigation.js */
 /* ==========================================================================
    Header / navigation behaviour — sticky transitions, mobile drawer, active
    link highlighting, dashboard sidebar, auto-injected component chrome.

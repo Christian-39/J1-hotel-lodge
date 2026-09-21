@@ -1,3 +1,4 @@
+# apps/hotel/views.py
 """Public hotel content endpoints (no authentication required)."""
 from django.core.cache import cache
 from drf_spectacular.utils import extend_schema

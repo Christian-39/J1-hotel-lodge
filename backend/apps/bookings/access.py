@@ -1,3 +1,4 @@
+# apps/bookings/access.py
 """Single authorization rule for guest-facing booking/payment endpoints.
 
 Who may act on a booking:

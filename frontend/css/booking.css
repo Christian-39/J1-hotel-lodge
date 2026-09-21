@@ -1,3 +1,4 @@
+/* css/booking.css */
 /* ==========================================================================
    Booking flow.
    ========================================================================== */
@@ -158,6 +159,18 @@
   .bk-actions { flex-direction: column-reverse; align-items: stretch; }
   .bk-actions .btn { width: 100%; }
   .bk-actions .bk-actions-primary { margin-left: 0; }
+
+  /* The steps use the full viewport width on a phone: the page gutter alone
+     was eating ~15% of a 320px screen, squeezing inputs and the calendar.
+     Step structure and behaviour are unchanged — only the spacing. */
+  .booking-shell { padding: 1.25rem 0 var(--section-gap); }
+  .booking-shell > .container { padding-left: 0.875rem; padding-right: 0.875rem; }
+  .booking-layout { gap: 1.5rem; }
+  .bk-panel { padding: 0; }
+  .bk-panel .field { margin-bottom: 1rem; }
+  .bk-panel .input,
+  .bk-panel .select { width: 100%; min-height: 46px; }
+  .bk-actions .btn { min-height: 48px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

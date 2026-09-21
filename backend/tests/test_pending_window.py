@@ -1,3 +1,4 @@
+# tests/test_pending_window.py
 """End-to-end tests for the ADMIN-CONFIGURABLE PENDING WINDOW.
 
 The requirement: "Pending window (min)" on the settings page must genuinely

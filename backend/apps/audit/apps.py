@@ -1,3 +1,4 @@
+# apps/audit/apps.py
 from django.apps import AppConfig
 
 

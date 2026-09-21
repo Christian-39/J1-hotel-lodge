@@ -1,3 +1,4 @@
+# tests/test_admin_list_pagination.py
 """Admin list pagination pins (DRF StandardPagination reused as-is).
 
 Covers the endpoints the staff console paginates client-side:

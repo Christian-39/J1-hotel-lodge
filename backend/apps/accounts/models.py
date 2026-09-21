@@ -1,3 +1,4 @@
+# apps/accounts/models.py
 """Custom user model — email is the sole authentication identifier."""
 from django.contrib.auth.base_user import AbstractBaseUser, BaseUserManager
 from django.contrib.auth.models import PermissionsMixin

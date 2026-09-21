@@ -1,3 +1,4 @@
+# apps/reviews/views.py
 """Review endpoints.
 
 Public (guest-facing, heavily throttled, verification-gated):

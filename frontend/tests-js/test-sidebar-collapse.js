@@ -1,3 +1,4 @@
+/* tests-js/test-sidebar-collapse.js */
 /* Desktop sidebar collapse: pure mapper functions in dashboard.js.
    behaviour covers: initial paint from a saved/corrupt preference, toggling,
    and aria-label/title copy — the same logic the runtime click path uses. */

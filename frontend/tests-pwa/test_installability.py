@@ -1,3 +1,4 @@
+# tests-pwa/test_installability.py
 """Ask Chrome itself whether the app is installable (CDP Manifest domain)."""
 import json
 from playwright.sync_api import sync_playwright

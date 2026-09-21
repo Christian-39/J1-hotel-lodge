@@ -1,3 +1,4 @@
+# tests/test_multi_room_quantity_regression.py
 """Regression tests for the multi-room QUANTITY bug (₦60,000 shown / 1 room
 recorded for a 2-room stay) and the payment leg that carries the quantity.
 

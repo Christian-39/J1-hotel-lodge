@@ -1,3 +1,4 @@
+# tests/test_query_efficiency.py
 """Task 24: the list endpoints this project added or changed must not issue a
 query per row. Each test asserts the query count is stable as the number of
 rows grows — the only reliable way to catch an N+1 regression.

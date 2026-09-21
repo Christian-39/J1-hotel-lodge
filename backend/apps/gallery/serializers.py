@@ -1,3 +1,4 @@
+# apps/gallery/serializers.py
 from rest_framework import serializers
 
 from apps.core.storage import absolute_media_url

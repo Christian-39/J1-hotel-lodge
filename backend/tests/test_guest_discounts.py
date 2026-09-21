@@ -1,3 +1,4 @@
+# tests/test_guest_discounts.py
 """Individual guest discounts: precedence, immutability, permissions, pricing.
 
 The hotel can attach a personal discount to one guest. The rules pinned here:

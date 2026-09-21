@@ -1,3 +1,4 @@
+/* js/dashboard.js */
 /* ==========================================================================
    dashboard.js — shared staff dashboard behaviours.
    Nav rendering, sidebar, role-aware menus, KPI/data rendering helpers,
@@ -280,8 +281,27 @@
     let lastCount = null;
     let inflight = null;
 
+    /* Mirror the unread count onto the installed app icon (Badging API).
+       Feature-detected and failure-tolerant: unsupported browsers (all of
+       iOS Safari, Firefox) simply keep the in-page badge.
+       LIMITATION: this only runs while the app is open. Badging a CLOSED app
+       needs a push subscription + service-worker push handler, which this
+       project deliberately does not run. */
+    function paintAppBadge(count) {
+      try {
+        if (count > 0 && typeof navigator.setAppBadge === "function") {
+          navigator.setAppBadge(count).catch(() => {});
+        } else if (typeof navigator.clearAppBadge === "function") {
+          navigator.clearAppBadge().catch(() => {});
+        }
+      } catch (_) { /* never let badging break the dashboard */ }
+    }
+
+    function clearAppBadge() { paintAppBadge(0); }
+
     function paint(count) {
       lastCount = count;
+      paintAppBadge(count);
       const label = count > 99 ? "99+" : String(count);
       document.querySelectorAll("[data-notif-badge]").forEach((el) => {
         el.textContent = label;
@@ -316,7 +336,7 @@
     // here instead of causing another request.
     function set(count) { paint(Math.max(0, Number(count) || 0)); }
 
-    return { refresh, set, get: () => lastCount };
+    return { refresh, set, get: () => lastCount, paintAppBadge, clearAppBadge };
   })();
 
   /* -------------------------- Mobile bottom nav ---------------------------

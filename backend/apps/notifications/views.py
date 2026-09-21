@@ -1,3 +1,4 @@
+# apps/notifications/views.py
 from django.db.models import Q
 from drf_spectacular.utils import extend_schema
 from rest_framework import generics, status

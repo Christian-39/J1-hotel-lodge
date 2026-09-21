@@ -1,3 +1,4 @@
+/* js/site-images.js */
 /* ==========================================================================
    site-images.js — admin-configured website images with graceful fallback.
 

@@ -1,3 +1,4 @@
+# tests/test_staff.py
 """STAFF OPERATIONS tests (spec §41–§57, §84): role gates, dashboard, front-desk
 actions, manual bookings, room assignment, settings, users admin, audit trail."""
 from datetime import timedelta

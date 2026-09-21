@@ -1,3 +1,4 @@
+# apps/core/management/commands/check_media_storage.py
 """Verify the ACTIVE media storage backend by performing a real round-trip.
 
 A configuration can look correct while Django is still writing to the local

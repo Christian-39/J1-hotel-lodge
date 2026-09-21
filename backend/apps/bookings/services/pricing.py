@@ -1,3 +1,4 @@
+# apps/bookings/services/pricing.py
 """Authoritative pricing engine.
 
 Every Naira amount on a booking originates here. The frontend may display

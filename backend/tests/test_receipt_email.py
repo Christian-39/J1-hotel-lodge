@@ -1,3 +1,4 @@
+# tests/test_receipt_email.py
 """End-to-end tests for the delivery-tracked receipt/email pipeline.
 
 These cover the whole chain the bug lived in: staff triggers send → the API
@@ -111,7 +112,7 @@ class ReceiptEmailTests(BaseAPITestCase):
     def test_smtp_failure_marks_failed_and_returns_502(self):
         self.auth(self.staff)
         with mock.patch(
-            "apps.notifications.tasks.EmailMessage.send",
+            "apps.notifications.providers.EmailMessage.send",
             side_effect=__import__("smtplib").SMTPAuthenticationError(535, b"bad creds"),
         ):
             res = self.client.post(self._url())
@@ -166,7 +167,7 @@ class ReceiptEmailTests(BaseAPITestCase):
         self.auth(self.staff)
         import smtplib
         with mock.patch(
-            "apps.notifications.tasks.EmailMessage.send",
+            "apps.notifications.providers.EmailMessage.send",
             side_effect=smtplib.SMTPServerDisconnected("connection dropped"),
         ):
             res = self.client.post(self._url())
@@ -184,7 +185,7 @@ class ReceiptEmailTests(BaseAPITestCase):
             to_email="guest@example.com", subject="s", body="b",
         )
         with mock.patch(
-            "apps.notifications.tasks.EmailMessage.send",
+            "apps.notifications.providers.EmailMessage.send",
             side_effect=smtplib.SMTPAuthenticationError(535, b"x"),
         ):
             result = deliver_email_log(log.pk)
@@ -233,7 +234,7 @@ class ReceiptEmailTests(BaseAPITestCase):
         self.auth(self.staff)
         import smtplib
         with mock.patch(
-            "apps.notifications.tasks.EmailMessage.send",
+            "apps.notifications.providers.EmailMessage.send",
             side_effect=smtplib.SMTPAuthenticationError(535, b"x"),
         ):
             self.client.post(self._url())

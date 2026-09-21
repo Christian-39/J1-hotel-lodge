@@ -13,7 +13,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="J-ONE Hotel">
-<link rel="stylesheet" href="../css/main.css?v=1.1.0">
+<link rel="stylesheet" href="../css/main.css?v=1.1.1">
 
 </head>
 <body>
@@ -54,6 +54,25 @@
 
 <section class="panel">
   <div class="panel-head">
+    <h2>Late / missed first-night arrivals</h2>
+  </div>
+  <div class="panel-body no-pad">
+    <p class="caption" style="padding:0.75rem 1.1rem 0;">
+      These guests missed their first night but their stay is still running, so they can
+      still be checked in. Missed nights are not refunded automatically.</p>
+    <div class="table-wrap"><table class="table table-late">
+      <thead><tr>
+        <th>Booking</th><th>Guest</th><th class="hide-sm num">Rooms</th><th>Stay</th>
+        <th class="num">Nights</th><th class="hide-sm num">Paid</th>
+        <th class="num">Outstanding</th><th>Status</th><th></th>
+      </tr></thead>
+      <tbody data-tbody="late"></tbody>
+    </table></div>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="panel-head">
     <h2>Guests who never arrived</h2>
   </div>
   <div class="filter-bar">
@@ -89,16 +108,16 @@
     </div>
   </div>
 </div>
-<script src="../js/config.js?v=1.1.0"></script>
-<script src="../js/utils.js?v=1.1.0"></script>
-<script src="../js/icons.js?v=1.1.0"></script>
-<script src="../js/api.js?v=1.1.0"></script>
-<script src="../js/theme.js?v=1.1.0"></script>
-<script src="../js/ui.js?v=1.1.0"></script>
-<script src="../js/auth.js?v=1.1.0"></script>
-<script src="../js/hotel-data.js?v=1.1.0"></script>
-<script src="../js/navigation.js?v=1.1.0"></script>
-<script src="../js/dashboard.js?v=1.1.0"></script>
+<script src="../js/config.js?v=1.1.1"></script>
+<script src="../js/utils.js?v=1.1.1"></script>
+<script src="../js/icons.js?v=1.1.1"></script>
+<script src="../js/api.js?v=1.1.1"></script>
+<script src="../js/theme.js?v=1.1.1"></script>
+<script src="../js/ui.js?v=1.1.1"></script>
+<script src="../js/auth.js?v=1.1.1"></script>
+<script src="../js/hotel-data.js?v=1.1.1"></script>
+<script src="../js/navigation.js?v=1.1.1"></script>
+<script src="../js/dashboard.js?v=1.1.1"></script>
 <script>
   JONE.ui.initChrome();
   JONE.dashboard.boot("receptionist");
@@ -167,6 +186,81 @@
     }).join("");
     JONE.icons.inject(tbody);
   }
+
+  /* ---- Late arrivals: still inside the booked range, can still check in ---- */
+  var lateTbody = document.querySelector("[data-tbody=late]");
+  var LATE_COLS = 9;
+
+  /* Verified GET /api/admin/bookings/late-arrivals/ row
+     (LateArrivalBookingSerializer): the admin booking list fields plus
+     nights_missed, can_check_in and check_in_blocked_reason. Eligibility and
+     the blocked reason are both decided by the backend. */
+  function renderLate(list){
+    lateTbody.innerHTML = list.map(function(b){
+      var ref = refOf(b);
+      var due = Number(b.amount_due || 0);
+      var missed = Number(b.nights_missed || 0);
+      var blocked = !b.can_check_in;
+      return "<tr>" +
+        '<td data-label="Booking" class="cell-nowrap"><a href="booking-details.html?ref=' +
+          encodeURIComponent(ref) + '">' + JONE.esc(ref) + "</a></td>" +
+        '<td data-label="Guest">' + JONE.esc(b.guest_name || "\u2014") +
+          (b.guest_phone ? '<div class="caption">' + JONE.esc(b.guest_phone) + "</div>" : "") + "</td>" +
+        '<td data-label="Rooms" class="hide-sm num">' + JONE.esc(b.number_of_rooms || 1) + "</td>" +
+        '<td data-label="Stay" class="cell-nowrap"><span class="stay-from">' +
+          JONE.esc(JONE.formatDate(b.check_in, "mid")) + "</span> \u2192 <span class=\"stay-to\">" +
+          JONE.esc(JONE.formatDate(b.check_out, "mid")) + "</span></td>" +
+        '<td data-label="Nights" class="num cell-nowrap">' + JONE.esc(b.nights || 0) +
+          (missed ? '<div class="caption">' + missed + " missed</div>" : "") + "</td>" +
+        '<td data-label="Paid" class="hide-sm num cell-nowrap">' +
+          JONE.esc(JONE.formatNaira(b.amount_paid || 0)) + "</td>" +
+        '<td data-label="Outstanding" class="num cell-nowrap">' +
+          JONE.esc(JONE.formatNaira(due)) + "</td>" +
+        '<td data-label="Status">' + JONE.dashboard.statusPill(b.status) + "</td>" +
+        '<td data-label="Actions" class="cell-nowrap"><div class="row-actions row-actions-end">' +
+          '<button class="btn btn-sm btn-accent" type="button" data-late-checkin="' + JONE.esc(ref) + '"' +
+            (blocked ? ' disabled title="' + JONE.esc(b.check_in_blocked_reason || "Check-in is not available.") + '"'
+                     : ' title="Check in"') +
+            ' aria-label="Check in ' + JONE.esc(ref) + '">' +
+            '<span data-icon="logIn" data-size="13"></span> <span class="btn-label">Check in</span></button>' +
+        "</div></td></tr>";
+    }).join("");
+    JONE.icons.inject(lateTbody);
+  }
+
+  async function loadLate(){
+    if (!lateTbody) return;
+    DATA.loading(lateTbody);
+    try {
+      var res = await window.API.listLateArrivals({ page_size: 100 });
+      var list = window.API.normalizeList(res.data, res.pagination).items || [];
+      if (!list.length) {
+        DATA.empty(lateTbody, "checkCircle", "No late arrivals",
+          "Nobody is mid-stay without having checked in.", LATE_COLS);
+        return;
+      }
+      renderLate(list);
+    } catch (err) {
+      DATA.error(lateTbody, "Late arrivals couldn't be loaded",
+        (err && err.message) || "Please try again in a moment.", LATE_COLS);
+    }
+  }
+
+  document.addEventListener("click", async function(e){
+    var btn = e.target.closest("[data-late-checkin]");
+    if (!btn || btn.disabled) return;
+    var ref = btn.getAttribute("data-late-checkin");
+    if (!JONE.guardSubmit(btn)) return;
+    try {
+      await window.API.checkInBooking(ref);
+      JONE.ui.toast("Guest checked in.", "success");
+      loadLate();
+      load();
+    } catch (err) {
+      JONE.ui.toast((err && err.message) || "Check-in failed.", "danger");
+    }
+    JONE.releaseGuard(btn);
+  });
 
   function filters(){
     var f = { page: state.page, page_size: JONE.dashboard.pageSize() };
@@ -278,11 +372,12 @@
   });
 
   load(1);
+  loadLate();
 })();
 
 </script>
-<script src="../js/pwa.js?v=1.1.0"></script>
-<script src="../js/version.js?v=1.1.0"></script>
-<script src="../js/update-checker.js?v=1.1.0"></script>
+<script src="../js/pwa.js?v=1.1.1"></script>
+<script src="../js/version.js?v=1.1.1"></script>
+<script src="../js/update-checker.js?v=1.1.1"></script>
 </body>
 </html>

@@ -1,3 +1,4 @@
+# apps/core/formatting.py
 """Presentation-only formatting helpers for guest-facing documents/emails.
 
 These functions never touch business logic — they take already-computed values

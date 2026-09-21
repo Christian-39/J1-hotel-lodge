@@ -1,3 +1,4 @@
+# tests/test_synchronous_email.py
 """Payment-verification email: synchronous delivery after Paystack success.
 
 Covers the required behaviour after the email queue was removed:
@@ -128,7 +129,7 @@ class VerificationEmailTests(BaseAPITestCase):
 
         mock_verify.return_value = self._payload()
         with mock.patch(
-            "apps.notifications.tasks.EmailMessage.send",
+            "apps.notifications.providers.EmailMessage.send",
             side_effect=smtplib.SMTPAuthenticationError(535, b"bad creds"),
         ):
             result = self._verify()

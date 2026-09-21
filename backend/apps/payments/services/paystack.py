@@ -1,3 +1,4 @@
+# apps/payments/services/paystack.py
 """Strict, server-only Paystack API wrapper.
 
 The secret key is read from environment-backed Django settings at call time and

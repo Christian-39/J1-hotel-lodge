@@ -1,3 +1,4 @@
+# config/asgi.py
 """ASGI config (not used for serving, provided for completeness)."""
 import os
 

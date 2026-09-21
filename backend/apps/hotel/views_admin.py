@@ -1,3 +1,4 @@
+# apps/hotel/views_admin.py
 """Staff hotel content management: settings, policies, facilities."""
 import logging
 

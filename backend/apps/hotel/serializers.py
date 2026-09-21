@@ -1,3 +1,4 @@
+# apps/hotel/serializers.py
 from django.conf import settings as django_settings
 from rest_framework import serializers
 
@@ -60,7 +61,8 @@ class HotelSettingsAdminSerializer(serializers.ModelSerializer):
             "check_in_time", "check_out_time", "min_stay_nights", "max_stay_nights",
             "currency", "tax_rate_percent", "service_fee", "deposit_percent",
             "pending_booking_minutes", "cancellation_deadline_hours",
-            "cancellation_fee_percent", "updated_at",
+            "cancellation_fee_percent", "restrict_check_in_to_booked_date",
+            "updated_at",
         ]
         read_only_fields = ["updated_at"]
 

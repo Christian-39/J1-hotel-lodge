@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# dashboard/shell.py
 """Dashboard shell builders. Dashboard pages share a dense ops shell that is
 distinct from the public marketing site. Assets live one level up (../)."""
 

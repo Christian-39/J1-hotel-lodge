@@ -1,3 +1,4 @@
+# apps/audit/models.py
 """Immutable audit trail for sensitive administrative and financial actions."""
 from django.conf import settings
 from django.db import models

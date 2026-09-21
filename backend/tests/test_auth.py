@@ -1,3 +1,4 @@
+# tests/test_auth.py
 """AUTHENTICATION tests (spec §93): registration, login, refresh, logout,
 passwords, permissions, role-escalation prevention."""
 from django.contrib.auth.tokens import default_token_generator

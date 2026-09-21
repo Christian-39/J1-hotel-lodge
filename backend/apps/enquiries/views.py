@@ -1,3 +1,4 @@
+# apps/enquiries/views.py
 import logging
 
 from drf_spectacular.utils import extend_schema

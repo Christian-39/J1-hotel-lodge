@@ -1,3 +1,4 @@
+# apps/notifications/email_models.py
 """Delivery-tracked email log.
 
 Every transactional email (receipts, booking confirmations, cancellations,

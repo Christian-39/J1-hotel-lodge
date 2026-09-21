@@ -1,3 +1,4 @@
+# tests/test_payments.py
 """PAYMENT tests (spec §32–§36, §88–§89): initialization, verified success,
 failures, amount mismatch, webhooks + signatures, idempotency, offline records."""
 import hashlib

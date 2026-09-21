@@ -1,3 +1,4 @@
+# apps/bookings/services/availability.py
 """Authoritative availability engine.
 
 A room blocks a requested [check_in, check_out) range when it has an ACTIVE

@@ -1,3 +1,4 @@
+# tests/test_dashboard_features.py
 """DASHBOARD + BOOKING-FLOW FEATURE tests.
 
 Covers the operational search, checkout search, payment validation, role

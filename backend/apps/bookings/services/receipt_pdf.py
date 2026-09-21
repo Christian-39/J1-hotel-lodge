@@ -1,10 +1,11 @@
+# apps/bookings/services/receipt_pdf.py
 """Server-side receipt PDF generation.
 
-The Celery worker is the source of truth for the receipt attachment: it
-regenerates the PDF from the database (booking + successful payments) and never
-depends on anything the browser produced. Generation is done entirely in
-memory (``BytesIO``) so there are no temporary files that could be deleted
-before, or be inaccessible to, the worker.
+The database is the source of truth for the receipt attachment: the PDF is
+regenerated from the booking and its successful payments at send time, through
+the same ``ReceiptSerializer`` the emailed HTML uses, so the two can never
+disagree. Nothing the browser produced is trusted. Generation happens entirely
+in memory (``BytesIO``), so there are no temporary files to clean up.
 
 The layout deliberately mirrors, pixel-for-pixel, the "Access-style" receipt the
 frontend renders in ``frontend/js/receipt.js`` (the ``rc-access`` design). That

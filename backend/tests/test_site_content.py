@@ -1,3 +1,4 @@
+# tests/test_site_content.py
 """Hotel policy override + admin-configurable website images.
 
 Covers:

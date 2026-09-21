@@ -1,3 +1,4 @@
+/* tests-js/test-pagination.js */
 /* Tests for the shared dashboard list pagination:
    - js/api.js normalizeList() totalPages derivation
    - js/dashboard.js paginationHTML() (the ONE reusable pager markup builder)

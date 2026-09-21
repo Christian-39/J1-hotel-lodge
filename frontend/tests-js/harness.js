@@ -1,3 +1,4 @@
+/* tests-js/harness.js */
 /* Minimal DOM/browser stubs shared by the Node-based frontend tests.
    Loaded into a `vm` context so the real production scripts run unmodified. */
 "use strict";

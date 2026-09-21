@@ -1,3 +1,4 @@
+# apps/bookings/services/booking_service.py
 """Booking business operations.
 
 All multi-step, integrity-sensitive operations live here — views stay thin.
@@ -801,16 +802,43 @@ def cancel_booking(
 # ---------------------------------------------------------------------------
 # Front-desk operations
 # ---------------------------------------------------------------------------
+def can_check_in_today(booking, *, today=None, settings_obj=None):
+    """Whether the front desk may check this booking in right now.
+
+    Returns ``(allowed, reason)``. The rules, in the order staff see them:
+
+    * only CONFIRMED bookings (CHECKED_IN is treated as an idempotent yes);
+    * never before the booked check-in date when the hotel restricts early
+      arrivals (HotelSettings.restrict_check_in_to_booked_date, default on);
+    * LATE ARRIVALS ARE ALLOWED: a guest who missed the first night may still
+      check in on any later day of the booked range;
+    * never once the booked check-out date has passed.
+    """
+    settings_obj = settings_obj or HotelSettings.get_settings()
+    today = today or hotel_today()
+
+    if booking.status == Booking.Status.CHECKED_IN:
+        return True, ""
+    if booking.status != Booking.Status.CONFIRMED:
+        return False, "Only CONFIRMED bookings can be checked in."
+    if today > booking.check_out:
+        return False, (
+            f"This booking's stay ended on {booking.check_out}; it can no longer "
+            "be checked in."
+        )
+    if today < booking.check_in and settings_obj.restrict_check_in_to_booked_date:
+        return False, f"Check-in is scheduled for {booking.check_in}."
+    return True, ""
+
+
 @transaction.atomic
 def check_in_booking(booking: Booking, *, staff_user, request=None):
     booking = refresh_expired_pending(booking)
     if booking.status == Booking.Status.CHECKED_IN:
         return booking  # idempotent retry
-    if booking.status != Booking.Status.CONFIRMED:
-        raise BookingStateError("Only CONFIRMED bookings can be checked in.")
-    today = hotel_today()
-    if today < booking.check_in:
-        raise BookingStateError(f"Check-in is scheduled for {booking.check_in}.")
+    allowed, reason = can_check_in_today(booking)
+    if not allowed:
+        raise BookingStateError(reason)
 
     assignments = list(booking.room_assignments.select_related("room").select_for_update())
     if len(assignments) < booking.number_of_rooms:
@@ -1249,10 +1277,6 @@ def modify_booking(booking: Booking, *, staff_user, data: dict, request=None):
 # ---------------------------------------------------------------------------
 # Occupancy calendar (staff)
 # ---------------------------------------------------------------------------
-# Statuses that represent REAL occupancy of a physical room. Cancelled, expired
-# and no-show bookings never occupy a room; PENDING holds are excluded too —
-# an unpaid hold is inventory pressure, not an occupied room. This mirrors the
-# availability engine's BLOCKING_STATUSES minus the transient pending hold.
 # Bookings that never became a stay. Excluded from any "how many bookings does
 # this guest have" figure shown to staff.
 UNCOUNTED_BOOKING_STATUSES = (
@@ -1260,6 +1284,10 @@ UNCOUNTED_BOOKING_STATUSES = (
     Booking.Status.EXPIRED,
 )
 
+# Statuses that represent REAL occupancy of a physical room. Cancelled, expired
+# and no-show bookings never occupy a room; PENDING holds are excluded too —
+# an unpaid hold is inventory pressure, not an occupied room. This mirrors the
+# availability engine's BLOCKING_STATUSES minus the transient pending hold.
 OCCUPANCY_STATUSES = (
     Booking.Status.CONFIRMED,
     Booking.Status.CHECKED_IN,
@@ -1379,6 +1407,40 @@ def missed_bookings_queryset(*, now=None, settings_obj=None):
     if now.time() >= settings_obj.check_out_time:
         deadline_passed |= Q(check_in=today)
     return qs.filter(deadline_passed).filter(checked_in_at__isnull=True).order_by("check_in")
+
+
+def late_arrival_bookings_queryset(*, today=None):
+    """Confirmed multi-night bookings that can STILL be checked in late.
+
+    The guest missed the first night but the stay is not over, so the front
+    desk must be able to welcome them. Qualifying bookings have:
+
+    * a check-in date that has passed;
+    * a check-out date that has not (arrival is still inside the booked range);
+    * status CONFIRMED (never cancelled/expired/no-show/checked-out);
+    * no check-in recorded yet;
+    * more than one night.
+
+    This deliberately overlaps ``missed_bookings_queryset``: the same booking
+    is both "did not arrive on time" and "can still be rescued", and the two
+    desk tables answer different questions.
+    """
+    today = today or hotel_today()
+    return (
+        Booking.objects.select_related("guest", "room_type")
+        .prefetch_related(
+            Prefetch("room_assignments",
+                     queryset=BookingRoom.objects.select_related("room"))
+        )
+        .filter(
+            status=Booking.Status.CONFIRMED,
+            checked_in_at__isnull=True,
+            check_in__lt=today,
+            check_out__gte=today,
+        )
+        .exclude(check_out=F("check_in") + timedelta(days=1))
+        .order_by("check_in")
+    )
 
 
 @transaction.atomic

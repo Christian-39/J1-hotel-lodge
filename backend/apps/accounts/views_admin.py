@@ -1,3 +1,4 @@
+# apps/accounts/views_admin.py
 """Administrator-only user & staff account management (ADMIN role)."""
 import logging
 

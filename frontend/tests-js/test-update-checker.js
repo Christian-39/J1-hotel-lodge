@@ -1,3 +1,4 @@
+/* tests-js/test-update-checker.js */
 /* Tests for js/update-checker.js — the deployment update detector.
    Run: node --test tests-js/test_update_checker.js   (from frontend/) */
 "use strict";

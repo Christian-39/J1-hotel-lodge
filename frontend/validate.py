@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# validate.py
 """J-ONE frontend validator.
 Checks every HTML page for: doctype, balanced tags, unresolved placeholders,
 missing local assets, referenced JS syntax, inline event handlers, and the

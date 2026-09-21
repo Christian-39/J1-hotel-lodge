@@ -1,3 +1,4 @@
+# apps/core/management/commands/smtp_check.py
 """Diagnose real SMTP delivery end-to-end.
 
 Unlike the application's normal path (which reports SENT once the SMTP server

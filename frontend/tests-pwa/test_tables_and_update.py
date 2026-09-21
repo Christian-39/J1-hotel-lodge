@@ -1,3 +1,4 @@
+# tests-pwa/test_tables_and_update.py
 """Production-fix verification: responsive dashboard tables + update flow.
 
 1. TABLES — bookings/payments/audit-logs tables are populated with extreme

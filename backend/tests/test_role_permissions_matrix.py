@@ -1,3 +1,4 @@
+# tests/test_role_permissions_matrix.py
 """Task 23: one place that pins the role matrix for every endpoint this
 project added, so a permission regression fails loudly rather than quietly
 handing a receptionist manager powers (or locking staff out of a read).

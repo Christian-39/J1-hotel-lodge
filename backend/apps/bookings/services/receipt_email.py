@@ -1,3 +1,4 @@
+# apps/bookings/services/receipt_email.py
 """Build the guest-facing payment-receipt email (subject + text + HTML).
 
 This module owns *presentation only*. It consumes the already-authoritative
@@ -22,11 +23,9 @@ from django.template.loader import render_to_string
 
 from apps.core.formatting import format_date, format_datetime, format_money
 
-# Referenced by the HTML template as ``cid:jone-logo``. The delivery worker
-# embeds the bundled official logo under this Content-ID so the mark renders in
-# email clients without exposing any local filesystem path or hotlinking a URL
-# that could break.
-LOGO_CID = "jone-logo"
+# Logo reference strategy (cid: vs hosted URL) depends on the active provider;
+# apps.core.email_assets owns that decision. Re-exported for older imports.
+from apps.core.email_assets import LOGO_CID, logo_context  # noqa: E402,F401
 
 
 # Human-readable status presentation. Each entry carries an accessible label, a
@@ -35,11 +34,11 @@ LOGO_CID = "jone-logo"
 # payment_status values and the terminal booking status (cancelled).
 _STATUS_PRESENTATION = {
     "PAID": ("Paid in full", "PAID", "✓", "paid"),
-    "PARTIALLY_PAID": ("Partially paid", "PARTIALLY PAID", "◑", "partial"),
+    "PARTIALLY_PAID": ("Partially paid", "PARTIALLY PAID", "½", "partial"),
     "UNPAID": ("Awaiting payment", "PENDING", "•", "pending"),
     "PENDING": ("Awaiting payment", "PENDING", "•", "pending"),
-    "PARTIALLY_REFUNDED": ("Partially refunded", "PARTIALLY REFUNDED", "↺", "refunded"),
-    "REFUNDED": ("Refunded", "REFUNDED", "↺", "refunded"),
+    "PARTIALLY_REFUNDED": ("Partially refunded", "PARTIALLY REFUNDED", "←", "refunded"),
+    "REFUNDED": ("Refunded", "REFUNDED", "←", "refunded"),
     "FAILED": ("Payment failed", "FAILED", "✕", "failed"),
     "CANCELLED": ("Booking cancelled", "CANCELLED", "✕", "cancelled"),
 }
@@ -64,8 +63,8 @@ _PAYMENT_STATUS_LABELS = {
     "SUCCESS": ("Successful", "✓"),
     "PENDING": ("Pending", "•"),
     "FAILED": ("Failed", "✕"),
-    "REFUNDED": ("Refunded", "↺"),
-    "PARTIALLY_REFUNDED": ("Partially refunded", "↺"),
+    "REFUNDED": ("Refunded", "←"),
+    "PARTIALLY_REFUNDED": ("Partially refunded", "←"),
 }
 
 
@@ -133,7 +132,7 @@ def build_receipt_context(receipt):
         "hotel_location": _hotel_location(hotel),
         "hotel_phone": hotel.get("phone") or "",
         "hotel_email": hotel.get("email") or "",
-        "logo_cid": LOGO_CID,
+        **logo_context(),
 
         "booking_reference": receipt.get("booking_reference") or "",
         "receipt_reference": receipt.get("receipt_reference") or receipt.get("booking_reference") or "",

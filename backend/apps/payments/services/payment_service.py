@@ -1,3 +1,4 @@
+# apps/payments/services/payment_service.py
 """Payment orchestration — initialization, verification, webhooks, offline records.
 
 Invariants guarded here:

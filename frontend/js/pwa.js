@@ -1,3 +1,4 @@
+/* js/pwa.js */
 /* ==========================================================================
    PWA layer — service-worker registration, safe update handling, and the
    hotel-branded install experience.

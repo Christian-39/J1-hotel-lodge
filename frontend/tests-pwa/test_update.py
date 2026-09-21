@@ -1,3 +1,4 @@
+# tests-pwa/test_update.py
 """Verify the SW update lifecycle: new version waits, old caches are purged,
 and activation only happens when the page asks for it."""
 import re, sys, time

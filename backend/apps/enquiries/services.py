@@ -1,3 +1,4 @@
+# apps/enquiries/services.py
 """Structured enquiry and cancellation/refund workflow services.
 
 The public Contact form remains the only guest-facing cancellation entry point.

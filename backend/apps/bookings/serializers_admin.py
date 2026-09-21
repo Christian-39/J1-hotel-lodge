@@ -1,3 +1,4 @@
+# apps/bookings/serializers_admin.py
 """Staff serializers for booking and guest management."""
 from rest_framework import serializers
 
@@ -40,6 +41,10 @@ class AdminBookingDetailSerializer(AdminBookingListSerializer):
     guest = GuestReadSerializer(read_only=True)
     room_assignments = BookingRoomSerializer(many=True, read_only=True)
     offer_title = serializers.SerializerMethodField()
+    # Lets the desk UI disable the Check in action with the real reason
+    # instead of letting staff click into a 409.
+    can_check_in = serializers.SerializerMethodField()
+    check_in_blocked_reason = serializers.SerializerMethodField()
 
     class Meta(AdminBookingListSerializer.Meta):
         fields = AdminBookingListSerializer.Meta.fields + [
@@ -48,10 +53,25 @@ class AdminBookingDetailSerializer(AdminBookingListSerializer):
             "fee_amount", "required_payment", "refund_amount", "offer_title",
             "special_requests", "internal_notes", "cancellation_reason",
             "expires_at", "checked_in_at", "checked_out_at", "cancelled_at", "updated_at",
+            "can_check_in", "check_in_blocked_reason",
         ]
 
     def get_offer_title(self, obj):
         return obj.offer.title if obj.offer_id else None
+
+    def _check_in_state(self, obj):
+        from apps.bookings.services.booking_service import can_check_in_today
+
+        cache = self.context.setdefault("_check_in_cache", {})
+        if obj.pk not in cache:
+            cache[obj.pk] = can_check_in_today(obj)
+        return cache[obj.pk]
+
+    def get_can_check_in(self, obj) -> bool:
+        return self._check_in_state(obj)[0]
+
+    def get_check_in_blocked_reason(self, obj) -> str:
+        return self._check_in_state(obj)[1]
 
 
 class AdminBookingCreateSerializer(serializers.Serializer):
@@ -324,3 +344,35 @@ class MissedBookingSerializer(AdminBookingListSerializer):
         from apps.core.utils import hotel_today
 
         return max(0, (hotel_today() - obj.check_in).days)
+
+
+class LateArrivalBookingSerializer(AdminBookingListSerializer):
+    """A confirmed booking whose guest missed the first night but may still arrive."""
+
+    nights_missed = serializers.SerializerMethodField()
+    can_check_in = serializers.SerializerMethodField()
+    check_in_blocked_reason = serializers.SerializerMethodField()
+
+    class Meta(AdminBookingListSerializer.Meta):
+        fields = AdminBookingListSerializer.Meta.fields + [
+            "nights_missed", "can_check_in", "check_in_blocked_reason",
+        ]
+
+    def get_nights_missed(self, obj) -> int:
+        from apps.core.utils import hotel_today
+
+        return max(0, (hotel_today() - obj.check_in).days)
+
+    def _check_in_state(self, obj):
+        from apps.bookings.services.booking_service import can_check_in_today
+
+        cache = self.context.setdefault("_check_in_cache", {})
+        if obj.pk not in cache:
+            cache[obj.pk] = can_check_in_today(obj)
+        return cache[obj.pk]
+
+    def get_can_check_in(self, obj) -> bool:
+        return self._check_in_state(obj)[0]
+
+    def get_check_in_blocked_reason(self, obj) -> str:
+        return self._check_in_state(obj)[1]

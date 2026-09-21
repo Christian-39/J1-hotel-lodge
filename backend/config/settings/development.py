@@ -1,3 +1,4 @@
+# config/settings/development.py
 """Development settings: SQLite, console email, eager Celery, permissive CORS.
 
 Defaults are developer-friendly: emails print to the terminal, background

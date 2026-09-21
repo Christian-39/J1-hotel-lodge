@@ -1,3 +1,4 @@
+/* js/receipt.js */
 /* ========================================================================== 
    receipt.js — Access-style J-ONE receipt rendering and receipt-only exports.
 

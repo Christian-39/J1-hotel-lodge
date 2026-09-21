@@ -1,3 +1,4 @@
+# tests/test_email_pipeline.py
 """Tests for the synchronous, truth-tracking email delivery service.
 
 Covers the architecture after the email queue was removed:
@@ -23,7 +24,8 @@ import requests
 
 from apps.core.emails import queue_email, send_email_safe
 from apps.notifications.models import EmailLog
-from apps.notifications.tasks import BREVO_API_URL, active_transport
+from apps.notifications.providers import BREVO_API_URL
+from apps.notifications.tasks import active_transport
 
 
 def _brevo_response(status_code=201, body=None, text=""):
@@ -86,7 +88,7 @@ class DirectDeliveryTests(TestCase):
         import smtplib
 
         with mock.patch(
-            "apps.notifications.tasks.EmailMessage.send",
+            "apps.notifications.providers.EmailMessage.send",
             side_effect=smtplib.SMTPAuthenticationError(535, b"bad creds"),
         ):
             log = send_email_safe("Subject", "Body", ["guest@example.com"])
@@ -176,7 +178,7 @@ class BrevoTransportTests(TestCase):
         ):
             log = self._send()
         self.assertEqual(log.status, EmailLog.Status.FAILED)
-        self.assertEqual(log.error_class, "BrevoAPIError")
+        self.assertEqual(log.error_class, "EmailProviderError")
         self.assertIn("401", log.error_message)
         self.assertIn("Key not found", log.error_message)
         self.assertNotIn("test-key", log.error_message)
@@ -241,17 +243,17 @@ class BrevoTransportTests(TestCase):
         self.assertEqual(log.status, EmailLog.Status.FAILED)
 
     @override_settings(BREVO_API_KEY="")
-    def test_missing_brevo_api_key_fails_loudly(self):
+    def test_missing_api_key_fails_loudly(self):
         log = self._send()
         self.assertEqual(log.status, EmailLog.Status.FAILED)
-        self.assertEqual(log.error_class, "RuntimeError")
-        self.assertIn("BREVO_API_KEY", log.error_message)
+        self.assertEqual(log.error_class, "EmailConfigurationError")
+        self.assertIn("EMAIL_API_KEY", log.error_message)
 
     @override_settings(DEFAULT_FROM_EMAIL="not-an-address")
     def test_invalid_default_from_email_fails_loudly(self):
         log = self._send()
         self.assertEqual(log.status, EmailLog.Status.FAILED)
-        self.assertEqual(log.error_class, "ValueError")
+        self.assertEqual(log.error_class, "EmailConfigurationError")
         self.assertIn("DEFAULT_FROM_EMAIL", log.error_message)
 
     def test_no_redis_and_no_celery_touched(self):

@@ -1,3 +1,4 @@
+# apps/offers/services.py
 """Offer eligibility + discount maths.
 
 The BACKEND decides whether an offer applies to a stay; the frontend only
@@ -7,7 +8,16 @@ from decimal import ROUND_HALF_UP, Decimal
 
 from django.utils import timezone
 
-from apps.core.exceptions import OfferNotApplicableError
+from apps.core.exceptions import (
+    OfferCodeInvalidError,
+    OfferDoesNotCoverStayError,
+    OfferExpiredError,
+    OfferNotApplicableError,
+    OfferNotStartedError,
+    OfferRoomTypeNotEligibleError,
+    OfferStayTooLongError,
+    OfferStayTooShortError,
+)
 
 from .models import Offer
 
@@ -72,10 +82,55 @@ def best_offer(room_type, check_in, check_out, nights, subtotal):
 
 
 def validate_offer_code(code, room_type, check_in, check_out, nights, subtotal):
-    """Resolve a promo code to an (offer, discount) or raise OFFER_NOT_APPLICABLE."""
-    offer = Offer.objects.filter(code__iexact=(code or "").strip(), is_active=True).first()
+    """Resolve a promo code to an ``(offer, discount)`` pair.
+
+    Raises the SPECIFIC ``OFFER_*`` error describing why the code does not
+    apply, so the guest is told what to change (stay longer, pick other dates,
+    choose a different room type) rather than just "not valid".
+    """
+    from datetime import timedelta
+
+    cleaned = (code or "").strip()
+    # Match on the code alone first: an inactive/expired offer must report why
+    # it was rejected, not masquerade as a typo.
+    offer = Offer.objects.filter(code__iexact=cleaned).first()
     if offer is None:
-        raise OfferNotApplicableError("This offer code is not valid.")
+        raise OfferCodeInvalidError(f"\u201c{cleaned}\u201d is not a valid offer code.")
+    if not offer.is_active:
+        raise OfferExpiredError("This offer is no longer available.")
+
+    last_night = check_out - timedelta(days=1)
+    if offer.end_date < check_in:
+        raise OfferExpiredError(
+            f"This offer ended on {offer.end_date:%d %b %Y}."
+        )
+    if offer.start_date > last_night:
+        raise OfferNotStartedError(
+            f"This offer starts on {offer.start_date:%d %b %Y}."
+        )
+    if offer.start_date > check_in or offer.end_date < last_night:
+        raise OfferDoesNotCoverStayError(
+            f"This offer only covers {offer.start_date:%d %b %Y} to "
+            f"{offer.end_date:%d %b %Y}, which does not include your whole stay."
+        )
+    if nights < offer.min_nights:
+        raise OfferStayTooShortError(
+            f"This offer needs a minimum stay of {offer.min_nights} "
+            f"night{'s' if offer.min_nights != 1 else ''}; your stay is {nights}."
+        )
+    if offer.max_nights is not None and nights > offer.max_nights:
+        raise OfferStayTooLongError(
+            f"This offer allows a maximum stay of {offer.max_nights} "
+            f"night{'s' if offer.max_nights != 1 else ''}; your stay is {nights}."
+        )
+    allowed = offer.room_types.all()
+    if allowed.exists() and room_type not in allowed:
+        names = ", ".join(t.name for t in allowed)
+        raise OfferRoomTypeNotEligibleError(
+            f"This offer applies to {names}, not {room_type.name}."
+        )
+
+    # Defensive: the queryset is the single source of truth for eligibility.
     if not eligible_offers_queryset(room_type, check_in, check_out, nights).filter(pk=offer.pk).exists():
         raise OfferNotApplicableError("This offer cannot be applied to the selected stay.")
     return offer, discount_amount(offer, subtotal)

@@ -1,3 +1,4 @@
+# apps/core/exception_handler.py
 """Uniform API error envelope.
 
 Transforms every DRF/Django exception into:

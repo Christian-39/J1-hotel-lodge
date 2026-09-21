@@ -1,3 +1,4 @@
+# tests/test_regressions.py
 """Regression tests for the staff-dashboard audit fixes.
 
 Covers: admin-only settings (GET and PATCH), settings cache invalidation of

@@ -1,3 +1,4 @@
+# tests/test_guest_access.py
 """Guest access-token security: expiry, cross-booking isolation, staff JWT
 compatibility, and the production CORS preflight contract.
 

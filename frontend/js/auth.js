@@ -1,3 +1,4 @@
+/* js/auth.js */
 /* ==========================================================================
    Auth — login, registration, session persistence, role-aware UI, guards.
    Frontend role checks are UX-only; the backend is authoritative.

@@ -1,3 +1,4 @@
+# tests/test_error_contract.py
 """Task 26: bad input to the endpoints this project added must come back as a
 structured, machine-readable error — never a 500 and never a bare string.
 

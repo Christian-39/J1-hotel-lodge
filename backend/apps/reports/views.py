@@ -1,3 +1,4 @@
+# apps/reports/views.py
 """Dashboard + report endpoints."""
 import logging
 from datetime import datetime

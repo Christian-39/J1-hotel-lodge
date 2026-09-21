@@ -1,3 +1,4 @@
+/* js/receipt-email-modal.js */
 /* ==========================================================================
    J-ONE HOTEL & LODGE — shared "Email guest" receipt modal.
 

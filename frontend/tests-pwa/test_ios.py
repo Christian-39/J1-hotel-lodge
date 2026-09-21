@@ -1,3 +1,4 @@
+# tests-pwa/test_ios.py
 """iOS Safari: no beforeinstallprompt, so verify the Add-to-Home-Screen path."""
 import sys
 from playwright.sync_api import sync_playwright

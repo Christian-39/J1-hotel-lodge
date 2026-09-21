@@ -13,7 +13,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="J-ONE Hotel">
-<link rel="stylesheet" href="../css/main.css?v=1.1.0">
+<link rel="stylesheet" href="../css/main.css?v=1.1.1">
 
 </head>
 <body>
@@ -103,16 +103,16 @@
     </div>
   </div>
 </div>
-<script src="../js/config.js?v=1.1.0"></script>
-<script src="../js/utils.js?v=1.1.0"></script>
-<script src="../js/icons.js?v=1.1.0"></script>
-<script src="../js/api.js?v=1.1.0"></script>
-<script src="../js/theme.js?v=1.1.0"></script>
-<script src="../js/ui.js?v=1.1.0"></script>
-<script src="../js/auth.js?v=1.1.0"></script>
-<script src="../js/hotel-data.js?v=1.1.0"></script>
-<script src="../js/navigation.js?v=1.1.0"></script>
-<script src="../js/dashboard.js?v=1.1.0"></script>
+<script src="../js/config.js?v=1.1.1"></script>
+<script src="../js/utils.js?v=1.1.1"></script>
+<script src="../js/icons.js?v=1.1.1"></script>
+<script src="../js/api.js?v=1.1.1"></script>
+<script src="../js/theme.js?v=1.1.1"></script>
+<script src="../js/ui.js?v=1.1.1"></script>
+<script src="../js/auth.js?v=1.1.1"></script>
+<script src="../js/hotel-data.js?v=1.1.1"></script>
+<script src="../js/navigation.js?v=1.1.1"></script>
+<script src="../js/dashboard.js?v=1.1.1"></script>
 <script>
   JONE.ui.initChrome();
   JONE.dashboard.boot("receptionist");
@@ -187,8 +187,21 @@
     var checkin=document.querySelector("[data-bd-checkin]");
     var cancel=document.querySelector("[data-bd-cancel]");
     if(checkin){
-      if(st==="CONFIRMED"){ checkin.style.display=""; checkin.textContent="Check in"; }
-      else if(st==="CHECKED_IN"){ checkin.style.display=""; checkin.textContent="Check out"; }
+      if(st==="CONFIRMED"){
+        checkin.style.display=""; checkin.textContent="Check in";
+        /* The backend decides: today must be inside the booked range (late
+           arrivals allowed, early ones only when the hotel permits them).
+           Disable with the real reason rather than letting staff click into
+           a 409. */
+        var blocked = book.can_check_in === false;
+        checkin.disabled = blocked;
+        if(blocked) checkin.title = book.check_in_blocked_reason || "Check-in is not available yet.";
+        else checkin.removeAttribute("title");
+      }
+      else if(st==="CHECKED_IN"){
+        checkin.style.display=""; checkin.textContent="Check out";
+        checkin.disabled=false; checkin.removeAttribute("title");
+      }
       else checkin.style.display="none";
     }
     if(cancel) cancel.style.display = (st==="CANCELLED"||st==="CHECKED_OUT"||st==="EXPIRED"||st==="NO_SHOW") ? "none" : "";
@@ -270,8 +283,8 @@
 })();
 
 </script>
-<script src="../js/pwa.js?v=1.1.0"></script>
-<script src="../js/version.js?v=1.1.0"></script>
-<script src="../js/update-checker.js?v=1.1.0"></script>
+<script src="../js/pwa.js?v=1.1.1"></script>
+<script src="../js/version.js?v=1.1.1"></script>
+<script src="../js/update-checker.js?v=1.1.1"></script>
 </body>
 </html>

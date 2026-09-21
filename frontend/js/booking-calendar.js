@@ -1,3 +1,4 @@
+/* js/booking-calendar.js */
 /* ==========================================================================
    booking-calendar.js — room-type-aware stay calendar (vanilla, accessible).
 

@@ -1,3 +1,4 @@
+# tests/test_pricing.py
 """PRICING ENGINE tests (spec §26–§27, §30): nights, offers, taxes, fees,
 deposit rules, quote endpoint integrity."""
 from datetime import timedelta

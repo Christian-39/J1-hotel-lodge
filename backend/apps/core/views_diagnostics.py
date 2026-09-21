@@ -1,3 +1,4 @@
+# apps/core/views_diagnostics.py
 """TEMPORARY diagnostic endpoint — wraps `manage.py smtp_check` over HTTP so it
 can be run without shell access on Render's free plan.
 

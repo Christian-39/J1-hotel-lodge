@@ -13,7 +13,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="J-ONE Hotel">
-<link rel="stylesheet" href="css/main.css?v=1.1.0">
+<link rel="stylesheet" href="css/main.css?v=1.1.1">
 <script>(function(){var t;try{t=JSON.parse(localStorage.getItem("jone.theme"))}catch(e){}if(t!=="dark"&&t!=="light"){t=(window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches)?"dark":"light"}document.documentElement.setAttribute("data-theme",t);})();</script>
 
 
@@ -160,17 +160,17 @@
   </div>
 </div>
 
-<script src="js/config.js?v=1.1.0"></script>
-<script src="js/utils.js?v=1.1.0"></script>
-<script src="js/icons.js?v=1.1.0"></script>
-<script src="js/api.js?v=1.1.0"></script>
-<script src="js/theme.js?v=1.1.0"></script>
-<script src="js/ui.js?v=1.1.0"></script>
-<script src="js/hotel-data.js?v=1.1.0"></script>
-<script src="js/contact.js?v=1.1.0"></script>
-<script src="js/navigation.js?v=1.1.0"></script>
+<script src="js/config.js?v=1.1.1"></script>
+<script src="js/utils.js?v=1.1.1"></script>
+<script src="js/icons.js?v=1.1.1"></script>
+<script src="js/api.js?v=1.1.1"></script>
+<script src="js/theme.js?v=1.1.1"></script>
+<script src="js/ui.js?v=1.1.1"></script>
+<script src="js/hotel-data.js?v=1.1.1"></script>
+<script src="js/contact.js?v=1.1.1"></script>
+<script src="js/navigation.js?v=1.1.1"></script>
 <script>JONE.ui.initChrome(); JONE.nav.init();</script>
-<script src="js/site.js?v=1.1.0"></script>
+<script src="js/site.js?v=1.1.1"></script>
 <script>
 (function () {
   "use strict";
@@ -186,12 +186,13 @@
          discount_value "10.00", start_date, end_date, min_nights,
          applicable_room_types[], is_featured, image_url, terms }. */
       var img = o.image_url ? '<div class="media"><img src="' + JONE.esc(o.image_url) + '" alt="' + JONE.esc(o.title) + '" loading="lazy"></div>' : '<div class="media"><div class="placeholder-placeholder"><span data-icon="tag" data-size="32"></span></div></div>';
-      var disc = o.discount_type === "PERCENTAGE"
-        ? (Number(o.discount_value || 0) + "% off")
-        : (o.discount_value ? JONE.formatNaira(o.discount_value) + " off" : "Special offer");
+      var disc = JONE.offerDiscountLabel(o) || "Special offer";
       var bookHref = o.code ? "booking.html?offer=" + encodeURIComponent(o.code) : "booking.html";
       var period = JONE.offerPeriod(o, "mid");
       var note = JONE.offerStatusNote(o);
+      var criteria = JONE.offerCriteria(o).map(function (line) {
+        return '<li>' + JONE.esc(line) + '</li>';
+      }).join("");
       return '<article class="card card-hover">' + img + '<div class="card-pad">' +
         '<span class="offer-tag" style="margin-bottom:0.75rem;">' + JONE.esc(disc) + '</span>' +
         '<h3 style="font-size:var(--fs-lg);margin:0.5rem 0;">' + JONE.esc(o.title || "Offer") + '</h3>' +
@@ -200,6 +201,10 @@
            must not look like it applies to tonight's booking. */
         (period ? '<p class="caption offer-period"><span data-icon="calendar" data-size="14"></span> Valid ' + JONE.esc(period) + '</p>' : '') +
         (note ? '<p class="caption offer-note">' + JONE.esc(note) + '</p>' : '') +
+        /* Eligibility rules up front: min/max nights and which room types,
+           so a guest is not told "does not apply" only at the quote step. */
+        (criteria ? '<ul class="offer-criteria">' + criteria + '</ul>' : '') +
+        (o.terms ? '<p class="caption muted offer-terms">' + JONE.esc(o.terms) + '</p>' : '') +
         '<div style="display:flex;gap:0.75rem;margin-top:1rem;flex-wrap:wrap;">' +
           '<a class="btn btn-sm btn-accent" href="' + bookHref + '">Book with this offer</a>' +
         '</div></div></article>';
@@ -218,8 +223,8 @@
   load();
 })();
 </script>
-<script src="js/pwa.js?v=1.1.0"></script>
-<script src="js/version.js?v=1.1.0"></script>
-<script src="js/update-checker.js?v=1.1.0"></script>
+<script src="js/pwa.js?v=1.1.1"></script>
+<script src="js/version.js?v=1.1.1"></script>
+<script src="js/update-checker.js?v=1.1.1"></script>
 </body>
 </html>

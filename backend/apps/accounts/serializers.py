@@ -1,3 +1,4 @@
+# apps/accounts/serializers.py
 """Account serializers. Never expose password hashes or role-equality tricks."""
 from django.contrib.auth import password_validation
 from django.contrib.auth.tokens import default_token_generator

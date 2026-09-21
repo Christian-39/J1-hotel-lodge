@@ -14,7 +14,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="J-ONE Hotel">
-<link rel="stylesheet" href="css/main.css?v=1.1.0">
+<link rel="stylesheet" href="css/main.css?v=1.1.1">
 <script>(function(){var t;try{t=JSON.parse(localStorage.getItem("jone.theme"))}catch(e){}if(t!=="dark"&&t!=="light"){t=(window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches)?"dark":"light"}document.documentElement.setAttribute("data-theme",t);})();</script>
 
 
@@ -277,18 +277,18 @@
   </div>
 </div>
 
-<script src="js/config.js?v=1.1.0"></script>
-<script src="js/utils.js?v=1.1.0"></script>
-<script src="js/icons.js?v=1.1.0"></script>
-<script src="js/api.js?v=1.1.0"></script>
-<script src="js/theme.js?v=1.1.0"></script>
-<script src="js/ui.js?v=1.1.0"></script>
-<script src="js/hotel-data.js?v=1.1.0"></script>
-<script src="js/contact.js?v=1.1.0"></script>
-<script src="js/navigation.js?v=1.1.0"></script>
+<script src="js/config.js?v=1.1.1"></script>
+<script src="js/utils.js?v=1.1.1"></script>
+<script src="js/icons.js?v=1.1.1"></script>
+<script src="js/api.js?v=1.1.1"></script>
+<script src="js/theme.js?v=1.1.1"></script>
+<script src="js/ui.js?v=1.1.1"></script>
+<script src="js/hotel-data.js?v=1.1.1"></script>
+<script src="js/contact.js?v=1.1.1"></script>
+<script src="js/navigation.js?v=1.1.1"></script>
 <script>JONE.ui.initChrome(); JONE.nav.init();</script>
-<script src="js/site.js?v=1.1.0"></script>
-<script src="js/booking-stepper.js?v=1.1.0"></script>
+<script src="js/site.js?v=1.1.1"></script>
+<script src="js/booking-stepper.js?v=1.1.1"></script>
 <script>
 (function () {
   "use strict";
@@ -325,7 +325,9 @@
   }
 
   // Pre-fill an offer code handed over from booking/offers pages.
-  var offerParam = p.get("offer") || savedDraft.offer_code;
+  /* Per-visit only: a code kept in the draft re-applies itself to dates it
+     was never valid for. The URL (from an offer card) is the only carry-over. */
+  var offerParam = p.get("offer") || "";
   var offerInput = document.getElementById("g-offer");
   if (offerParam && offerInput && !offerInput.value) offerInput.value = offerParam;
 
@@ -448,11 +450,31 @@
         offer_code: offerCode || undefined
       });
       quote = res.data || null;
+      setOfferError("");
       renderQuote();
     } catch (err) {
+      if (String(err && err.code || "").indexOf("OFFER_") === 0 && offerCode) {
+        /* The offer is OPTIONAL: show the specific reason on the field, clear
+           the code and re-price the stay. The quote itself must never fail
+           because of it. */
+        setOfferError(err.message || "This offer code couldn't be applied.");
+        if (offerInput) offerInput.value = "";
+        return loadQuote();
+      }
       quoteError(err);
     }
   }
+
+  /* Field-level offer feedback; "" clears it. */
+  function setOfferError(message) {
+    if (!offerInput) return;
+    var field = offerInput.closest(".field");
+    if (!field) return;
+    var slot = field.querySelector(".field-error");
+    if (slot && message) slot.textContent = message;
+    field.classList.toggle("has-error", !!message);
+  }
+
   loadQuote();
 
   /* ------------------------- Guest field validation ---------------------- */
@@ -482,7 +504,6 @@
       phone: document.getElementById("g-phone").value.trim(),
       email: document.getElementById("g-email").value.trim()
     };
-    draft.offer_code = offerInput ? offerInput.value.trim() : "";
     JONE.storage.set(S, draft);
     return draft;
   }
@@ -572,8 +593,8 @@
   }
 })();
 </script>
-<script src="js/pwa.js?v=1.1.0"></script>
-<script src="js/version.js?v=1.1.0"></script>
-<script src="js/update-checker.js?v=1.1.0"></script>
+<script src="js/pwa.js?v=1.1.1"></script>
+<script src="js/version.js?v=1.1.1"></script>
+<script src="js/update-checker.js?v=1.1.1"></script>
 </body>
 </html>

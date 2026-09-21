@@ -1,3 +1,4 @@
+# tests/test_multi_room_booking.py
 """Multi-room booking tests: the same room type, booked in multiples.
 
 The frontend now sends an explicit ``rooms`` quantity for the whole guest
@@ -21,16 +22,19 @@ most one winner; the stay is afterwards provably fully booked (a sequential
 attempt gets the honest 409 + ROOM_UNAVAILABLE contract error).
 """
 import threading
+from datetime import timedelta
 
 from django.test import tag
 
 from apps.bookings.models import Booking, BookingRoom
+from apps.core.utils import hotel_today
 from tests.base import BaseAPITestCase
 from tests.factories import make_booking, make_guest, make_room, make_room_type
 
-
-CI = "2026-09-20"
-CO = "2026-09-23"          # 3 hotel nights
+# Relative to the hotel's today: fixed literals silently rot into "check-in in
+# the past" and fail the whole module once that date passes.
+CI = (hotel_today() + timedelta(days=10)).isoformat()
+CO = (hotel_today() + timedelta(days=13)).isoformat()   # 3 hotel nights
 GUEST = {
     "first_name": "Multi",
     "last_name": "Room",
@@ -170,7 +174,8 @@ class OverbookingRaceTests(BaseAPITestCase):
         super().setUp()
         self.rt = make_room_type(name="Race King", price="5000.00", slug="race-king")
         self.room = make_room(self.rt, "RC1")
-        self.ci, self.co = "2026-10-01", "2026-10-03"
+        self.ci = (hotel_today() + timedelta(days=21)).isoformat()
+        self.co = (hotel_today() + timedelta(days=23)).isoformat()
 
     def test_two_racers_one_room_no_overbooking(self):
         payload = {

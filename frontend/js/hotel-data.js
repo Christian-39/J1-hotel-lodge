@@ -1,3 +1,4 @@
+/* js/hotel-data.js */
 /* ==========================================================================
    hotel-data.js — centralized, data-driven hotel information.
 

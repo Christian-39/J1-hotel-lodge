@@ -1,3 +1,4 @@
+# tests/test_occupancy_and_missed.py
 """Occupancy calendar, missed (no-show) bookings and rescheduling.
 
 These three staff features all derive their state from the booking/room

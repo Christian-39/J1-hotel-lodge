@@ -165,20 +165,67 @@ so `--` URLs render in browsers. Uploads are validated for extension, size
 
 ## 9. Background tasks & email
 
-- `apps.bookings.tasks.expire_pending_bookings` (every 5 min via Celery Beat)
-  releases inventory held by abandoned PENDING bookings.
-- Emails (booking confirmations, cancellation/refund request updates, refund
-  lifecycle notices, password resets and staff alerts) use Django email /
-  SMTP/Brevo-style transactional delivery; in development they print to the
-  console. Paystack receipts are configured separately in the Paystack Dashboard.
+### Scheduled tasks (Celery)
+
+`apps.bookings.tasks` runs the time-based hotel jobs — pending-booking expiry
+(every 5 min), automatic checkout and checkout warnings:
 
 ```bash
 celery -A config worker -l info
 celery -A config beat -l info
 ```
 
-State changes are also reconciled lazily on reads (an expired hold never
-blocks inventory even before the beat task runs).
+State changes are also reconciled lazily on reads, so an expired hold never
+blocks inventory even before the beat task runs.
+
+### Transactional email
+
+**Email delivery is synchronous and never touches Celery or Redis.** Messages
+are sent inside the request that triggers them, so a missing broker can never
+lose mail. The business rules for when mail is sent are independent of the
+transport described here.
+
+The transport sits behind a small adapter in
+`apps/notifications/providers.py`. One variable selects it:
+
+| `EMAIL_PROVIDER` | Transport |
+| --- | --- |
+| `django`, `smtp`, `console` | Django's own `EMAIL_BACKEND` |
+| `brevo`, `sendgrid`, `mailgun`, `postmark`, `resend` | That vendor's HTTPS API |
+| *(empty)* | An API provider if a key is set, otherwise Django's backend |
+
+SMTP needs `EMAIL_HOST`/`EMAIL_PORT`/`EMAIL_USE_TLS`/`EMAIL_HOST_USER`/
+`EMAIL_HOST_PASSWORD`. The API providers need `EMAIL_API_KEY` (plus
+`EMAIL_API_DOMAIN` for Mailgun, and optionally `EMAIL_API_BASE_URL` for
+regional endpoints). Both need `DEFAULT_FROM_EMAIL` to be an address verified
+with the active provider. Adding a vendor means adding one adapter — callers
+never change. See `.env.example` for every variable.
+
+Development defaults to the console backend, so nothing leaves the machine.
+API providers are the right choice on hosts that block outbound SMTP ports
+(Render Free blocks 25/465/587 entirely).
+
+Verify the whole chain for whichever provider is active:
+
+```bash
+python manage.py email_check                     # config + auth + sender
+python manage.py email_check --send you@example.com   # + one real delivery
+```
+
+### Email logs
+
+`EmailLog` records `PENDING → SENDING → SENT | FAILED`. `SENT` is written only
+after the provider accepts the message; a rejection stores `FAILED` with the
+provider's reason. Credentials are never logged.
+
+### Logo rendering
+
+Email templates use the hotel logo at its real aspect ratio. Where the
+transport supports `multipart/related` (SMTP, SendGrid, Mailgun, Postmark) the
+logo is embedded inline as a `cid:` part. Brevo's and Resend's APIs cannot
+deliver inline images, so those providers fall back to the absolute HTTPS URL
+in `EMAIL_LOGO_URL`. Set it whenever one of them is active, or the header logo
+will not render.
 
 ## 10. Testing
 

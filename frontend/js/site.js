@@ -1,3 +1,4 @@
+/* js/site.js */
 /* ==========================================================================
    site.js — public-site page controllers (homepage, rooms, gallery, etc.)
    Shared DOM hooks that most public pages rely on. Kept lean.

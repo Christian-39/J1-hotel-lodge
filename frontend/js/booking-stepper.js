@@ -1,3 +1,4 @@
+/* js/booking-stepper.js */
 /* ==========================================================================
    Booking stepper — a reusable, accessible six-stage progress component for
    the J-ONE booking flow. Renders a polished horizontal stepper on desktop

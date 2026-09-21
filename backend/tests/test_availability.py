@@ -1,3 +1,4 @@
+# tests/test_availability.py
 """AVAILABILITY ENGINE tests (spec §23–§24): overlap boundaries, operational
 blocks, expired holds, empty results."""
 from datetime import timedelta

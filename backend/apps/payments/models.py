@@ -1,3 +1,4 @@
+# apps/payments/models.py
 """Payment and refund records.
 
 Card data never touches this system: Paystack hosts the card capture. We only

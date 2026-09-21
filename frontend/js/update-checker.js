@@ -1,3 +1,4 @@
+/* js/update-checker.js */
 /* ==========================================================================
    J-ONE HOTEL & LODGE — deployment update checker.
 

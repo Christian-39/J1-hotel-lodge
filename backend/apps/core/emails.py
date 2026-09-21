@@ -1,3 +1,4 @@
+# apps/core/emails.py
 """Synchronous transactional email delivery with a real, tracked lifecycle.
 
 The rules this module enforces:

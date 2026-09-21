@@ -1,3 +1,4 @@
+# apps/rooms/apps.py
 from django.apps import AppConfig
 
 

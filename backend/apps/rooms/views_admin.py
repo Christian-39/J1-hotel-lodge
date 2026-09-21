@@ -1,3 +1,4 @@
+# apps/rooms/views_admin.py
 """Staff management for amenities, room types, images and physical rooms."""
 import logging
 from datetime import timedelta

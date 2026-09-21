@@ -1,3 +1,4 @@
+# apps/hotel/management/commands/seed_demo.py
 """Seed DEVELOPMENT/DEMO data.
 
 Loads the hotel's real identity (name, address, phone, email per the supplied

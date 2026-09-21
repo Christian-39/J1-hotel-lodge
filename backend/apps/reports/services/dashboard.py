@@ -1,3 +1,4 @@
+# apps/reports/services/dashboard.py
 """Staff dashboard aggregation.
 
 Everything is computed with database-level aggregates — the endpoint does a

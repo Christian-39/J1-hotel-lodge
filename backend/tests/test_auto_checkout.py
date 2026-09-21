@@ -1,3 +1,4 @@
+# tests/test_auto_checkout.py
 """Automatic checkout + 30-minute warning (spec §17–§18).
 
 Covers: never-early timing, idempotency across repeated runs, balance

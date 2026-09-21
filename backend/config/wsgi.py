@@ -1,3 +1,4 @@
+# config/wsgi.py
 """WSGI config for production (gunicorn config.wsgi)."""
 import os
 
