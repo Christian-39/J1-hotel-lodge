@@ -363,6 +363,7 @@ body.drawer-open .dash-main { overflow: hidden; }
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius);
+  min-width: 0;
 }
 .panel-head {
   display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3);
